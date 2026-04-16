@@ -21,6 +21,30 @@ export let CALENDAR_CONFIG = {};
 export let calendarColorMode = 'theme';
 export const customCalendarColors = {};
 
+// ── Hidden calendars ──────────────────────────────────────────────────────────
+// Calendars in this set are excluded from filter pills and event fetching.
+const _hiddenCalendars = new Set(
+    JSON.parse(localStorage.getItem('hiddenCalendars') || '[]')
+);
+
+export function isCalendarHidden(entityId) {
+    return _hiddenCalendars.has(entityId);
+}
+
+export function toggleCalendarVisibility(entityId) {
+    if (_hiddenCalendars.has(entityId)) {
+        _hiddenCalendars.delete(entityId);
+    } else {
+        _hiddenCalendars.add(entityId);
+    }
+    localStorage.setItem('hiddenCalendars', JSON.stringify([..._hiddenCalendars]));
+    initializeCalendarColorsList();
+    if (window.haCalendar) {
+        window.haCalendar.createFilterCircles();
+        window.haCalendar.loadEventsFromHA();
+    }
+}
+
 // ── Open / close ─────────────────────────────────────────────────────────────
 export function openSettings() {
     document.getElementById('settingsOverlay').classList.add('active');
@@ -95,17 +119,25 @@ export function initializeCalendarColorsList() {
     }
 
     entries.forEach(([entityId, config]) => {
-        const cc = customCalendarColors[entityId]           || config.color;
-        const cd = customCalendarColors[entityId + '_dark'] || config.colorDark;
-        const item = document.createElement('div');
-        item.className = 'calendar-color-item';
+        const cc      = customCalendarColors[entityId]           || config.color;
+        const cd      = customCalendarColors[entityId + '_dark'] || config.colorDark;
+        const hidden  = isCalendarHidden(entityId);
+        const item    = document.createElement('div');
+        item.className = `calendar-color-item${hidden ? ' cal-hidden' : ''}`;
         item.innerHTML = `
-            <div class="calendar-color-preview" style="background:linear-gradient(135deg,${cc} 0%,${cd} 100%);">${config.initial}</div>
-            <div class="calendar-color-info">
+            <button class="cal-vis-btn${hidden ? ' hidden' : ''}" onclick="toggleCalendarVisibility('${entityId}')"
+                    title="${hidden ? 'Show this calendar' : 'Hide this calendar'}">
+                ${hidden
+                    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`
+                    : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`
+                }
+            </button>
+            <div class="calendar-color-preview" style="background:linear-gradient(135deg,${cc} 0%,${cd} 100%);${hidden ? 'opacity:0.35;' : ''}">${config.initial}</div>
+            <div class="calendar-color-info" style="${hidden ? 'opacity:0.45;' : ''}">
                 <div class="calendar-color-name">${config.name}</div>
                 <div class="calendar-color-entity">${entityId}</div>
             </div>
-            <div class="calendar-color-inputs">
+            <div class="calendar-color-inputs" style="${hidden ? 'opacity:0.35;pointer-events:none;' : ''}">
                 <div class="calendar-color-picker-wrapper">
                     <input type="color" id="color_${entityId}" value="${cc}"
                            onchange="updateCalendarColor('${entityId}', this.value, document.getElementById('colorDark_${entityId}').value)">

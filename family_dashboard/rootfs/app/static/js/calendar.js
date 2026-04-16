@@ -11,7 +11,7 @@
  */
 import { blendColorsLight } from './utils.js';
 import { loadTheme } from './theme.js';
-import { CALENDAR_CONFIG, getEffectiveCalendarColor, loadDefaultView } from './settings.js';
+import { CALENDAR_CONFIG, getEffectiveCalendarColor, loadDefaultView, isCalendarHidden } from './settings.js';
 
 // ── Auto-assign palette for dynamically discovered calendars ─────────────────
 const _PALETTE      = ['#3b82f6','#ec4899','#10b981','#f59e0b','#8b5cf6','#ef4444','#06b6d4','#84cc16','#f97316','#a855f7'];
@@ -179,6 +179,7 @@ export class HACalendar {
         Object.keys(CALENDAR_CONFIG).forEach(entityId => {
             const config = CALENDAR_CONFIG[entityId];
             if (!config) return;
+            if (isCalendarHidden(entityId)) return;
             const isActive = savedState ? savedState[entityId] !== false : true;
 
             const pill = document.createElement('div');
@@ -411,7 +412,7 @@ export class HACalendar {
             this._loadedStart = start;
             this._loadedEnd   = end;
 
-            const entityIds = Object.keys(CALENDAR_CONFIG);
+            const entityIds = Object.keys(CALENDAR_CONFIG).filter(id => !isCalendarHidden(id));
             const newEvents = [];
             for (const entityId of entityIds) {
                 const events = await this._fetchCalendarEvents(entityId, start, end);

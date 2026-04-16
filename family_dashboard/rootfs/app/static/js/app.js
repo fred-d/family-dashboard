@@ -22,7 +22,8 @@ import {
     openSettings, closeSettings,
     loadCalendarColors, saveDefaultView,
     toggleCalendarColorMode,
-    updateCalendarColor, updateCalendarColorFromText, resetCalendarColor
+    updateCalendarColor, updateCalendarColorFromText, resetCalendarColor,
+    toggleCalendarVisibility
 } from './settings.js';
 import {
     loadTheme, applyTheme,
@@ -34,6 +35,7 @@ Object.assign(window, {
     openSettings, closeSettings, saveDefaultView,
     toggleCalendarColorMode,
     updateCalendarColor, updateCalendarColorFromText, resetCalendarColor,
+    toggleCalendarVisibility,
     updateCustomPreview, syncColorInput,
     applyTheme:       (name) => applyTheme(name, window.haCalendar, updateFilterCircles),
     applyCustomTheme: ()     => applyCustomTheme(window.haCalendar, updateFilterCircles, closeSettings),
