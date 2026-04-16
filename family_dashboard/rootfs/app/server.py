@@ -146,7 +146,11 @@ def api_calendars():
         r = _ha('/api/states')
         states = r.json()
         cals = [
-            {'entity_id': s['entity_id'], 'attributes': s['attributes']}
+            {
+                'entity_id': s['entity_id'],
+                'name': s['attributes'].get('friendly_name') or
+                        s['entity_id'].replace('calendar.', '').replace('_', ' ').title()
+            }
             for s in states
             if s['entity_id'].startswith('calendar.')
         ]
