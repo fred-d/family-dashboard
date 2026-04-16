@@ -16,6 +16,10 @@ ingress: true
 ingress_port: 8099
 panel_icon: "mdi:view-dashboard"
 panel_title: "Family Dashboard"
+ports:
+  8099/tcp: 8099
+ports_description:
+  8099/tcp: "Family Dashboard web interface"
 options: {}
 schema: {}
 map:
