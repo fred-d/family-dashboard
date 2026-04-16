@@ -55,11 +55,10 @@ export function isoWeek(date = new Date()) {
     return `${year}-W${String(week).padStart(2, '00')}`;
 }
 
-/** Return an array of 7 Date objects for Mon–Sun of the week containing `date`. */
+/** Return an array of 7 Date objects for Sun–Sat of the week containing `date`. */
 export function weekDates(date = new Date()) {
     const d = new Date(date);
-    const day = d.getDay() || 7; // treat Sunday as 7
-    d.setDate(d.getDate() - day + 1); // back to Monday
+    d.setDate(d.getDate() - d.getDay()); // back to Sunday
     return Array.from({ length: 7 }, (_, i) => {
         const copy = new Date(d);
         copy.setDate(d.getDate() + i);

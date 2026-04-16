@@ -2,7 +2,7 @@ name: "Family Dashboard"
 description: >
   A beautiful family hub — shared calendar, weekly meal planner, recipe book,
   and smart grocery list — all powered by your Home Assistant data.
-version: "1.0.3"
+version: "1.0.4"
 slug: "family_dashboard"
 init: false
 arch:
