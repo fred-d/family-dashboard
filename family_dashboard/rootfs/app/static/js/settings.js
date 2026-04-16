@@ -131,7 +131,7 @@ export function toggleCalendarColorMode() {
     localStorage.setItem('calendarColorMode', m.value);
     const cl = document.getElementById('calendarColorsList');
     if (cl) cl.classList.toggle('active', m.value === 'custom');
-    if (window.haCalendar) window.haCalendar.calendar.refetchEvents();
+    if (window.haCalendar?.calendar) window.haCalendar.calendar.refetchEvents();
 }
 
 export function updateCalendarColor(entityId, color, colorDark) {
@@ -144,7 +144,7 @@ export function updateCalendarColor(entityId, color, colorDark) {
     if (p) p.style.background = `linear-gradient(135deg,${color} 0%,${colorDark} 100%)`;
     document.getElementById(`colorText_${entityId}`).value     = color.toUpperCase();
     document.getElementById(`colorDarkText_${entityId}`).value = colorDark.toUpperCase();
-    if (window.haCalendar) { window.haCalendar.calendar.refetchEvents(); window.updateFilterCircles?.(); }
+    if (window.haCalendar?.calendar) { window.haCalendar.calendar.refetchEvents(); window.updateFilterCircles?.(); }
 }
 
 export function updateCalendarColorFromText(entityId, value, pickerId) {
@@ -171,5 +171,5 @@ export function resetCalendarColor(entityId) {
         ?.closest('.calendar-color-item')
         ?.querySelector('.calendar-color-preview');
     if (p) p.style.background = `linear-gradient(135deg,${cfg.color} 0%,${cfg.colorDark} 100%)`;
-    if (window.haCalendar) { window.haCalendar.calendar.refetchEvents(); window.updateFilterCircles?.(); }
+    if (window.haCalendar?.calendar) { window.haCalendar.calendar.refetchEvents(); window.updateFilterCircles?.(); }
 }
