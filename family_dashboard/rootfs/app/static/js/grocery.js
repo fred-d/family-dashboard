@@ -110,7 +110,7 @@ export class GroceryApp {
         const cached = this.store.loadCachedList();
         this._items    = cached.items    || [];
         this._requests = cached.requests || [];
-        this._inventory = this.store.loadCachedInventory();
+        this._inventory = this.store.loadCachedInventory() || [];
         this._render();
 
         // Subscribe to live SSE updates
