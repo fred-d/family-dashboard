@@ -107,7 +107,8 @@ async function init() {
 
     // Calendar (reads HA via backend proxy — no token in frontend)
     window.haCalendar = new HACalendar();
-    loadCalendarColors();
+    // Defer loadCalendarColors until after FullCalendar has initialised
+    setTimeout(() => loadCalendarColors(), 100);
     setTimeout(updateFilterCircles, 500);
 
     // Stores use backend API — no HA config needed in frontend
