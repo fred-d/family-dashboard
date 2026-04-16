@@ -113,15 +113,19 @@ export class GroceryApp {
         this._inventory = this.store.loadCachedInventory() || [];
         this._render();
 
-        // Subscribe to live SSE updates
-        this._unsub = this.store.subscribe(({ type, data }) => {
+        // Subscribe to live SSE updates (SSE is a notification only — re-fetch actual data)
+        this._unsub = this.store.subscribe(async ({ type }) => {
             if (type === 'list') {
-                this._items    = data.items    || [];
-                this._requests = data.requests || [];
+                const fresh = await this.store.fetchList();
+                if (fresh) {
+                    this._items    = fresh.items    || [];
+                    this._requests = fresh.requests || [];
+                }
                 this._render();
                 this._flashSync();
             } else if (type === 'inventory') {
-                this._inventory = data || [];
+                const freshInv = await this.store.fetchInventory();
+                if (freshInv) this._inventory = freshInv;
                 this._render();
             }
         });
