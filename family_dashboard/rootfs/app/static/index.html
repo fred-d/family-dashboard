@@ -158,33 +158,6 @@
                             </div>
                         </div>
 
-                        <div style="margin:24px 0 16px;padding-top:20px;border-top:2px solid #e2e8f0;">
-                            <label class="color-input-label" style="display:block;margin-bottom:16px;">Calendar Colors</label>
-                        </div>
-                        <div class="color-inputs">
-                            <div class="color-input-group">
-                                <label class="color-input-label">Freddy's Calendar</label>
-                                <div class="color-input-wrapper">
-                                    <input type="color" id="customCalFreddy" value="#3b82f6" onchange="updateCustomPreview()">
-                                    <input type="text"  id="customCalFreddyText" value="#3b82f6" maxlength="7" onchange="syncColorInput('customCalFreddy', this.value)">
-                                </div>
-                            </div>
-                            <div class="color-input-group">
-                                <label class="color-input-label">Amy's Calendar</label>
-                                <div class="color-input-wrapper">
-                                    <input type="color" id="customCalAmy" value="#e91e63" onchange="updateCustomPreview()">
-                                    <input type="text"  id="customCalAmyText" value="#e91e63" maxlength="7" onchange="syncColorInput('customCalAmy', this.value)">
-                                </div>
-                            </div>
-                            <div class="color-input-group">
-                                <label class="color-input-label">Amy Family Calendar</label>
-                                <div class="color-input-wrapper">
-                                    <input type="color" id="customCalAmyFamily" value="#4caf50" onchange="updateCustomPreview()">
-                                    <input type="text"  id="customCalAmyFamilyText" value="#4caf50" maxlength="7" onchange="syncColorInput('customCalAmyFamily', this.value)">
-                                </div>
-                            </div>
-                        </div>
-
                         <div class="custom-theme-preview" id="customPreview">
                             <div class="preview-header" style="--preview-primary:#667eea;--preview-secondary:#764ba2;">Preview Header</div>
                             <div class="preview-content">
@@ -203,7 +176,7 @@
                     <div class="calendar-color-mode">
                         <label class="color-mode-option">
                             <input type="radio" name="calendarColorMode" value="theme" checked onchange="toggleCalendarColorMode()">
-                            <span class="radio-label"><span class="radio-title">Use App Theme</span><span class="radio-desc">All calendars use the current theme color</span></span>
+                            <span class="radio-label"><span class="radio-title">Auto Colors</span><span class="radio-desc">Each calendar keeps its automatically assigned color</span></span>
                         </label>
                         <label class="color-mode-option">
                             <input type="radio" name="calendarColorMode" value="custom" onchange="toggleCalendarColorMode()">
