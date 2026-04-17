@@ -312,6 +312,80 @@ def api_grocery_inventory():
     return jsonify({'ok': True})
 
 
+# ── UPC Lookup (Open Food Facts proxy) ────────────────────────────────────────
+
+_OFF_CAT_MAP = {
+    'en:fruits': 'produce', 'en:vegetables': 'produce', 'en:fresh-vegetables': 'produce',
+    'en:fresh-fruits': 'produce', 'en:dairy': 'dairy', 'en:cheeses': 'dairy',
+    'en:milks': 'dairy', 'en:yogurts': 'dairy', 'en:eggs': 'dairy',
+    'en:meats': 'meat', 'en:seafood': 'meat', 'en:fish': 'meat', 'en:poultry': 'meat',
+    'en:breads': 'bakery', 'en:pastries': 'bakery', 'en:biscuits-and-cakes': 'bakery',
+    'en:frozen-foods': 'frozen', 'en:ice-creams': 'frozen',
+    'en:beverages': 'beverages', 'en:sodas': 'beverages', 'en:juices': 'beverages',
+    'en:waters': 'beverages', 'en:coffees': 'beverages', 'en:teas': 'beverages',
+    'en:snacks': 'snacks', 'en:chips-and-crisps': 'snacks', 'en:candies': 'snacks',
+    'en:cereals-and-their-products': 'pantry', 'en:pastas': 'pantry',
+    'en:rices': 'pantry', 'en:sauces': 'pantry', 'en:condiments': 'pantry',
+    'en:oils-and-fats': 'pantry', 'en:canned-foods': 'pantry',
+    'en:beauty-products': 'personal', 'en:hygiene-products': 'personal',
+    'en:household-products': 'household', 'en:cleaning-products': 'household',
+}
+
+_NAME_KWORDS = {
+    'produce':   ['apple','banana','orange','lettuce','tomato','pepper','onion','potato','carrot','fruit','vegetable','berry','grape','spinach','broccoli'],
+    'dairy':     ['milk','cheese','yogurt','butter','cream','eggs','egg'],
+    'meat':      ['chicken','beef','pork','turkey','salmon','tuna','shrimp','fish','steak','bacon','sausage'],
+    'bakery':    ['bread','bagel','muffin','roll','tortilla','cake','biscuit'],
+    'frozen':    ['frozen','ice cream','popsicle'],
+    'beverages': ['juice','soda','water','coffee','tea','drink','lemonade','gatorade'],
+    'snacks':    ['chips','crackers','popcorn','candy','chocolate','pretzel'],
+    'pantry':    ['pasta','rice','beans','flour','sugar','oil','sauce','cereal','oats','soup','broth'],
+    'personal':  ['shampoo','soap','lotion','toothpaste','deodorant','razor','shaving'],
+    'household': ['paper towel','toilet paper','detergent','cleaner','bleach','sponge'],
+}
+
+def _guess_category(tags: list, name: str) -> str:
+    for tag in tags:
+        if tag in _OFF_CAT_MAP:
+            return _OFF_CAT_MAP[tag]
+    name_l = name.lower()
+    for cat, kws in _NAME_KWORDS.items():
+        if any(kw in name_l for kw in kws):
+            return cat
+    return 'other'
+
+
+@app.route('/api/upc/<barcode>')
+def api_upc_lookup(barcode):
+    """Proxy UPC barcode lookup to Open Food Facts. Returns product info or {found:false}."""
+    if not re.fullmatch(r'\d{6,14}', barcode):
+        return jsonify({'found': False, 'error': 'Invalid barcode'}), 400
+    try:
+        r = requests.get(
+            f'https://world.openfoodfacts.org/api/v0/product/{barcode}.json',
+            headers={'User-Agent': 'FamilyDashboard/1.1'},
+            timeout=8
+        )
+        data = r.json()
+        if data.get('status') != 1 or 'product' not in data:
+            return jsonify({'found': False})
+        p     = data['product']
+        name  = (p.get('product_name_en') or p.get('product_name') or '').strip()
+        brand = p.get('brands', '').split(',')[0].strip()
+        tags  = p.get('categories_tags', [])
+        return jsonify({
+            'found':    True,
+            'upc':      barcode,
+            'name':     name,
+            'brand':    brand,
+            'category': _guess_category(tags, name),
+            'imageUrl': p.get('image_front_small_url') or p.get('image_url') or '',
+        })
+    except Exception as e:
+        app.logger.warning(f'[upc] lookup failed for {barcode}: {e}')
+        return jsonify({'found': False, 'error': 'Lookup unavailable'})
+
+
 # ── Photo API ─────────────────────────────────────────────────────────────────
 
 @app.route('/api/photos', methods=['POST'])

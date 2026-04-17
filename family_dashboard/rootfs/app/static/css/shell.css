@@ -265,3 +265,80 @@ html, body { height: 100%; width: 100%; font-family: var(--font); }
 .event-detail-value.empty  { color: rgba(255,255,255,0.40); font-style: italic; }
 .event-type-badge          { display: inline-flex; align-items: center; gap: 6px; padding: 6px var(--r-md); background: rgba(255,255,255,0.20); color: var(--color-white); border: 1px solid rgba(255,255,255,0.30); border-radius: var(--r-pill); font-size: 11px; font-weight: 600; margin-top: 6px; }
 .event-type-badge::before  { content: ''; width: 6px; height: 6px; background: var(--color-white); border-radius: 50%; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE (≤ 768px)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --mobile-nav-h: 64px;
+}
+
+@media (max-width: 768px) {
+  /* Full-column layout */
+  .app {
+    grid-template-columns: 1fr;
+    grid-template-rows: var(--header-h) 1fr var(--mobile-nav-h);
+    grid-template-areas:
+      "header"
+      "content"
+      "mobile-nav";
+  }
+
+  .sidebar    { display: none !important; }
+  .header     { border-radius: 0; padding: 0 var(--sp-4); }
+  .header-title { font-size: 18px; }
+  .content    { padding: 4px; }
+
+  /* Mobile bottom nav */
+  .mobile-nav {
+    grid-area: mobile-nav;
+    display: flex !important;
+    align-items: center;
+    justify-content: space-around;
+    background: var(--color-white);
+    border-top: 2px solid var(--theme-sidebar-border);
+    box-shadow: 0 -2px 12px rgba(0,0,0,0.08);
+    padding: 4px 0;
+    z-index: 100;
+  }
+
+  .mobile-nav-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 6px 12px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: #9ca3af;
+    transition: color 0.2s;
+    flex: 1;
+    border-radius: var(--r-sm);
+  }
+  .mobile-nav-btn svg  { width: 24px; height: 24px; stroke: currentColor; stroke-width: 1.5; fill: none; }
+  .mobile-nav-btn span { font-size: 10px; font-weight: 600; }
+  .mobile-nav-btn.active { color: var(--theme-primary); }
+
+  /* Settings modal full-screen on mobile */
+  .settings-overlay { padding: 0; }
+  .settings-panel   { max-height: 100dvh; border-radius: 0; height: 100dvh; }
+
+  /* Event modal full-screen */
+  .event-modal-overlay { padding: 0; align-items: flex-end; }
+  .event-modal         { border-radius: var(--r-lg) var(--r-lg) 0 0; max-width: 100%; max-height: 85dvh; }
+
+  /* Grocery: bigger touch targets */
+  .grocery-item-check  { width: 32px; height: 32px; }
+  .grocery-store-item  { min-height: 64px; }
+  .grocery-store-check { width: 44px; height: 44px; min-width: 44px; }
+
+  /* Grocery add FAB — ensure it's visible above mobile nav */
+  .grocery-add-fab { bottom: calc(var(--mobile-nav-h) + 16px); }
+}
+
+/* Desktop: hide mobile nav */
+@media (min-width: 769px) {
+  .mobile-nav { display: none !important; }
+}

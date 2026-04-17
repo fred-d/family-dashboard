@@ -16,6 +16,7 @@
  * backend) instead of being stored as base64 data URLs.
  */
 import { isoWeek, weekDates, formatWeekRange } from './utils.js';
+import { BarcodeScanner } from './scanner.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -95,6 +96,10 @@ export class GroceryApp {
         // Meal-plan import modal
         this._mpModalOpen     = false;
         this._mpIngredients   = []; // { name, amount, unit, category, meal, selected }
+
+        // Scanner
+        this._scanner     = new BarcodeScanner();
+        this._scannerOpen = false;
 
         // Sync
         this._syncStatus = 'idle';
@@ -357,15 +362,16 @@ export class GroceryApp {
     // ── PANTRY TAB ────────────────────────────────────────────────────────────
 
     _renderPantryTab(body) {
-        const q        = this._pantrySearch.toLowerCase();
-        const filter   = this._pantryFilter;
-        let   items    = [...this._inventory];
-        if (q)              items = items.filter(i => i.name.toLowerCase().includes(q) || i.notes?.toLowerCase().includes(q));
+        const q       = this._pantrySearch.toLowerCase();
+        const filter  = this._pantryFilter;
+        let   items   = [...this._inventory];
+        if (q)                  items = items.filter(i => i.name.toLowerCase().includes(q) || i.brand?.toLowerCase().includes(q) || i.notes?.toLowerCase().includes(q));
         if (filter === 'staples') items = items.filter(i => i.isStaple);
         if (filter === 'low')     items = items.filter(i => i.stockLevel === 'low' || i.stockLevel === 'out');
 
-        const staples   = this._inventory.filter(i => i.isStaple);
-        const lowItems  = this._inventory.filter(i => i.stockLevel === 'low' || i.stockLevel === 'out');
+        const staples  = this._inventory.filter(i => i.isStaple);
+        const lowItems = this._inventory.filter(i => i.stockLevel === 'low' || i.stockLevel === 'out');
+        const outItems = this._inventory.filter(i => i.stockLevel === 'out');
 
         body.innerHTML = `
             <div class="grocery-pantry-toolbar">
@@ -374,31 +380,42 @@ export class GroceryApp {
                         <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                     </svg>
                     <input type="search" id="groceryPantrySearch" class="grocery-pantry-search"
-                           placeholder="Search pantry items…" value="${this._esc(this._pantrySearch)}">
+                           placeholder="Search pantry…" value="${this._esc(this._pantrySearch)}">
                 </div>
                 <button class="grocery-action-btn primary" id="groceryAddPantryItem">+ New Item</button>
+            </div>
+
+            <div class="pantry-scan-bar">
+                <button class="pantry-scan-btn restock" id="pantryScanRestock">
+                    <span class="pantry-scan-icon">📥</span>
+                    <span>Scan to Restock</span>
+                </button>
+                <button class="pantry-scan-btn mark-used" id="pantryScanMarkUsed">
+                    <span class="pantry-scan-icon">📤</span>
+                    <span>Scan to Mark Empty</span>
+                </button>
             </div>
 
             <div class="grocery-pantry-filters">
                 <button class="grocery-filter-btn${filter === 'all'     ? ' active' : ''}" data-pfilter="all">All (${this._inventory.length})</button>
                 <button class="grocery-filter-btn${filter === 'staples' ? ' active' : ''}" data-pfilter="staples">⭐ Staples (${staples.length})</button>
                 <button class="grocery-filter-btn${filter === 'low'     ? ' active' : ''}" data-pfilter="low">
-                    ⚠️ Low/Out (${lowItems.length})${lowItems.length > 0 ? ' 🔴' : ''}
+                    ⚠️ Need Restock (${lowItems.length})${lowItems.length > 0 ? ' 🔴' : ''}
                 </button>
             </div>
 
-            ${lowItems.length > 0 && filter === 'all' ? `
+            ${outItems.length > 0 && filter === 'all' ? `
                 <div class="grocery-pantry-alert">
-                    ⚠️ <strong>${lowItems.length} item${lowItems.length > 1 ? 's' : ''}</strong> running low or out — add to your list!
-                    <button class="grocery-pantry-alert-btn" id="groceryAddAllLow">Add All Low</button>
+                    🔴 <strong>${outItems.length} item${outItems.length > 1 ? 's' : ''} out</strong> — add to shopping list?
+                    <button class="grocery-pantry-alert-btn" id="groceryAddAllOut">Add All Out</button>
                 </div>` : ''}
 
-            <div class="grocery-pantry-grid" id="groceryPantryGrid">
+            <div class="pantry-grid" id="pantryGrid">
                 ${items.length === 0
                     ? `<div class="grocery-empty" style="grid-column:1/-1">
                            <div class="grocery-empty-icon">📦</div>
                            <div class="grocery-empty-title">${q || filter !== 'all' ? 'No items match' : 'Pantry is empty'}</div>
-                           <div class="grocery-empty-text">Add your regularly-purchased items here for fast list-building.</div>
+                           <div class="grocery-empty-text">Add items manually or use Scan to Restock to add items by scanning their barcode.</div>
                        </div>`
                     : items.map(inv => this._pantryCardHTML(inv)).join('')
                 }
@@ -409,75 +426,75 @@ export class GroceryApp {
             this._pantrySearch = e.target.value;
             this._renderPantryTab(body);
         });
-
         body.querySelectorAll('[data-pfilter]').forEach(btn => {
             btn.addEventListener('click', () => { this._pantryFilter = btn.dataset.pfilter; this._render(); });
         });
-
         body.querySelector('#groceryAddPantryItem')?.addEventListener('click', () => this._openInvModal());
-
-        body.querySelector('#groceryAddAllLow')?.addEventListener('click', () => {
-            lowItems.forEach(inv => this._addFromInventory(inv));
+        body.querySelector('#groceryAddAllOut')?.addEventListener('click', () => {
+            outItems.forEach(inv => this._addFromInventory(inv));
         });
 
-        body.querySelectorAll('.grocery-pantry-card').forEach(card => {
-            const id = card.dataset.id;
+        // Scan buttons
+        body.querySelector('#pantryScanRestock')?.addEventListener('click', () => this._openScanner('restock'));
+        body.querySelector('#pantryScanMarkUsed')?.addEventListener('click', () => this._openScanner('mark_used'));
+
+        // Card interactions
+        body.querySelectorAll('.pantry-card').forEach(card => {
+            const id  = card.dataset.id;
             const inv = this._inventory.find(i => i.id === id);
             if (!inv) return;
 
-            card.querySelector('.grocery-pantry-add-btn')?.addEventListener('click', () => this._addFromInventory(inv));
-            card.querySelector('.grocery-pantry-edit-btn')?.addEventListener('click', () => this._openInvModal(inv));
-            card.querySelector('.grocery-pantry-stock')?.addEventListener('change', e => {
-                this._updateInventoryItem(id, { stockLevel: e.target.value });
+            // Status buttons
+            card.querySelectorAll('.pantry-status-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const newStatus = btn.dataset.status;
+                    this._setStockStatus(id, newStatus);
+                });
             });
-            card.querySelector('.grocery-pantry-staple')?.addEventListener('click', () => {
+
+            card.querySelector('.pantry-card-add')?.addEventListener('click', () => this._addFromInventory(inv));
+            card.querySelector('.pantry-card-edit')?.addEventListener('click', () => this._openInvModal(inv));
+            card.querySelector('.pantry-card-staple')?.addEventListener('click', () => {
                 this._updateInventoryItem(id, { isStaple: !inv.isStaple });
             });
         });
     }
 
     _pantryCardHTML(inv) {
-        const cat        = catOf(inv.category);
-        const onList     = this._items.some(i => !i.checked && (i.inventoryRef === inv.id || i.name.toLowerCase() === inv.name.toLowerCase()));
-        const stockClass = inv.stockLevel === 'out' ? 'out' : inv.stockLevel === 'low' ? 'low' : 'ok';
+        const cat      = catOf(inv.category);
+        const onList   = this._items.some(i => !i.checked && (i.inventoryRef === inv.id || i.name.toLowerCase() === inv.name.toLowerCase()));
+        const status   = inv.stockLevel || 'ok';
+        const statusInfo = { ok: { cls:'ok', label:'In Stock', icon:'✅' }, low: { cls:'low', label:'Low', icon:'⚠️' }, out: { cls:'out', label:'Out', icon:'🔴' } }[status] || { cls:'ok', label:'In Stock', icon:'✅' };
 
         return `
-            <div class="grocery-pantry-card${onList ? ' on-list' : ''}" data-id="${inv.id}">
-                <div class="grocery-pantry-card-top" style="--cat-color:${cat.color}">
-                    ${inv.photo
-                        ? `<img src="${inv.photo}" class="grocery-pantry-photo" alt="${this._esc(inv.name)}">`
-                        : `<span class="grocery-pantry-emoji">${cat.emoji}</span>`}
-                    ${inv.isStaple
-                        ? `<span class="grocery-pantry-staple-badge">⭐</span>`
-                        : ''}
-                    ${onList ? `<span class="grocery-pantry-on-list-badge">✓ On list</span>` : ''}
+        <div class="pantry-card status-${statusInfo.cls}" data-id="${inv.id}">
+            <div class="pantry-card-media" style="--cat-color:${cat.color}">
+                ${inv.photo
+                    ? `<img src="${inv.photo}" class="pantry-card-photo" alt="${this._esc(inv.name)}">`
+                    : `<span class="pantry-card-emoji">${cat.emoji}</span>`}
+                ${inv.isStaple ? `<span class="pantry-staple-badge" title="Weekly staple">⭐</span>` : ''}
+                ${onList ? `<span class="pantry-on-list-badge">✓ On list</span>` : ''}
+                ${inv.upc ? `<span class="pantry-upc-badge" title="UPC: ${inv.upc}">🔲</span>` : ''}
+            </div>
+            <div class="pantry-card-body">
+                <div class="pantry-card-name">${this._esc(inv.name)}</div>
+                ${inv.brand ? `<div class="pantry-card-brand">${this._esc(inv.brand)}</div>` : ''}
+                ${inv.notes && !inv.brand ? `<div class="pantry-card-brand">${this._esc(inv.notes)}</div>` : ''}
+                <div class="pantry-status-row">
+                    <button class="pantry-status-btn${status === 'ok'  ? ' active' : ''}" data-status="ok"  title="In Stock">✅</button>
+                    <button class="pantry-status-btn${status === 'low' ? ' active' : ''}" data-status="low" title="Running Low">⚠️</button>
+                    <button class="pantry-status-btn${status === 'out' ? ' active' : ''}" data-status="out" title="Out">🔴</button>
+                    <span class="pantry-status-label status-${statusInfo.cls}">${statusInfo.label}</span>
                 </div>
-                <div class="grocery-pantry-card-body">
-                    <div class="grocery-pantry-name">${this._esc(inv.name)}</div>
-                    ${inv.notes ? `<div class="grocery-pantry-notes">${this._esc(inv.notes)}</div>` : ''}
-                    <div class="grocery-pantry-meta">
-                        ${inv.defaultAmount ? `<span class="grocery-pantry-amount">${this._esc(inv.defaultAmount)} ${this._esc(inv.defaultUnit || '')}</span>` : ''}
-                        ${inv.defaultFulfillment === 'instore' ? '<span class="grocery-fulfillment instore small">🏪</span>'
-                          : inv.defaultFulfillment === 'curbside' ? '<span class="grocery-fulfillment curbside small">🚗</span>' : ''}
-                    </div>
-                </div>
-                <div class="grocery-pantry-card-footer">
-                    <select class="grocery-pantry-stock stock-${stockClass}" title="Stock level">
-                        <option value="ok"  ${inv.stockLevel === 'ok'  ? 'selected' : ''}>✅ In stock</option>
-                        <option value="low" ${inv.stockLevel === 'low' ? 'selected' : ''}>⚠️ Running low</option>
-                        <option value="out" ${inv.stockLevel === 'out' ? 'selected' : ''}>🔴 Out</option>
-                    </select>
-                    <div class="grocery-pantry-card-actions">
-                        <button class="grocery-pantry-staple" title="${inv.isStaple ? 'Remove from staples' : 'Mark as weekly staple'}">
-                            ${inv.isStaple ? '⭐' : '☆'}
-                        </button>
-                        <button class="grocery-pantry-edit-btn" title="Edit">✏️</button>
-                        <button class="grocery-pantry-add-btn${onList ? ' on-list' : ''}" title="Add to list">
-                            ${onList ? '✓' : '+ List'}
-                        </button>
-                    </div>
-                </div>
-            </div>`;
+            </div>
+            <div class="pantry-card-footer">
+                <button class="pantry-card-staple" title="${inv.isStaple ? 'Remove staple' : 'Mark as staple'}">${inv.isStaple ? '⭐' : '☆'}</button>
+                <button class="pantry-card-edit"   title="Edit">✏️</button>
+                <button class="pantry-card-add${onList ? ' on-list' : ''}" title="Add to shopping list">
+                    ${onList ? '✓ Listed' : '+ List'}
+                </button>
+            </div>
+        </div>`;
     }
 
     // ── REQUESTS TAB ──────────────────────────────────────────────────────────
@@ -895,17 +912,19 @@ export class GroceryApp {
 
     // ── INVENTORY MODAL (add/edit pantry item) ────────────────────────────────
 
-    _openInvModal(inv = null) {
+    _openInvModal(inv = null, prefill = null) {
         this._editInvItem  = inv ?? null;
-        this._editInvPhoto = inv?.photo ?? null;
+        this._editInvPhoto = inv?.photo ?? prefill?.photo ?? null;
+        this._prefillInv   = prefill ?? null;
         this._renderInvModal();
     }
 
     _renderInvModal() {
         const overlay = document.getElementById('groceryInvOverlay');
         if (!overlay) return;
-        const inv   = this._editInvItem;
-        const isNew = !inv;
+        const inv     = this._editInvItem;
+        const prefill = this._prefillInv;
+        const isNew   = !inv;
 
         overlay.innerHTML = `
             <div class="grocery-modal" role="dialog" aria-modal="true">
@@ -932,7 +951,7 @@ export class GroceryApp {
                     <div class="grocery-modal-field">
                         <label>Item Name *</label>
                         <input type="text" id="groceryInvName" class="grocery-modal-input"
-                               value="${this._esc(inv?.name || '')}" placeholder="e.g. Organic Whole Milk">
+                               value="${this._esc(inv?.name || prefill?.name || '')}" placeholder="e.g. Organic Whole Milk">
                     </div>
 
                     <div class="grocery-modal-row">
@@ -952,7 +971,7 @@ export class GroceryApp {
                         <label>Category</label>
                         <select id="groceryInvCategory" class="grocery-modal-input">
                             ${CATEGORIES.map(c =>
-                                `<option value="${c.id}" ${(inv?.category || 'other') === c.id ? 'selected' : ''}>
+                                `<option value="${c.id}" ${(inv?.category || prefill?.category || 'other') === c.id ? 'selected' : ''}>
                                     ${c.emoji} ${c.label}</option>`).join('')}
                         </select>
                     </div>
@@ -972,6 +991,27 @@ export class GroceryApp {
                         <input type="text" id="groceryInvNotes" class="grocery-modal-input"
                                value="${this._esc(inv?.notes || '')}"
                                placeholder="Brand, size, any notes for the shopper…">
+                    </div>
+
+                    <div class="grocery-modal-row">
+                        <div class="grocery-modal-field">
+                            <label>Brand</label>
+                            <input type="text" id="groceryInvBrand" class="grocery-modal-input"
+                                   value="${this._esc(inv?.brand || prefill?.brand || '')}" placeholder="e.g. Tropicana">
+                        </div>
+                        <div class="grocery-modal-field">
+                            <label>UPC Barcode</label>
+                            <input type="text" id="groceryInvUPC" class="grocery-modal-input"
+                                   value="${this._esc(inv?.upc || prefill?.upc || '')}" placeholder="Scan or enter manually"
+                                   pattern="\\d{6,14}" maxlength="14">
+                        </div>
+                    </div>
+
+                    <div class="grocery-modal-field">
+                        <label class="grocery-checkbox-label">
+                            <input type="checkbox" id="groceryInvAutoAdd" ${inv?.autoAddToList ? 'checked' : ''}>
+                            🛒 Auto-add to shopping list when marked Out
+                        </label>
                     </div>
 
                     <div class="grocery-modal-field">
@@ -1051,6 +1091,9 @@ export class GroceryApp {
                 notes:              overlay.querySelector('#groceryInvNotes')?.value.trim()    || '',
                 isStaple:           overlay.querySelector('#groceryInvStaple')?.checked ?? false,
                 photo:              this._editInvPhoto || null,
+                brand:              overlay.querySelector('#groceryInvBrand')?.value.trim()    || '',
+                upc:                overlay.querySelector('#groceryInvUPC')?.value.trim()      || '',
+                autoAddToList:      overlay.querySelector('#groceryInvAutoAdd')?.checked ?? false,
             };
             if (this._editInvItem) {
                 this._updateInventoryItem(this._editInvItem.id, data);
@@ -1357,6 +1400,9 @@ export class GroceryApp {
             defaultFulfillment: data.defaultFulfillment || 'curbside',
             isStaple:           data.isStaple           || false,
             stockLevel:         data.stockLevel         || 'ok',
+            brand:              data.brand              || '',
+            upc:                data.upc                || '',
+            autoAddToList:      data.autoAddToList      ?? false,
             useCount:           0,
             lastAdded:          null,
         };
@@ -1385,6 +1431,162 @@ export class GroceryApp {
         this._inventory[idx] = { ...this._inventory[idx], ...changes };
         this._persistInventory();
         if (rerender) this._render();
+    }
+
+    // ── Scanner integration ───────────────────────────────────────────────────
+
+    _openScanner(mode) {
+        this._scanner.open(mode, result => this._handleScanResult(result));
+    }
+
+    _handleScanResult({ mode, barcode, product }) {
+        if (mode === 'restock') {
+            // Find existing pantry item by UPC or name match
+            const existing = this._inventory.find(i => i.upc === barcode) ||
+                             (product.name ? this._inventory.find(i => i.name.toLowerCase() === product.name.toLowerCase()) : null);
+            if (existing) {
+                // Already in pantry — just restock (mark as in_stock)
+                this._setStockStatus(existing.id, 'ok', false);
+                // Remove from shopping list if present
+                const onList = this._items.find(i => !i.checked && (i.inventoryRef === existing.id || i.name.toLowerCase() === existing.name.toLowerCase()));
+                if (onList) this._removeItem(onList.id);
+                this._showToast(`✅ ${existing.name} restocked!`);
+            } else {
+                // Not in pantry — open modal to add it
+                this._openInvModal(null, {
+                    name:     product.name || '',
+                    brand:    product.brand || '',
+                    upc:      barcode,
+                    category: product.category || 'other',
+                    photo:    product.imageUrl || null,
+                    stockLevel: 'ok',
+                });
+            }
+        } else if (mode === 'mark_used') {
+            const existing = this._inventory.find(i => i.upc === barcode) ||
+                             (product.name ? this._inventory.find(i => i.name.toLowerCase() === product.name.toLowerCase()) : null);
+            if (existing) {
+                this._openStatusPickerModal(existing);
+            } else {
+                // Not in pantry — offer to add to shopping list directly
+                this._openAddToListDirectModal(product, barcode);
+            }
+        }
+    }
+
+    _openStatusPickerModal(inv) {
+        const overlay = document.getElementById('groceryInvOverlay');
+        if (!overlay) return;
+        overlay.innerHTML = `
+            <div class="grocery-modal status-picker-modal" role="dialog">
+                <div class="grocery-modal-header">
+                    <div class="grocery-modal-title">📦 ${this._esc(inv.name)}</div>
+                    <button class="grocery-modal-close" id="statusPickerClose">×</button>
+                </div>
+                <div class="grocery-modal-body" style="text-align:center;padding:32px 20px">
+                    ${inv.photo ? `<img src="${inv.photo}" style="width:80px;height:80px;object-fit:contain;border-radius:12px;margin-bottom:16px" alt="">` : `<div style="font-size:48px;margin-bottom:16px">${catOf(inv.category).emoji}</div>`}
+                    <div style="font-size:16px;font-weight:600;margin-bottom:8px">How much is left?</div>
+                    <div style="font-size:14px;color:var(--color-muted);margin-bottom:24px">${inv.brand ? this._esc(inv.brand) : ''}</div>
+                    <div class="status-picker-btns">
+                        <button class="status-picker-btn low" id="spLow">⚠️<br><span>Running Low</span></button>
+                        <button class="status-picker-btn out" id="spOut">🔴<br><span>All Out</span></button>
+                        <button class="status-picker-btn ok"  id="spOk">✅<br><span>Still Good</span></button>
+                    </div>
+                </div>
+            </div>`;
+        overlay.classList.add('active');
+
+        const close = () => overlay.classList.remove('active');
+        overlay.querySelector('#statusPickerClose')?.addEventListener('click', close);
+        overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+        overlay.querySelector('#spOk')?.addEventListener('click',  () => { this._setStockStatus(inv.id, 'ok');  close(); });
+        overlay.querySelector('#spLow')?.addEventListener('click', () => { this._setStockStatus(inv.id, 'low'); close(); });
+        overlay.querySelector('#spOut')?.addEventListener('click', () => {
+            this._setStockStatus(inv.id, 'out');
+            close();
+            // Prompt to add to shopping list
+            this._promptAddToList(inv);
+        });
+    }
+
+    _openAddToListDirectModal(product, barcode) {
+        const overlay = document.getElementById('groceryInvOverlay');
+        if (!overlay) return;
+        overlay.innerHTML = `
+            <div class="grocery-modal" role="dialog">
+                <div class="grocery-modal-header">
+                    <div class="grocery-modal-title">🛒 Not in Pantry</div>
+                    <button class="grocery-modal-close" id="directListClose">×</button>
+                </div>
+                <div class="grocery-modal-body" style="text-align:center;padding:24px 20px">
+                    ${product.imageUrl ? `<img src="${product.imageUrl}" style="width:72px;height:72px;object-fit:contain;border-radius:12px;margin-bottom:12px" alt="">` : '<div style="font-size:48px;margin-bottom:12px">📦</div>'}
+                    <div style="font-size:16px;font-weight:600;margin-bottom:4px">${this._esc(product.name || 'Unknown item')}</div>
+                    ${product.brand ? `<div style="font-size:13px;color:var(--color-muted);margin-bottom:16px">${this._esc(product.brand)}</div>` : '<div style="margin-bottom:16px"></div>'}
+                    <div style="font-size:14px;color:var(--color-muted);margin-bottom:24px">This item isn't tracked in your pantry. What would you like to do?</div>
+                    <div style="display:flex;flex-direction:column;gap:10px">
+                        <button class="grocery-modal-save" id="dlAddList">🛒 Add to Shopping List</button>
+                        <button class="grocery-action-btn primary" id="dlAddPantry">📦 Add to Pantry &amp; Shopping List</button>
+                        <button class="grocery-modal-cancel" id="dlCancel">Cancel</button>
+                    </div>
+                </div>
+            </div>`;
+        overlay.classList.add('active');
+
+        const close = () => overlay.classList.remove('active');
+        overlay.querySelector('#directListClose')?.addEventListener('click', close);
+        overlay.querySelector('#dlCancel')?.addEventListener('click', close);
+        overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+        overlay.querySelector('#dlAddList')?.addEventListener('click', () => {
+            this._addItem({ name: product.name || 'Unknown item', category: product.category || detectCategory(product.name || ''), photo: product.imageUrl || null, source: 'scan' });
+            close();
+            this._showToast('🛒 Added to shopping list!');
+        });
+        overlay.querySelector('#dlAddPantry')?.addEventListener('click', () => {
+            close();
+            this._openInvModal(null, { name: product.name || '', brand: product.brand || '', upc: barcode, category: product.category || 'other', photo: product.imageUrl || null, stockLevel: 'out' });
+        });
+    }
+
+    _setStockStatus(id, newStatus, rerender = true) {
+        const inv = this._inventory.find(i => i.id === id);
+        if (!inv) return;
+        this._updateInventoryItem(id, { stockLevel: newStatus }, rerender);
+        if (newStatus === 'out' && inv.autoAddToList) {
+            this._promptAddToList({ ...inv, stockLevel: 'out' });
+        }
+    }
+
+    _promptAddToList(inv) {
+        const alreadyOn = this._items.some(i => !i.checked && (i.inventoryRef === inv.id || i.name.toLowerCase() === inv.name.toLowerCase()));
+        if (alreadyOn) {
+            this._showToast(`${inv.name} is already on your list`);
+            return;
+        }
+        // Small toast with action button
+        this._showToast(
+            `🔴 ${inv.name} is out — add to list?`,
+            'Add to List',
+            () => this._addFromInventory(inv)
+        );
+    }
+
+    _showToast(message, actionLabel = null, onAction = null) {
+        document.querySelectorAll('.pantry-toast').forEach(t => t.remove());
+        const toast = document.createElement('div');
+        toast.className = 'pantry-toast';
+        toast.innerHTML = `
+            <span class="pantry-toast-msg">${this._esc(message)}</span>
+            ${actionLabel ? `<button class="pantry-toast-action">${this._esc(actionLabel)}</button>` : ''}
+            <button class="pantry-toast-dismiss">✕</button>`;
+        document.body.appendChild(toast);
+
+        const dismiss = () => { toast.classList.add('hiding'); setTimeout(() => toast.remove(), 300); };
+        toast.querySelector('.pantry-toast-dismiss')?.addEventListener('click', dismiss);
+        toast.querySelector('.pantry-toast-action')?.addEventListener('click', () => { onAction?.(); dismiss(); });
+        setTimeout(dismiss, 5000);
+        requestAnimationFrame(() => toast.classList.add('show'));
     }
 
     _removeInventoryItem(id) {

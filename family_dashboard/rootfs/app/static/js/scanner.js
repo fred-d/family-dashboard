@@ -1,0 +1,230 @@
+/**
+ * scanner.js — UPC Barcode Scanner
+ *
+ * Lazy-loads html5-qrcode from CDN, opens a camera overlay modal,
+ * and proxies UPC lookups through the backend to Open Food Facts.
+ *
+ * Usage:
+ *   import { BarcodeScanner } from './scanner.js';
+ *   const scanner = new BarcodeScanner();
+ *   scanner.open('restock', result => { ... });
+ *   // result = { mode, barcode, product: { found, name, brand, category, imageUrl, upc } }
+ */
+
+export class BarcodeScanner {
+    constructor() {
+        this._qr       = null;   // Html5Qrcode instance
+        this._overlay  = null;   // DOM overlay element
+        this._mode     = 'restock'; // 'restock' | 'mark_used'
+        this._onResult = null;
+        this._busy     = false;  // debounce after scan
+    }
+
+    /** Open the scanner modal. mode = 'restock' | 'mark_used' */
+    async open(mode, onResult) {
+        if (this._overlay) return; // already open
+        this._mode     = mode;
+        this._onResult = onResult;
+        this._busy     = false;
+        await this._loadLib();
+        this._buildOverlay();
+        await this._startCamera();
+    }
+
+    close() {
+        this._stopCamera();
+        this._overlay?.remove();
+        this._overlay = null;
+    }
+
+    // ── Library loading ───────────────────────────────────────────────────────
+
+    async _loadLib() {
+        if (window.Html5Qrcode) return;
+        await new Promise((resolve, reject) => {
+            const s   = document.createElement('script');
+            s.src     = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+            s.onload  = resolve;
+            s.onerror = reject;
+            document.head.appendChild(s);
+        });
+    }
+
+    // ── DOM ───────────────────────────────────────────────────────────────────
+
+    _buildOverlay() {
+        const el = document.createElement('div');
+        el.id        = 'scannerOverlay';
+        el.className = 'scanner-overlay';
+        el.innerHTML = `
+            <div class="scanner-modal">
+                <div class="scanner-header">
+                    <div class="scanner-mode-tabs">
+                        <button class="scanner-mode-tab${this._mode === 'restock'   ? ' active' : ''}" data-mode="restock">
+                            📥 Restock
+                        </button>
+                        <button class="scanner-mode-tab${this._mode === 'mark_used' ? ' active' : ''}" data-mode="mark_used">
+                            📤 Used / Empty
+                        </button>
+                    </div>
+                    <button class="scanner-close" id="scannerClose" aria-label="Close scanner">✕</button>
+                </div>
+
+                <div class="scanner-camera-wrap">
+                    <div id="scannerQr"></div>
+                    <div class="scanner-corners">
+                        <span class="sc-corner sc-tl"></span><span class="sc-corner sc-tr"></span>
+                        <span class="sc-corner sc-bl"></span><span class="sc-corner sc-br"></span>
+                    </div>
+                    <div class="scanner-hint-text" id="scannerHint">Point camera at barcode</div>
+                </div>
+
+                <div class="scanner-result" id="scannerResult" hidden></div>
+            </div>`;
+
+        document.body.appendChild(el);
+        this._overlay = el;
+
+        // Close button
+        el.querySelector('#scannerClose').addEventListener('click', () => this.close());
+
+        // Mode tabs
+        el.querySelectorAll('.scanner-mode-tab').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this._mode = btn.dataset.mode;
+                el.querySelectorAll('.scanner-mode-tab').forEach(b => b.classList.toggle('active', b === btn));
+            });
+        });
+    }
+
+    // ── Camera ────────────────────────────────────────────────────────────────
+
+    async _startCamera() {
+        if (!window.Html5Qrcode) return;
+        const qr = new Html5Qrcode('scannerQr');
+        this._qr = qr;
+        try {
+            await qr.start(
+                { facingMode: 'environment' },
+                { fps: 10, qrbox: { width: 260, height: 140 }, aspectRatio: 1.6 },
+                (decoded) => this._onDetected(decoded)
+            );
+        } catch (err) {
+            console.warn('[Scanner] Camera error:', err);
+            this._showResult(`
+                <div class="scanner-error">
+                    <div class="scanner-error-icon">📷</div>
+                    <div class="scanner-error-msg">Camera not available.<br>Check browser permissions.</div>
+                    <button class="scanner-btn secondary" id="scannerRetryCamera">Retry</button>
+                </div>`);
+            this._overlay?.querySelector('#scannerRetryCamera')
+                ?.addEventListener('click', async () => {
+                    this._hideResult();
+                    await this._startCamera();
+                });
+        }
+    }
+
+    _stopCamera() {
+        if (this._qr) {
+            this._qr.stop().catch(() => {});
+            this._qr = null;
+        }
+    }
+
+    // ── Scan handler ──────────────────────────────────────────────────────────
+
+    async _onDetected(barcode) {
+        if (this._busy) return;
+        this._busy = true;
+        this._stopCamera();
+
+        // Haptic feedback on mobile
+        if (navigator.vibrate) navigator.vibrate(60);
+
+        // Show lookup spinner
+        this._showResult(`
+            <div class="scanner-lookup">
+                <div class="scanner-spinner"></div>
+                <div class="scanner-lookup-text">Looking up <code>${barcode}</code>…</div>
+            </div>`);
+
+        let product;
+        try {
+            const r = await fetch(`/api/upc/${encodeURIComponent(barcode)}`);
+            product = await r.json();
+        } catch {
+            product = { found: false };
+        }
+        product.upc = barcode;
+
+        this._showProductConfirm(product);
+    }
+
+    _showProductConfirm(product) {
+        const modeLabel  = this._mode === 'restock' ? 'Add to Pantry / Restock' : 'Mark as Used';
+        const actionText = this._mode === 'restock' ? '✅ Confirm Restock' : '📤 Set Status';
+
+        this._showResult(`
+            <div class="scanner-product">
+                <div class="scanner-product-media">
+                    ${product.imageUrl
+                        ? `<img src="${product.imageUrl}" class="scanner-product-img" alt="">`
+                        : `<div class="scanner-product-placeholder">📦</div>`}
+                </div>
+                <div class="scanner-product-info">
+                    ${product.found
+                        ? `<div class="scanner-product-name">${this._esc(product.name || 'Unknown Product')}</div>
+                           ${product.brand ? `<div class="scanner-product-brand">${this._esc(product.brand)}</div>` : ''}`
+                        : `<div class="scanner-product-name scanner-not-found">Product not in database</div>
+                           <div class="scanner-product-brand">Barcode: ${product.upc}</div>`
+                    }
+                </div>
+            </div>
+
+            ${!product.found ? `
+                <div class="scanner-manual-entry">
+                    <input id="scannerManualName" class="scanner-input"
+                           type="text" placeholder="Enter item name…" autocomplete="off">
+                </div>` : ''}
+
+            <div class="scanner-actions">
+                <button class="scanner-btn primary" id="scannerConfirm">${actionText}</button>
+                <button class="scanner-btn secondary" id="scannerRescan">🔄 Scan Again</button>
+            </div>`);
+
+        this._overlay?.querySelector('#scannerConfirm')?.addEventListener('click', () => {
+            if (!product.found) {
+                const manual = this._overlay?.querySelector('#scannerManualName')?.value.trim();
+                if (!manual) { this._overlay?.querySelector('#scannerManualName')?.focus(); return; }
+                product = { ...product, name: manual, found: true };
+            }
+            this._onResult?.({ mode: this._mode, barcode: product.upc, product });
+            this.close();
+        });
+
+        this._overlay?.querySelector('#scannerRescan')?.addEventListener('click', () => {
+            this._hideResult();
+            this._busy = false;
+            this._startCamera();
+        });
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    _showResult(html) {
+        const r = this._overlay?.querySelector('#scannerResult');
+        if (!r) return;
+        r.innerHTML = html;
+        r.hidden = false;
+    }
+
+    _hideResult() {
+        const r = this._overlay?.querySelector('#scannerResult');
+        if (r) r.hidden = true;
+    }
+
+    _esc(s) {
+        return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+}

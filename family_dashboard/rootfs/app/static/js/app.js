@@ -66,6 +66,9 @@ function switchView(view) {
     document.querySelectorAll('.view-section').forEach(section => {
         section.classList.toggle('active', section.id === `view-${view}`);
     });
+    document.querySelectorAll('.mobile-nav-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.view === view);
+    });
 
     document.getElementById('headerTitle').textContent =
         VIEW_TITLES[view] || 'Family Dashboard';
