@@ -3,8 +3,8 @@
  * No side-effects, no DOM access, no imports needed.
  */
 
-/** Convert any colour string to rgba(...) */
-export function colorToRgba(color, alpha) {
+/** Convert any colour string to rgba(...) — internal helper */
+function colorToRgba(color, alpha) {
     const rgbMatch = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
     if (rgbMatch) return `rgba(${rgbMatch[1]},${rgbMatch[2]},${rgbMatch[3]},${alpha})`;
     if (color.startsWith('#')) {
@@ -18,10 +18,10 @@ export function colorToRgba(color, alpha) {
 }
 
 /**
- * Mix a colour with white to produce a solid pastel.
+ * Mix a colour with white to produce a solid pastel. — internal helper
  * factor 0 = original colour, 1 = pure white.  0.82 gives a soft pastel.
  */
-export function colorToLight(color, factor = 0.82) {
+function colorToLight(color, factor = 0.82) {
     const rgba = colorToRgba(color, 1);
     const m = rgba.match(/\d+/g);
     if (!m) return color;
@@ -64,11 +64,6 @@ export function weekDates(date = new Date()) {
         copy.setDate(d.getDate() + i);
         return copy;
     });
-}
-
-/** Format a Date to "Mon Apr 14" style. */
-export function formatShortDate(date) {
-    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
 /** Format a Date range to "Apr 7 – 13, 2026" */

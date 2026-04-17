@@ -6,12 +6,12 @@
  * calendar entity now gets its own colour from the dynamic palette assigned
  * in calendar.js. Users can override via the Custom Colors section in settings.
  *
- * Exports: THEMES, currentTheme (live ref), loadTheme, applyTheme,
- *          applyThemeColors, updateCustomPreview, syncColorInput, applyCustomTheme
+ * Exports: currentTheme (live ref), loadTheme, applyTheme,
+ *          updateCustomPreview, syncColorInput, applyCustomTheme
  */
 
 // ── Theme definitions ────────────────────────────────────────────────────────
-export const THEMES = {
+const THEMES = {
     default:      { primary: '#667eea', secondary: '#764ba2', accent: '#667eea', border: '#667eea', sidebarBorder: '#667eea', eventStyle: 'normal',           decoration: null  },
     christmas:    { primary: '#E50000', secondary: '#187F42', accent: '#E50000', border: '#E50000', sidebarBorder: '#187F42', eventStyle: 'festive-border',    decoration: '🎄' },
     halloween:    { primary: '#ff6b35', secondary: '#4a148c', accent: '#ff6b35', border: '#ff6b35', sidebarBorder: '#4a148c', eventStyle: 'spooky-glow',      decoration: '🎃' },
@@ -25,7 +25,7 @@ export const THEMES = {
 export let currentTheme = THEMES.default;
 
 // ── Core apply ───────────────────────────────────────────────────────────────
-export function applyThemeColors(colors) {
+function applyThemeColors(colors) {
     const root = document.documentElement;
     root.style.setProperty('--theme-primary',        colors.primary);
     root.style.setProperty('--theme-secondary',      colors.secondary);

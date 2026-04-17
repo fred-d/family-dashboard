@@ -9,7 +9,8 @@
  *          initializeCalendarColorsList, toggleCalendarColorMode,
  *          updateCalendarColor, updateCalendarColorFromText, resetCalendarColor,
  *          getEffectiveCalendarColor, calendarColorMode, customCalendarColors,
- *          CALENDAR_CONFIG, loadDefaultView, saveDefaultView
+ *          CALENDAR_CONFIG, loadDefaultView, saveDefaultView,
+ *          isCalendarHidden, toggleCalendarVisibility
  */
 import { currentTheme } from './theme.js';
 
@@ -74,10 +75,10 @@ function _loadDefaultViewToSelect() {
 }
 
 // ── Calendar colour helpers ───────────────────────────────────────────────────
-export function getEffectiveCalendarColor(entityId, isDark = false) {
+export function getEffectiveCalendarColor(entityId) {
     // 1. Custom user-set colour takes priority
     if (calendarColorMode === 'custom' && customCalendarColors[entityId])
-        return isDark ? customCalendarColors[entityId + '_dark'] : customCalendarColors[entityId];
+        return customCalendarColors[entityId];
 
     // 2. Active theme's calendar-specific colour
     if (currentTheme.calendarColors?.[entityId])
@@ -85,13 +86,11 @@ export function getEffectiveCalendarColor(entityId, isDark = false) {
 
     // 3. Default from CALENDAR_CONFIG (palette colour assigned at fetch time)
     const config = CALENDAR_CONFIG[entityId];
-    if (config) return isDark ? config.colorDark : config.color;
+    if (config) return config.color;
 
-    // 4. Theme primary/secondary as final fallback
-    const root = document.documentElement;
-    return isDark
-        ? getComputedStyle(root).getPropertyValue('--theme-secondary').trim()
-        : getComputedStyle(root).getPropertyValue('--theme-primary').trim();
+    // 4. Theme primary as final fallback
+    return getComputedStyle(document.documentElement)
+        .getPropertyValue('--theme-primary').trim();
 }
 
 export function loadCalendarColors() {
@@ -119,10 +118,9 @@ export function initializeCalendarColorsList() {
     }
 
     entries.forEach(([entityId, config]) => {
-        const cc      = customCalendarColors[entityId]           || config.color;
-        const cd      = customCalendarColors[entityId + '_dark'] || config.colorDark;
-        const hidden  = isCalendarHidden(entityId);
-        const item    = document.createElement('div');
+        const color  = customCalendarColors[entityId] || config.color;
+        const hidden = isCalendarHidden(entityId);
+        const item   = document.createElement('div');
         item.className = `calendar-color-item${hidden ? ' cal-hidden' : ''}`;
         item.innerHTML = `
             <button class="cal-vis-btn${hidden ? ' hidden' : ''}" onclick="toggleCalendarVisibility('${entityId}')"
@@ -132,23 +130,17 @@ export function initializeCalendarColorsList() {
                     : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`
                 }
             </button>
-            <div class="calendar-color-preview" style="background:linear-gradient(135deg,${cc} 0%,${cd} 100%);${hidden ? 'opacity:0.35;' : ''}">${config.initial}</div>
+            <div class="calendar-color-preview" style="background:${color};${hidden ? 'opacity:0.35;' : ''}">${config.initial}</div>
             <div class="calendar-color-info" style="${hidden ? 'opacity:0.45;' : ''}">
                 <div class="calendar-color-name">${config.name}</div>
                 <div class="calendar-color-entity">${entityId}</div>
             </div>
             <div class="calendar-color-inputs" style="${hidden ? 'opacity:0.35;pointer-events:none;' : ''}">
                 <div class="calendar-color-picker-wrapper">
-                    <input type="color" id="color_${entityId}" value="${cc}"
-                           onchange="updateCalendarColor('${entityId}', this.value, document.getElementById('colorDark_${entityId}').value)">
-                    <input type="text" id="colorText_${entityId}" value="${cc.toUpperCase()}" maxlength="7"
-                           onchange="updateCalendarColorFromText('${entityId}', this.value, 'color_${entityId}')">
-                </div>
-                <div class="calendar-color-picker-wrapper">
-                    <input type="color" id="colorDark_${entityId}" value="${cd}"
-                           onchange="updateCalendarColor('${entityId}', document.getElementById('color_${entityId}').value, this.value)">
-                    <input type="text" id="colorDarkText_${entityId}" value="${cd.toUpperCase()}" maxlength="7"
-                           onchange="updateCalendarColorFromText('${entityId}', this.value, 'colorDark_${entityId}')">
+                    <input type="color" id="color_${entityId}" value="${color}"
+                           onchange="updateCalendarColor('${entityId}', this.value)">
+                    <input type="text" id="colorText_${entityId}" value="${color.toUpperCase()}" maxlength="7"
+                           onchange="updateCalendarColorFromText('${entityId}', this.value)">
                 </div>
                 <button class="calendar-color-reset" onclick="resetCalendarColor('${entityId}')">Reset</button>
             </div>`;
@@ -166,42 +158,34 @@ export function toggleCalendarColorMode() {
     if (window.haCalendar?.calendar) window.haCalendar.calendar.refetchEvents();
 }
 
-export function updateCalendarColor(entityId, color, colorDark) {
-    customCalendarColors[entityId]           = color;
-    customCalendarColors[entityId + '_dark'] = colorDark;
+export function updateCalendarColor(entityId, color) {
+    customCalendarColors[entityId] = color;
     localStorage.setItem('customCalendarColors', JSON.stringify(customCalendarColors));
     const p = document.querySelector(`#color_${entityId}`)
         ?.closest('.calendar-color-item')
         ?.querySelector('.calendar-color-preview');
-    if (p) p.style.background = `linear-gradient(135deg,${color} 0%,${colorDark} 100%)`;
-    document.getElementById(`colorText_${entityId}`).value     = color.toUpperCase();
-    document.getElementById(`colorDarkText_${entityId}`).value = colorDark.toUpperCase();
+    if (p) p.style.background = color;
+    document.getElementById(`colorText_${entityId}`).value = color.toUpperCase();
     if (window.haCalendar?.calendar) { window.haCalendar.calendar.refetchEvents(); window.updateFilterCircles?.(); }
 }
 
-export function updateCalendarColorFromText(entityId, value, pickerId) {
+export function updateCalendarColorFromText(entityId, value) {
     if (/^#[0-9A-F]{6}$/i.test(value)) {
-        document.getElementById(pickerId).value = value;
-        const isDark = pickerId.includes('Dark');
-        isDark
-            ? updateCalendarColor(entityId, document.getElementById('color_' + entityId).value, value)
-            : updateCalendarColor(entityId, value, document.getElementById('colorDark_' + entityId).value);
+        document.getElementById(`color_${entityId}`).value = value;
+        updateCalendarColor(entityId, value);
     }
 }
 
 export function resetCalendarColor(entityId) {
     delete customCalendarColors[entityId];
-    delete customCalendarColors[entityId + '_dark'];
     localStorage.setItem('customCalendarColors', JSON.stringify(customCalendarColors));
     const cfg = CALENDAR_CONFIG[entityId];
     if (!cfg) return;
-    document.getElementById(`color_${entityId}`).value          = cfg.color;
-    document.getElementById(`colorDark_${entityId}`).value      = cfg.colorDark;
-    document.getElementById(`colorText_${entityId}`).value      = cfg.color.toUpperCase();
-    document.getElementById(`colorDarkText_${entityId}`).value  = cfg.colorDark.toUpperCase();
+    document.getElementById(`color_${entityId}`).value     = cfg.color;
+    document.getElementById(`colorText_${entityId}`).value = cfg.color.toUpperCase();
     const p = document.querySelector(`#color_${entityId}`)
         ?.closest('.calendar-color-item')
         ?.querySelector('.calendar-color-preview');
-    if (p) p.style.background = `linear-gradient(135deg,${cfg.color} 0%,${cfg.colorDark} 100%)`;
+    if (p) p.style.background = cfg.color;
     if (window.haCalendar?.calendar) { window.haCalendar.calendar.refetchEvents(); window.updateFilterCircles?.(); }
 }

@@ -14,8 +14,7 @@ import { loadTheme } from './theme.js';
 import { CALENDAR_CONFIG, getEffectiveCalendarColor, loadDefaultView, isCalendarHidden } from './settings.js';
 
 // ── Auto-assign palette for dynamically discovered calendars ─────────────────
-const _PALETTE      = ['#3b82f6','#ec4899','#10b981','#f59e0b','#8b5cf6','#ef4444','#06b6d4','#84cc16','#f97316','#a855f7'];
-const _PALETTE_DARK = ['#2563eb','#db2777','#059669','#d97706','#7c3aed','#dc2626','#0891b2','#65a30d','#ea580c','#9333ea'];
+const _PALETTE = ['#3b82f6','#ec4899','#10b981','#f59e0b','#8b5cf6','#ef4444','#06b6d4','#84cc16','#f97316','#a855f7'];
 
 function _entityToName(entityId) {
     return entityId.replace('calendar.', '').replace(/_/g, ' ')
@@ -134,11 +133,9 @@ export class HACalendar {
                 if (!entityId || CALENDAR_CONFIG[entityId]) { idx++; continue; }
                 const paletteIdx = idx % _PALETTE.length;
                 CALENDAR_CONFIG[entityId] = {
-                    name:      (typeof item === 'object' && item.name) || _entityToName(entityId),
-                    color:     _PALETTE[paletteIdx],
-                    colorDark: _PALETTE_DARK[paletteIdx],
-                    initial:   _entityToInitial(entityId),
-                    image:     null,
+                    name:    (typeof item === 'object' && item.name) || _entityToName(entityId),
+                    color:   _PALETTE[paletteIdx],
+                    initial: _entityToInitial(entityId),
                 };
                 idx++;
             }
