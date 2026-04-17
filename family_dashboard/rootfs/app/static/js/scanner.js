@@ -100,7 +100,10 @@ export class BarcodeScanner {
     // ── Camera ────────────────────────────────────────────────────────────────
 
     async _startCamera() {
-        if (!window.Html5Qrcode) return;
+        if (!window.Html5Qrcode) {
+            this._showCameraFallback('Scanner library failed to load. Check your connection.');
+            return;
+        }
         const qr = new Html5Qrcode('scannerQr');
         this._qr = qr;
         try {
@@ -111,18 +114,94 @@ export class BarcodeScanner {
             );
         } catch (err) {
             console.warn('[Scanner] Camera error:', err);
-            this._showResult(`
-                <div class="scanner-error">
-                    <div class="scanner-error-icon">📷</div>
-                    <div class="scanner-error-msg">Camera not available.<br>Check browser permissions.</div>
-                    <button class="scanner-btn secondary" id="scannerRetryCamera">Retry</button>
-                </div>`);
-            this._overlay?.querySelector('#scannerRetryCamera')
-                ?.addEventListener('click', async () => {
-                    this._hideResult();
-                    await this._startCamera();
-                });
+            this._qr = null;
+            // Camera needs HTTPS — show fallback with manual entry + file scan
+            this._showCameraFallback();
         }
+    }
+
+    /** Show manual barcode entry + scan-from-photo fallback when camera is unavailable. */
+    _showCameraFallback(msg = null) {
+        // Replace the black camera box with a friendly explanation
+        const wrap = this._overlay?.querySelector('.scanner-camera-wrap');
+        if (wrap) {
+            wrap.innerHTML = `
+                <div class="scanner-no-camera">
+                    <div class="scanner-no-camera-icon">📷</div>
+                    <div class="scanner-no-camera-msg">
+                        ${msg ?? 'Live camera requires HTTPS.<br>Use one of the options below:'}
+                    </div>
+                </div>`;
+        }
+
+        this._showResult(`
+            <div class="scanner-fallback">
+                <div class="scanner-fallback-section">
+                    <div class="scanner-fallback-label">Type or paste a barcode number</div>
+                    <div class="scanner-manual-row">
+                        <input id="scannerBarcodeInput" class="scanner-input"
+                               type="text" inputmode="numeric" pattern="[0-9]*"
+                               placeholder="e.g. 048500202548" autocomplete="off" maxlength="14">
+                        <button class="scanner-btn primary" id="scannerManualLookup">Look Up</button>
+                    </div>
+                </div>
+
+                <div class="scanner-fallback-divider"><span>or</span></div>
+
+                <div class="scanner-fallback-section">
+                    <div class="scanner-fallback-label">Take or upload a photo of the barcode</div>
+                    <label class="scanner-file-label" id="scannerFileLabel">
+                        📸 Choose Photo / Take Picture
+                        <input type="file" id="scannerFileInput" accept="image/*" capture="environment" style="display:none">
+                    </label>
+                </div>
+            </div>`);
+
+        // Manual barcode lookup
+        const doManualLookup = () => {
+            const barcode = this._overlay?.querySelector('#scannerBarcodeInput')?.value.trim();
+            if (barcode && /^\d{6,14}$/.test(barcode)) {
+                this._busy = false;
+                this._onDetected(barcode);
+            } else {
+                this._overlay?.querySelector('#scannerBarcodeInput')?.focus();
+            }
+        };
+        this._overlay?.querySelector('#scannerManualLookup')?.addEventListener('click', doManualLookup);
+        this._overlay?.querySelector('#scannerBarcodeInput')?.addEventListener('keydown', e => {
+            if (e.key === 'Enter') doManualLookup();
+        });
+
+        // File / photo scan
+        const fileInput = this._overlay?.querySelector('#scannerFileInput');
+        fileInput?.addEventListener('change', async (e) => {
+            const file = e.target.files?.[0];
+            fileInput.value = '';
+            if (!file) return;
+
+            this._showResult(`
+                <div class="scanner-lookup">
+                    <div class="scanner-spinner"></div>
+                    <div class="scanner-lookup-text">Scanning image for barcode…</div>
+                </div>`);
+
+            try {
+                const reader = new Html5Qrcode('scannerQr');
+                const decoded = await reader.scanFile(file, /* showImage */ false);
+                reader.clear();
+                this._busy = false;
+                await this._onDetected(decoded);
+            } catch (err) {
+                console.warn('[Scanner] File scan failed:', err);
+                this._showResult(`
+                    <div class="scanner-error">
+                        <div class="scanner-error-msg">No barcode found in image.<br>Try a clearer, closer photo or enter manually.</div>
+                        <button class="scanner-btn secondary" id="scannerRetryFile">Try Again</button>
+                    </div>`);
+                this._overlay?.querySelector('#scannerRetryFile')
+                    ?.addEventListener('click', () => this._showCameraFallback());
+            }
+        });
     }
 
     _stopCamera() {
@@ -204,9 +283,14 @@ export class BarcodeScanner {
         });
 
         this._overlay?.querySelector('#scannerRescan')?.addEventListener('click', () => {
-            this._hideResult();
             this._busy = false;
-            this._startCamera();
+            // If camera was working, restart it; otherwise go back to fallback
+            if (this._qr) {
+                this._hideResult();
+                this._startCamera();
+            } else {
+                this._showCameraFallback();
+            }
         });
     }
 

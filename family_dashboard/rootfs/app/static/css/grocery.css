@@ -1839,3 +1839,43 @@ select.grocery-modal-input { cursor: pointer; }
 .scanner-error       { text-align: center; padding: 16px 0; }
 .scanner-error-icon  { font-size: 32px; margin-bottom: 8px; }
 .scanner-error-msg   { color: rgba(255,255,255,0.6); font-size: 14px; line-height: 1.5; margin-bottom: 16px; }
+
+/* No-camera fallback in the camera area */
+.scanner-no-camera {
+    display:        flex;
+    flex-direction: column;
+    align-items:    center;
+    justify-content: center;
+    padding:        28px 20px;
+    gap:            10px;
+    min-height:     120px;
+}
+.scanner-no-camera-icon { font-size: 36px; opacity: 0.4; }
+.scanner-no-camera-msg  { color: rgba(255,255,255,0.45); font-size: 13px; text-align: center; line-height: 1.5; }
+
+/* Manual entry + file upload fallback panel */
+.scanner-fallback          { display: flex; flex-direction: column; gap: 0; }
+.scanner-fallback-section  { padding: 4px 0 10px; }
+.scanner-fallback-label    { font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.45); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+.scanner-manual-row        { display: flex; gap: 8px; }
+.scanner-manual-row .scanner-input { flex: 1; }
+.scanner-fallback-divider  { display: flex; align-items: center; gap: 10px; margin: 4px 0 12px; color: rgba(255,255,255,0.25); font-size: 12px; }
+.scanner-fallback-divider::before,
+.scanner-fallback-divider::after { content: ''; flex: 1; height: 1px; background: rgba(255,255,255,0.1); }
+
+.scanner-file-label {
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    gap:             8px;
+    width:           100%;
+    padding:         12px;
+    border:          2px dashed rgba(255,255,255,0.2);
+    border-radius:   var(--r-sm);
+    color:           rgba(255,255,255,0.6);
+    font-size:       14px;
+    font-weight:     600;
+    cursor:          pointer;
+    transition:      border-color 0.2s, background 0.2s;
+}
+.scanner-file-label:hover  { border-color: var(--theme-primary); background: rgba(102,126,234,0.1); color: white; }
