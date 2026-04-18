@@ -9,6 +9,7 @@
  */
 
 import { onSSE } from './sse.js';
+import { apiUrl } from './utils.js';
 
 const CACHE_LIST      = 'fc_grocery_list';
 const CACHE_INVENTORY = 'fc_grocery_inventory';
@@ -32,7 +33,7 @@ export class GroceryStore {
 
     async fetchList() {
         try {
-            const res  = await fetch('./api/grocery/list');
+            const res  = await fetch(apiUrl('/api/grocery/list'));
             if (!res.ok) return null;
             const data = await res.json();
             localStorage.setItem(CACHE_LIST, JSON.stringify(data));
@@ -45,7 +46,7 @@ export class GroceryStore {
 
     async fetchInventory() {
         try {
-            const res   = await fetch('./api/grocery/inventory');
+            const res   = await fetch(apiUrl('/api/grocery/inventory'));
             if (!res.ok) return null;
             const items = await res.json();
             localStorage.setItem(CACHE_INVENTORY, JSON.stringify(items));
@@ -95,7 +96,7 @@ export class GroceryStore {
         const blob = await _compressToBlob(file, maxPx, quality);
         const form = new FormData();
         form.append('photo', blob, 'photo.jpg');
-        const res  = await fetch('./api/photos', { method: 'POST', body: form });
+        const res  = await fetch(apiUrl('/api/photos'), { method: 'POST', body: form });
         const data = await res.json();
         return data.url;
     }

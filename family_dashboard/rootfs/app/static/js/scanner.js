@@ -11,6 +11,8 @@
  *   // result = { mode, barcode, product: { found, name, brand, category, imageUrl, upc } }
  */
 
+import { apiUrl } from './utils.js';
+
 export class BarcodeScanner {
     constructor() {
         this._qr       = null;   // Html5Qrcode instance
@@ -230,7 +232,7 @@ export class BarcodeScanner {
 
         let product;
         try {
-            const r = await fetch(`/api/upc/${encodeURIComponent(barcode)}`);
+            const r = await fetch(apiUrl(`/api/upc/${encodeURIComponent(barcode)}`));
             product = await r.json();
         } catch {
             product = { found: false };

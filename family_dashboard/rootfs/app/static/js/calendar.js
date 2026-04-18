@@ -9,7 +9,7 @@
  *
  * Exports: HACalendar, closeEventModal, updateFilterCircles
  */
-import { blendColorsLight } from './utils.js';
+import { blendColorsLight, apiUrl } from './utils.js';
 import { loadTheme } from './theme.js';
 import { CALENDAR_CONFIG, getEffectiveCalendarColor, loadDefaultView, isCalendarHidden } from './settings.js';
 
@@ -122,7 +122,7 @@ export class HACalendar {
 
     async _fetchCalendarList() {
         try {
-            const res = await fetch('./api/calendars');
+            const res = await fetch(apiUrl('/api/calendars'));
             if (!res.ok) return;
             const list = await res.json(); // array of { entity_id, name } objects (or strings)
 
@@ -452,7 +452,7 @@ export class HACalendar {
     async _fetchCalendarEvents(entityId, start, end) {
         const startStr = start.toISOString().split('T')[0] + 'T00:00:00';
         const endStr   = end.toISOString().split('T')[0]   + 'T23:59:59';
-        const url = `./api/calendar/${encodeURIComponent(entityId)}?start=${startStr}&end=${endStr}`;
+        const url = apiUrl(`/api/calendar/${encodeURIComponent(entityId)}?start=${startStr}&end=${endStr}`);
 
         const response = await fetch(url);
         if (!response.ok) {

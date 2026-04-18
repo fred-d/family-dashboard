@@ -3,6 +3,23 @@
  * No side-effects, no DOM access, no imports needed.
  */
 
+/**
+ * Ingress base path — empty string when the app is accessed directly at
+ * port 8099, or '/api/hassio_ingress/TOKEN' when served through HA ingress
+ * (local or Nabu Casa remote). All fetch() calls must prefix with this so
+ * API requests route back through the ingress proxy rather than hitting
+ * HA's own API at the Nabu Casa root.
+ */
+export const API_BASE = (() => {
+    const m = window.location.pathname.match(/^(\/api\/hassio_ingress\/[^/]+)/);
+    return m ? m[1] : '';
+})();
+
+/** Return a fully-qualified API path, respecting the ingress base. */
+export function apiUrl(path) {
+    return API_BASE + path;
+}
+
 /** Convert any colour string to rgba(...) — internal helper */
 function colorToRgba(color, alpha) {
     const rgbMatch = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);

@@ -9,6 +9,7 @@
  */
 
 import { onSSE } from './sse.js';
+import { apiUrl } from './utils.js';
 
 const CACHE_INDEX  = 'fc_recipe_index';
 const CACHE_PREFIX = 'fc_recipe_';
@@ -36,7 +37,7 @@ export class RecipeStore {
 
     async fetchIndex() {
         try {
-            const res = await fetch('./api/recipes');
+            const res = await fetch(apiUrl('/api/recipes'));
             if (!res.ok) return null;
             const index = await res.json();
             localStorage.setItem(CACHE_INDEX, JSON.stringify(index));
@@ -56,7 +57,7 @@ export class RecipeStore {
 
     async fetchRecipe(slug) {
         try {
-            const res = await fetch(`./api/recipes/${encodeURIComponent(slug)}`);
+            const res = await fetch(apiUrl(`/api/recipes/${encodeURIComponent(slug)}`));
             if (!res.ok) return null;
             const recipe = await res.json();
             if (recipe) localStorage.setItem(CACHE_PREFIX + slug, JSON.stringify(recipe));
@@ -76,7 +77,7 @@ export class RecipeStore {
 
         localStorage.setItem(CACHE_PREFIX + slug, JSON.stringify(full));
 
-        const res = await fetch(`./api/recipes/${encodeURIComponent(slug)}`, {
+        const res = await fetch(apiUrl(`/api/recipes/${encodeURIComponent(slug)}`), {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify(full),
@@ -90,7 +91,7 @@ export class RecipeStore {
 
     async deleteRecipe(slug) {
         localStorage.removeItem(CACHE_PREFIX + slug);
-        await fetch(`./api/recipes/${encodeURIComponent(slug)}`, { method: 'DELETE' });
+        await fetch(apiUrl(`/api/recipes/${encodeURIComponent(slug)}`), { method: 'DELETE' });
         await this.fetchIndex();
     }
 
@@ -104,7 +105,7 @@ export class RecipeStore {
         const blob = await _compressToBlob(file, maxPx, quality);
         const form = new FormData();
         form.append('photo', blob, 'photo.jpg');
-        const res  = await fetch('./api/photos', { method: 'POST', body: form });
+        const res  = await fetch(apiUrl('/api/photos'), { method: 'POST', body: form });
         const data = await res.json();
         return data.url;
     }

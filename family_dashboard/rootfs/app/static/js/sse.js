@@ -1,5 +1,6 @@
 /**
  * sse.js — Shared Server-Sent Events client.
+ * Imports API_BASE from utils so the EventSource URL works through ingress.
  *
  * One persistent SSE connection is shared across all stores. When the backend
  * saves data it pushes an event here; each store subscribes to its event type
@@ -8,12 +9,14 @@
  * Replaces the HA WebSocket pattern for app-data real-time sync.
  */
 
+import { API_BASE } from './utils.js';
+
 let _source = null;
 const _handlers = new Map(); // eventName → Set<callback>
 let   _reconnectDelay = 2000;
 
 function _connect() {
-    _source = new EventSource('./api/events');
+    _source = new EventSource(API_BASE + '/api/events');
 
     _source.addEventListener('connected', () => {
         console.info('[SSE] Connected to Family Dashboard backend.');

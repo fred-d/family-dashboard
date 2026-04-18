@@ -7,6 +7,8 @@
  */
 
 import { onSSE } from './sse.js';
+import { apiUrl } from './utils.js';
+
 
 const CACHE_PREFIX = 'fc_meals_';
 
@@ -32,7 +34,7 @@ export class MealStore {
     /** Fetch week data from backend. Returns meals object or null on error. */
     async fetchFromHA(isoWeek) {
         try {
-            const res = await fetch(`./api/meals/${encodeURIComponent(isoWeek)}`);
+            const res = await fetch(apiUrl(`/api/meals/${encodeURIComponent(isoWeek)}`));
             if (!res.ok) return null;
             const meals = await res.json();
             this._localSave(isoWeek, meals);
@@ -67,7 +69,7 @@ export class MealStore {
 
         // Persist to backend
         try {
-            await fetch(`./api/meals/${encodeURIComponent(isoWeek)}`, {
+            await fetch(apiUrl(`/api/meals/${encodeURIComponent(isoWeek)}`), {
                 method:  'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body:    JSON.stringify({ day: dayIndex, mealType, data: data?.name ? data : null }),
