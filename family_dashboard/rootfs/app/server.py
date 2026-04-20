@@ -76,6 +76,66 @@ app.secret_key = _get_or_create_secret_key()
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
 app.config['SESSION_COOKIE_HTTPONLY']    = True
 app.config['SESSION_COOKIE_SAMESITE']   = 'Lax'
+# SESSION_COOKIE_SECURE is set dynamically in _require_auth based on
+# whether the request arrived via HTTPS (X-Forwarded-Proto from Cloudflare).
+
+# ── Login rate limiter ─────────────────────────────────────────────────────────
+# Simple in-memory store: ip → {count, window_start, locked_until}
+# No external dependencies needed — resets on addon restart (intentional;
+# a restart clears any ongoing attack without persisting stale lockouts).
+
+_rate_lock    = threading.Lock()
+_rate_store: dict = {}          # keyed by client IP string
+_RATE_MAX     = 10              # max failures before lockout
+_RATE_WINDOW  = 15 * 60        # sliding window: 15 minutes
+_RATE_LOCKOUT = 15 * 60        # lockout duration: 15 minutes
+
+
+def _rate_check(ip: str) -> tuple[bool, str]:
+    """Return (allowed, error_message). Call BEFORE processing a login attempt."""
+    now = time.time()
+    with _rate_lock:
+        entry = _rate_store.get(ip)
+        if not entry:
+            return True, ''
+
+        # Still locked out?
+        locked_until = entry.get('locked_until', 0)
+        if locked_until > now:
+            mins = max(1, int((locked_until - now) / 60) + 1)
+            return False, f'Too many failed attempts. Try again in {mins} minute(s).'
+
+        # Window expired — clean slate
+        if now - entry['window_start'] > _RATE_WINDOW:
+            del _rate_store[ip]
+            return True, ''
+
+        return True, ''
+
+
+def _rate_failure(ip: str):
+    """Record a failed login attempt; lock out the IP if threshold is reached."""
+    now = time.time()
+    with _rate_lock:
+        entry = _rate_store.setdefault(ip, {'count': 0, 'window_start': now})
+        entry['count'] += 1
+        if entry['count'] >= _RATE_MAX:
+            entry['locked_until'] = now + _RATE_LOCKOUT
+            app.logger.warning(f'[auth] IP {ip} locked out after {_RATE_MAX} failed attempts')
+
+
+def _rate_clear(ip: str):
+    """Clear rate-limit state on successful login."""
+    with _rate_lock:
+        _rate_store.pop(ip, None)
+
+
+def _client_ip() -> str:
+    """Best-effort client IP, respecting Cloudflare's CF-Connecting-IP header."""
+    return (request.headers.get('CF-Connecting-IP')
+            or request.headers.get('X-Forwarded-For', '').split(',')[0].strip()
+            or request.remote_addr
+            or 'unknown')
 
 
 @app.before_request
@@ -140,7 +200,15 @@ def api_auth_login():
     """
     Validate against the dashboard_password set in the addon Configuration tab.
     On success, sets a signed Flask session cookie good for 30 days.
+    Rate-limited to 10 failures per IP per 15 minutes.
     """
+    ip = _client_ip()
+
+    # ── Rate limit check ──────────────────────────────────────────────────────
+    allowed, rate_err = _rate_check(ip)
+    if not allowed:
+        return jsonify({'error': rate_err}), 429
+
     body         = request.get_json() or {}
     password     = body.get('password', '')
     display_name = body.get('displayName', '').strip() or 'Family Member'
@@ -149,20 +217,25 @@ def api_auth_login():
         return jsonify({'error': 'Password is required.'}), 400
 
     configured = _get_dashboard_password()
-
     if not configured:
         return jsonify({
             'error': 'No password set. Go to HA → Add-ons → Family Dashboard → '
-                     'Configuration tab and set a dashboard_password, then restart the addon.'
+                     'Configuration tab and set a dashboard_password, then restart.'
         }), 503
 
+    # ── Credential check ──────────────────────────────────────────────────────
     if password == configured:
+        _rate_clear(ip)
         session.permanent        = True
         session['authenticated'] = True
         session['username']      = display_name
+        # Mark cookie Secure when request arrived via HTTPS (Cloudflare Tunnel)
+        if request.headers.get('X-Forwarded-Proto') == 'https':
+            app.config['SESSION_COOKIE_SECURE'] = True
         return jsonify({'ok': True, 'username': display_name})
 
-    app.logger.warning('[auth] incorrect dashboard password attempt')
+    _rate_failure(ip)
+    app.logger.warning(f'[auth] failed login attempt from {ip}')
     return jsonify({'error': 'Incorrect password.'}), 401
 
 

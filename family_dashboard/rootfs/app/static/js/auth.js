@@ -81,7 +81,10 @@ async function _submitLogin() {
             _hide();
             _setUsername(data.username);
         } else {
-            if (errorEl) errorEl.textContent = data.error || 'Login failed. Please try again.';
+            const msg = data.error || 'Login failed. Please try again.';
+            if (errorEl) errorEl.textContent = msg;
+            // Disable form during lockout (429)
+            if (res.status === 429 && btn) btn.disabled = true;
         }
     } catch {
         if (errorEl) errorEl.textContent = 'Cannot reach the server. Check your connection.';
