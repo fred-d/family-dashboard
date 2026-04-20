@@ -14,6 +14,7 @@
     <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.css" rel="stylesheet">
 
     <!-- App styles (load order matters) -->
+    <link rel="stylesheet" href="css/auth.css?v=1">
     <link rel="stylesheet" href="css/vars.css?v=13">
     <link rel="stylesheet" href="css/shell.css?v=13">
     <link rel="stylesheet" href="css/calendar.css?v=13">
@@ -28,6 +29,34 @@
     </style>
 </head>
 <body>
+
+    <!-- ── Auth overlay (login gate for direct / public access) ── -->
+    <div id="authOverlay" role="dialog" aria-modal="true" aria-label="Sign in to Family Dashboard">
+        <div class="auth-card">
+            <div class="auth-logo">🏠</div>
+            <div class="auth-title">Family Dashboard</div>
+            <div class="auth-subtitle">Sign in with your Home Assistant account</div>
+            <form class="auth-form" id="authForm" novalidate>
+                <div class="auth-field">
+                    <label for="authUsernameInput">Username</label>
+                    <input type="text" id="authUsernameInput"
+                           autocomplete="username" placeholder="your HA username"
+                           spellcheck="false" required>
+                </div>
+                <div class="auth-field">
+                    <label for="authPasswordInput">Password</label>
+                    <input type="password" id="authPasswordInput"
+                           autocomplete="current-password" placeholder="••••••••" required>
+                </div>
+                <div class="auth-error" id="authError"></div>
+                <button type="submit" class="auth-submit-btn" id="authSubmitBtn">Sign In</button>
+            </form>
+            <div class="auth-ha-note">
+                Uses your Home Assistant credentials.<br>
+                Your password is never stored by this app.
+            </div>
+        </div>
+    </div>
 
     <!-- ── "More events" popover backdrop ── -->
     <div class="popover-backdrop" id="popoverBackdrop"></div>
@@ -207,6 +236,21 @@
                     </div>
                 </div>
 
+                <!-- Account / Sign out -->
+                <div class="settings-section">
+                    <div class="settings-section-title">Account</div>
+                    <div style="padding:14px 16px;background:white;border-radius:8px;border:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+                        <div>
+                            <div style="font-size:13px;font-weight:600;color:#1e293b;">Signed in as</div>
+                            <div style="font-size:13px;color:#64748b;margin-top:2px;" data-auth-username>—</div>
+                        </div>
+                        <button data-auth-logout
+                                style="padding:8px 16px;background:#fee2e2;color:#dc2626;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;">
+                            Sign Out
+                        </button>
+                    </div>
+                </div>
+
             </div><!-- /.settings-body -->
         </div><!-- /.settings-panel -->
     </div><!-- /#settingsOverlay -->
@@ -319,6 +363,8 @@
     <!-- ── Scripts ── -->
     <!-- FullCalendar (global UMD bundle — must load before ES modules) -->
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
+    <!-- Auth gate — runs immediately on load, shows login overlay if needed -->
+    <script type="module" src="js/auth.js?v=1"></script>
     <!-- App entry point as ES module -->
     <script type="module" src="js/app.js?v=16"></script>
 

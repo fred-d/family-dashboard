@@ -23,12 +23,14 @@ import json
 import os
 import pathlib
 import re
+import secrets
 import threading
 import time
 import io
+from datetime import timedelta
 
 import requests
-from flask import (Flask, Response, jsonify, request,
+from flask import (Flask, Response, jsonify, request, session,
                    send_from_directory, stream_with_context)
 from PIL import Image
 
@@ -50,6 +52,129 @@ PHOTO_QUALITY  = 82    # JPEG quality (good balance of size vs quality)
 # ── Flask app ──────────────────────────────────────────────────────────────────
 
 app = Flask(__name__, static_folder=str(STATIC), static_url_path='')
+
+# ── Auth / Session setup ───────────────────────────────────────────────────────
+
+_SECRET_KEY_FILE = DATA / 'flask_secret.key'
+
+def _get_or_create_secret_key() -> str:
+    """Load persistent secret key from /data, or generate and save a new one."""
+    try:
+        if _SECRET_KEY_FILE.exists():
+            key = _SECRET_KEY_FILE.read_text().strip()
+            if len(key) == 64:   # valid 32-byte hex key
+                return key
+        key = secrets.token_hex(32)
+        DATA.mkdir(parents=True, exist_ok=True)
+        _SECRET_KEY_FILE.write_text(key)
+        return key
+    except Exception as e:
+        app.logger.warning(f'[auth] secret key file error: {e} — using ephemeral key')
+        return secrets.token_hex(32)
+
+app.secret_key = _get_or_create_secret_key()
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
+app.config['SESSION_COOKIE_HTTPONLY']    = True
+app.config['SESSION_COOKIE_SAMESITE']   = 'Lax'
+
+
+@app.before_request
+def _require_auth():
+    """
+    Gate all /api/* routes (except /api/auth/*) behind authentication.
+    Static files and the index page are always accessible so the login
+    overlay can load before any auth check happens.
+
+    Two bypass paths:
+      1. X-Ingress-Path header — request came through HA ingress, which
+         already validated the HA session cookie.
+      2. Flask session cookie — user logged in via /api/auth/login.
+    """
+    path = request.path
+
+    # Only API routes need gating — static files / index always load
+    if not path.startswith('/api/'):
+        return None
+
+    # Auth endpoints are always public
+    if path.startswith('/api/auth/'):
+        return None
+
+    # HA ingress pre-authenticates — trust the header
+    if request.headers.get('X-Ingress-Path'):
+        return None
+
+    # Valid Flask session (direct access, already logged in)
+    if session.get('authenticated'):
+        return None
+
+    return jsonify({'error': 'Unauthorized', 'code': 'auth_required'}), 401
+
+
+# ── Auth endpoints ─────────────────────────────────────────────────────────────
+
+@app.route('/api/auth/status')
+def api_auth_status():
+    """Return current auth state — called by the frontend on every page load."""
+    if request.headers.get('X-Ingress-Path'):
+        # Ingress passes the HA username in a header
+        username = request.headers.get('X-Remote-User-Name', '')
+        return jsonify({'authenticated': True, 'via': 'ingress', 'username': username})
+    if session.get('authenticated'):
+        return jsonify({
+            'authenticated': True,
+            'via':           'session',
+            'username':      session.get('username', ''),
+        })
+    return jsonify({'authenticated': False})
+
+
+@app.route('/api/auth/login', methods=['POST'])
+def api_auth_login():
+    """
+    Validate credentials against the HA Supervisor auth API, then set a
+    signed Flask session cookie on success.  Requires auth_api: true in
+    config.yaml so the Supervisor exposes http://supervisor/auth.
+    """
+    body     = request.get_json() or {}
+    username = body.get('username', '').strip()
+    password = body.get('password', '')
+
+    if not username or not password:
+        return jsonify({'error': 'Username and password are required.'}), 400
+
+    try:
+        r = requests.post(
+            'http://supervisor/auth',
+            headers={
+                'Authorization': f'Bearer {HA_TOKEN}',
+                'Content-Type':  'application/json',
+            },
+            json={'username': username, 'password': password},
+            timeout=10,
+        )
+        if r.status_code == 200:
+            session.permanent    = True
+            session['authenticated'] = True
+            session['username']      = username
+            return jsonify({'ok': True, 'username': username})
+
+        # 401 from supervisor = wrong credentials
+        return jsonify({'error': 'Incorrect username or password.'}), 401
+
+    except requests.Timeout:
+        app.logger.warning('[auth] supervisor auth timed out')
+        return jsonify({'error': 'Auth service timed out — is Home Assistant running?'}), 503
+    except Exception as e:
+        app.logger.warning(f'[auth] login error: {e}')
+        return jsonify({'error': 'Auth service unavailable.'}), 503
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def api_auth_logout():
+    """Clear the session cookie."""
+    session.clear()
+    return jsonify({'ok': True})
 
 # ── SSE (Server-Sent Events) ───────────────────────────────────────────────────
 

@@ -1,0 +1,183 @@
+/**
+ * auth.css — Login overlay for direct (non-ingress) access.
+ *
+ * The overlay sits above everything at z-index 9999.
+ * It starts hidden (no pointer-events, opacity 0) and becomes
+ * visible by adding the `.visible` class from auth.js.
+ */
+
+/* ── Overlay backdrop ── */
+#authOverlay {
+    position:        fixed;
+    inset:           0;
+    z-index:         9999;
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    background:      rgba(15, 23, 42, 0.80);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+
+    /* Hidden by default — auth.js adds .visible */
+    opacity:        0;
+    pointer-events: none;
+    transition:     opacity 0.2s ease;
+}
+
+#authOverlay.visible {
+    opacity:        1;
+    pointer-events: all;
+}
+
+/* ── Login card ── */
+.auth-card {
+    background:     white;
+    border-radius:  20px;
+    padding:        40px 36px 32px;
+    width:          min(400px, calc(100vw - 32px));
+    box-shadow:     0 24px 72px rgba(0, 0, 0, 0.28);
+    display:        flex;
+    flex-direction: column;
+    align-items:    center;
+    animation:      auth-card-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes auth-card-in {
+    from { transform: translateY(20px) scale(0.97); opacity: 0; }
+    to   { transform: translateY(0)    scale(1);    opacity: 1; }
+}
+
+/* ── Logo / icon ── */
+.auth-logo {
+    width:            56px;
+    height:           56px;
+    background:       linear-gradient(135deg, var(--color-primary, #667eea), var(--color-secondary, #764ba2));
+    border-radius:    16px;
+    display:          flex;
+    align-items:      center;
+    justify-content:  center;
+    font-size:        28px;
+    margin-bottom:    16px;
+    box-shadow:       0 8px 24px rgba(102, 126, 234, 0.30);
+    flex-shrink:      0;
+}
+
+/* ── Headings ── */
+.auth-title {
+    font-size:      21px;
+    font-weight:    700;
+    color:          #1e293b;
+    margin-bottom:  4px;
+    letter-spacing: -0.3px;
+    text-align:     center;
+}
+
+.auth-subtitle {
+    font-size:     14px;
+    color:         #64748b;
+    margin-bottom: 28px;
+    text-align:    center;
+    line-height:   1.4;
+}
+
+/* ── Form ── */
+.auth-form {
+    width:          100%;
+    display:        flex;
+    flex-direction: column;
+    gap:            14px;
+}
+
+.auth-field {
+    display:        flex;
+    flex-direction: column;
+    gap:            6px;
+}
+
+.auth-field label {
+    font-size:      11px;
+    font-weight:    700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color:          #475569;
+}
+
+.auth-field input {
+    padding:     11px 14px;
+    border:      2px solid #e2e8f0;
+    border-radius: 10px;
+    font-size:   15px;
+    font-family: var(--font, system-ui, sans-serif);
+    color:       #1e293b;
+    background:  #f8fafc;
+    width:       100%;
+    outline:     none;
+    transition:  border-color 0.15s, background 0.15s;
+}
+
+.auth-field input:focus {
+    border-color: var(--color-primary, #667eea);
+    background:   white;
+}
+
+/* ── Error message ── */
+.auth-error {
+    min-height:  18px;
+    font-size:   13px;
+    color:       #ef4444;
+    text-align:  center;
+    line-height: 1.4;
+}
+
+/* ── Submit button ── */
+.auth-submit-btn {
+    width:       100%;
+    padding:     13px;
+    background:  linear-gradient(135deg, var(--color-primary, #667eea), var(--color-secondary, #764ba2));
+    color:       white;
+    border:      none;
+    border-radius: 10px;
+    font-size:   15px;
+    font-weight: 600;
+    font-family: var(--font, system-ui, sans-serif);
+    cursor:      pointer;
+    margin-top:  4px;
+    transition:  opacity 0.15s, transform 0.1s, box-shadow 0.15s;
+    box-shadow:  0 4px 14px rgba(102, 126, 234, 0.35);
+}
+
+.auth-submit-btn:hover:not(:disabled) {
+    opacity:    0.92;
+    transform:  translateY(-1px);
+    box-shadow: 0 6px 18px rgba(102, 126, 234, 0.40);
+}
+
+.auth-submit-btn:active:not(:disabled) {
+    transform:  translateY(0);
+}
+
+.auth-submit-btn:disabled {
+    opacity: 0.55;
+    cursor:  not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+/* ── Footer note ── */
+.auth-ha-note {
+    margin-top:  18px;
+    font-size:   12px;
+    color:       #94a3b8;
+    text-align:  center;
+    line-height: 1.5;
+}
+
+/* ── Mobile tweaks ── */
+@media (max-width: 480px) {
+    .auth-card {
+        padding: 32px 24px 24px;
+    }
+    .auth-title {
+        font-size: 19px;
+    }
+}
