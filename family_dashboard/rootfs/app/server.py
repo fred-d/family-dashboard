@@ -129,49 +129,41 @@ def api_auth_status():
     return jsonify({'authenticated': False})
 
 
+def _get_dashboard_password() -> str:
+    """Read the dashboard_password from the addon options file written by Supervisor."""
+    options = _read_json(pathlib.Path('/data/options.json'), {})
+    return options.get('dashboard_password', '').strip()
+
+
 @app.route('/api/auth/login', methods=['POST'])
 def api_auth_login():
     """
-    Validate a Home Assistant Long-Lived Access Token by calling the HA
-    Core REST API.  On success, sets a signed Flask session cookie.
-
-    The user generates the token in HA → Profile → Security →
-    Long-Lived Access Tokens → Create Token.
+    Validate against the dashboard_password set in the addon Configuration tab.
+    On success, sets a signed Flask session cookie good for 30 days.
     """
     body         = request.get_json() or {}
-    token        = body.get('token', '').strip()
-    display_name = body.get('displayName', '').strip() or 'HA User'
+    password     = body.get('password', '')
+    display_name = body.get('displayName', '').strip() or 'Family Member'
 
-    if not token:
-        return jsonify({'error': 'Access token is required.'}), 400
+    if not password:
+        return jsonify({'error': 'Password is required.'}), 400
 
-    try:
-        # Validate by hitting the HA Core API — same host we use for calendars
-        r = requests.get(
-            f'{HA_BASE}/api/',
-            headers={'Authorization': f'Bearer {token}'},
-            timeout=10,
-        )
-        app.logger.info(f'[auth] HA Core API responded {r.status_code} for token validation')
+    configured = _get_dashboard_password()
 
-        if r.status_code == 200:
-            session.permanent        = True
-            session['authenticated'] = True
-            session['username']      = display_name
-            return jsonify({'ok': True, 'username': display_name})
+    if not configured:
+        return jsonify({
+            'error': 'No password set. Go to HA → Add-ons → Family Dashboard → '
+                     'Configuration tab and set a dashboard_password, then restart the addon.'
+        }), 503
 
-        if r.status_code == 401:
-            return jsonify({'error': 'Invalid token — check you copied it in full.'}), 401
+    if password == configured:
+        session.permanent        = True
+        session['authenticated'] = True
+        session['username']      = display_name
+        return jsonify({'ok': True, 'username': display_name})
 
-        app.logger.warning(f'[auth] unexpected HA status {r.status_code}: {r.text[:200]}')
-        return jsonify({'error': f'HA returned unexpected status {r.status_code}.'}), 502
-
-    except requests.Timeout:
-        app.logger.warning('[auth] HA Core API timed out during token validation')
-        return jsonify({'error': 'HA timed out — is Home Assistant running?'}), 503
-    except Exception as e:
-        app.logger.warning(f'[auth] token validation error: {e}')
-        return jsonify({'error': f'Could not reach HA: {e}'}), 503
+    app.logger.warning('[auth] incorrect dashboard password attempt')
+    return jsonify({'error': 'Incorrect password.'}), 401
 
 
 @app.route('/api/auth/logout', methods=['POST'])

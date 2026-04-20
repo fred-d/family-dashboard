@@ -51,16 +51,16 @@ async function _checkAuthStatus() {
 // ── Login form submission ─────────────────────────────────────────────────────
 
 async function _submitLogin() {
-    const tokenEl   = document.getElementById('authTokenInput');
-    const nameEl    = document.getElementById('authDisplayNameInput');
-    const errorEl   = document.getElementById('authError');
-    const btn       = document.getElementById('authSubmitBtn');
+    const passwordEl = document.getElementById('authPasswordInput');
+    const nameEl     = document.getElementById('authDisplayNameInput');
+    const errorEl    = document.getElementById('authError');
+    const btn        = document.getElementById('authSubmitBtn');
 
-    const token       = tokenEl?.value.trim() ?? '';
+    const password    = passwordEl?.value     ?? '';
     const displayName = nameEl?.value.trim()  ?? '';
 
-    if (!token) {
-        if (errorEl) errorEl.textContent = 'Please paste your Home Assistant access token.';
+    if (!password) {
+        if (errorEl) errorEl.textContent = 'Please enter the dashboard password.';
         return;
     }
 
@@ -72,12 +72,12 @@ async function _submitLogin() {
         const res  = await fetch(apiUrl('/api/auth/login'), {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ token, displayName }),
+            body:    JSON.stringify({ password, displayName }),
         });
         const data = await res.json();
 
         if (res.ok && data.ok) {
-            if (tokenEl) tokenEl.value = '';   // clear token from DOM
+            if (passwordEl) passwordEl.value = '';   // clear password from DOM
             _hide();
             _setUsername(data.username);
         } else {

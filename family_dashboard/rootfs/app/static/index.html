@@ -35,13 +35,13 @@
         <div class="auth-card">
             <div class="auth-logo">🏠</div>
             <div class="auth-title">Family Dashboard</div>
-            <div class="auth-subtitle">Sign in with a Home Assistant access token</div>
+            <div class="auth-subtitle">Enter the dashboard password</div>
             <form class="auth-form" id="authForm" novalidate>
                 <div class="auth-field">
-                    <label for="authTokenInput">Access Token</label>
-                    <input type="password" id="authTokenInput"
-                           autocomplete="off" placeholder="Paste your long-lived access token"
-                           spellcheck="false" required>
+                    <label for="authPasswordInput">Password</label>
+                    <input type="password" id="authPasswordInput"
+                           autocomplete="current-password" placeholder="Dashboard password"
+                           required>
                 </div>
                 <div class="auth-field">
                     <label for="authDisplayNameInput">Your Name <span class="auth-label-optional">(optional)</span></label>
@@ -53,8 +53,8 @@
                 <button type="submit" class="auth-submit-btn" id="authSubmitBtn">Sign In</button>
             </form>
             <div class="auth-ha-note">
-                In HA: your profile icon → <strong>Security</strong> tab →<br>
-                <strong>Long-Lived Access Tokens</strong> → Create Token → paste above.
+                Password is set in HA → Add-ons →<br>
+                Family Dashboard → <strong>Configuration</strong> tab.
             </div>
         </div>
     </div>
@@ -365,7 +365,7 @@
     <!-- FullCalendar (global UMD bundle — must load before ES modules) -->
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
     <!-- Auth gate — runs immediately on load, shows login overlay if needed -->
-    <script type="module" src="js/auth.js?v=3"></script>
+    <script type="module" src="js/auth.js?v=4"></script>
     <!-- App entry point as ES module -->
     <script type="module" src="js/app.js?v=17"></script>
 
