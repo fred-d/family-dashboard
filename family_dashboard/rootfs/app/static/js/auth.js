@@ -18,7 +18,12 @@ import { apiUrl } from './utils.js';
 
 function _overlay()  { return document.getElementById('authOverlay'); }
 function _show()     { _overlay()?.classList.add('visible'); }
-function _hide()     { _overlay()?.classList.remove('visible'); }
+function _hide() {
+    _overlay()?.classList.remove('visible');
+    // Signal app.js that it is safe to initialise (fires at most once per load
+    // because app.js listens with { once: true }).
+    window.dispatchEvent(new CustomEvent('app:authed'));
+}
 
 function _setUsername(name) {
     document.querySelectorAll('[data-auth-username]')

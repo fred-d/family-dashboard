@@ -41,6 +41,7 @@ Object.assign(window, {
     applyCustomTheme: ()     => applyCustomTheme(window.haCalendar, updateFilterCircles, closeSettings),
     closeEventModal,
     updateFilterCircles,
+    switchView,   // needed by mobile nav onclick="switchView('...')"
 });
 
 // ── View router ───────────────────────────────────────────────────────────────
@@ -130,4 +131,7 @@ async function init() {
     window.addEventListener('hashchange', () => switchView(getActiveView()));
 }
 
-init();
+// Wait for auth.js to confirm the user is authenticated before booting.
+// { once: true } ensures init() only ever runs once per page load.
+// auth.js dispatches 'app:authed' after a successful status check or login.
+window.addEventListener('app:authed', init, { once: true });
