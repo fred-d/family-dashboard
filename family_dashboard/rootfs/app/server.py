@@ -132,60 +132,46 @@ def api_auth_status():
 @app.route('/api/auth/login', methods=['POST'])
 def api_auth_login():
     """
-    Validate credentials against the HA Supervisor auth API, then set a
-    signed Flask session cookie on success.  Requires auth_api: true in
-    config.yaml so the Supervisor exposes http://supervisor/auth.
+    Validate a Home Assistant Long-Lived Access Token by calling the HA
+    Core REST API.  On success, sets a signed Flask session cookie.
+
+    The user generates the token in HA → Profile → Security →
+    Long-Lived Access Tokens → Create Token.
     """
-    body     = request.get_json() or {}
-    username = body.get('username', '').strip()
-    password = body.get('password', '')
+    body         = request.get_json() or {}
+    token        = body.get('token', '').strip()
+    display_name = body.get('displayName', '').strip() or 'HA User'
 
-    if not username or not password:
-        return jsonify({'error': 'Username and password are required.'}), 400
-
-    if not HA_TOKEN:
-        app.logger.error('[auth] SUPERVISOR_TOKEN is empty — addon env not set up correctly')
-        return jsonify({'error': 'Server config error: SUPERVISOR_TOKEN missing.'}), 503
+    if not token:
+        return jsonify({'error': 'Access token is required.'}), 400
 
     try:
-        r = requests.post(
-            'http://supervisor/auth',
-            headers={
-                'Authorization': f'Bearer {HA_TOKEN}',
-                'Content-Type':  'application/json',
-            },
-            json={'username': username, 'password': password},
+        # Validate by hitting the HA Core API — same host we use for calendars
+        r = requests.get(
+            f'{HA_BASE}/api/',
+            headers={'Authorization': f'Bearer {token}'},
             timeout=10,
         )
-        app.logger.info(f'[auth] supervisor responded {r.status_code} for user "{username}"')
+        app.logger.info(f'[auth] HA Core API responded {r.status_code} for token validation')
 
         if r.status_code == 200:
             session.permanent        = True
             session['authenticated'] = True
-            session['username']      = username
-            return jsonify({'ok': True, 'username': username})
-
-        if r.status_code == 403:
-            # Supervisor rejected the addon's own token — auth_api not active yet
-            app.logger.warning('[auth] supervisor returned 403 — auth_api may not be enabled. Rebuild the addon.')
-            return jsonify({
-                'error': 'Auth API not available (supervisor 403). '
-                         'Go to HA → Add-ons → Family Dashboard → Rebuild, then try again.'
-            }), 503
+            session['username']      = display_name
+            return jsonify({'ok': True, 'username': display_name})
 
         if r.status_code == 401:
-            return jsonify({'error': 'Incorrect username or password.'}), 401
+            return jsonify({'error': 'Invalid token — check you copied it in full.'}), 401
 
-        # Unexpected status
-        app.logger.warning(f'[auth] unexpected supervisor status {r.status_code}: {r.text[:200]}')
-        return jsonify({'error': f'Unexpected auth response (supervisor: {r.status_code}).'}), 502
+        app.logger.warning(f'[auth] unexpected HA status {r.status_code}: {r.text[:200]}')
+        return jsonify({'error': f'HA returned unexpected status {r.status_code}.'}), 502
 
     except requests.Timeout:
-        app.logger.warning('[auth] supervisor auth timed out')
-        return jsonify({'error': 'Auth service timed out — is Home Assistant running?'}), 503
+        app.logger.warning('[auth] HA Core API timed out during token validation')
+        return jsonify({'error': 'HA timed out — is Home Assistant running?'}), 503
     except Exception as e:
-        app.logger.warning(f'[auth] login error: {e}')
-        return jsonify({'error': f'Auth service unavailable: {e}'}), 503
+        app.logger.warning(f'[auth] token validation error: {e}')
+        return jsonify({'error': f'Could not reach HA: {e}'}), 503
 
 
 @app.route('/api/auth/logout', methods=['POST'])

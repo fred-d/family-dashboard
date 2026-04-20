@@ -163,6 +163,15 @@
     box-shadow: none;
 }
 
+/* ── Optional label suffix ── */
+.auth-label-optional {
+    font-weight:    400;
+    text-transform: none;
+    letter-spacing: 0;
+    color:          #94a3b8;
+    font-size:      11px;
+}
+
 /* ── Footer note ── */
 .auth-ha-note {
     margin-top:  18px;

@@ -14,7 +14,7 @@
     <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.css" rel="stylesheet">
 
     <!-- App styles (load order matters) -->
-    <link rel="stylesheet" href="css/auth.css?v=1">
+    <link rel="stylesheet" href="css/auth.css?v=2">
     <link rel="stylesheet" href="css/vars.css?v=13">
     <link rel="stylesheet" href="css/shell.css?v=13">
     <link rel="stylesheet" href="css/calendar.css?v=13">
@@ -35,25 +35,26 @@
         <div class="auth-card">
             <div class="auth-logo">🏠</div>
             <div class="auth-title">Family Dashboard</div>
-            <div class="auth-subtitle">Sign in with your Home Assistant account</div>
+            <div class="auth-subtitle">Sign in with a Home Assistant access token</div>
             <form class="auth-form" id="authForm" novalidate>
                 <div class="auth-field">
-                    <label for="authUsernameInput">Username</label>
-                    <input type="text" id="authUsernameInput"
-                           autocomplete="username" placeholder="your HA username"
+                    <label for="authTokenInput">Access Token</label>
+                    <input type="password" id="authTokenInput"
+                           autocomplete="off" placeholder="Paste your long-lived access token"
                            spellcheck="false" required>
                 </div>
                 <div class="auth-field">
-                    <label for="authPasswordInput">Password</label>
-                    <input type="password" id="authPasswordInput"
-                           autocomplete="current-password" placeholder="••••••••" required>
+                    <label for="authDisplayNameInput">Your Name <span class="auth-label-optional">(optional)</span></label>
+                    <input type="text" id="authDisplayNameInput"
+                           autocomplete="given-name" placeholder="e.g. Freddy"
+                           spellcheck="false">
                 </div>
                 <div class="auth-error" id="authError"></div>
                 <button type="submit" class="auth-submit-btn" id="authSubmitBtn">Sign In</button>
             </form>
             <div class="auth-ha-note">
-                Uses your Home Assistant credentials.<br>
-                Your password is never stored by this app.
+                In HA: your profile icon → <strong>Security</strong> tab →<br>
+                <strong>Long-Lived Access Tokens</strong> → Create Token → paste above.
             </div>
         </div>
     </div>
@@ -364,7 +365,7 @@
     <!-- FullCalendar (global UMD bundle — must load before ES modules) -->
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
     <!-- Auth gate — runs immediately on load, shows login overlay if needed -->
-    <script type="module" src="js/auth.js?v=2"></script>
+    <script type="module" src="js/auth.js?v=3"></script>
     <!-- App entry point as ES module -->
     <script type="module" src="js/app.js?v=17"></script>
 
