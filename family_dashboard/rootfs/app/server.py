@@ -143,6 +143,10 @@ def api_auth_login():
     if not username or not password:
         return jsonify({'error': 'Username and password are required.'}), 400
 
+    if not HA_TOKEN:
+        app.logger.error('[auth] SUPERVISOR_TOKEN is empty — addon env not set up correctly')
+        return jsonify({'error': 'Server config error: SUPERVISOR_TOKEN missing.'}), 503
+
     try:
         r = requests.post(
             'http://supervisor/auth',
@@ -153,21 +157,35 @@ def api_auth_login():
             json={'username': username, 'password': password},
             timeout=10,
         )
+        app.logger.info(f'[auth] supervisor responded {r.status_code} for user "{username}"')
+
         if r.status_code == 200:
-            session.permanent    = True
+            session.permanent        = True
             session['authenticated'] = True
             session['username']      = username
             return jsonify({'ok': True, 'username': username})
 
-        # 401 from supervisor = wrong credentials
-        return jsonify({'error': 'Incorrect username or password.'}), 401
+        if r.status_code == 403:
+            # Supervisor rejected the addon's own token — auth_api not active yet
+            app.logger.warning('[auth] supervisor returned 403 — auth_api may not be enabled. Rebuild the addon.')
+            return jsonify({
+                'error': 'Auth API not available (supervisor 403). '
+                         'Go to HA → Add-ons → Family Dashboard → Rebuild, then try again.'
+            }), 503
+
+        if r.status_code == 401:
+            return jsonify({'error': 'Incorrect username or password.'}), 401
+
+        # Unexpected status
+        app.logger.warning(f'[auth] unexpected supervisor status {r.status_code}: {r.text[:200]}')
+        return jsonify({'error': f'Unexpected auth response (supervisor: {r.status_code}).'}), 502
 
     except requests.Timeout:
         app.logger.warning('[auth] supervisor auth timed out')
         return jsonify({'error': 'Auth service timed out — is Home Assistant running?'}), 503
     except Exception as e:
         app.logger.warning(f'[auth] login error: {e}')
-        return jsonify({'error': 'Auth service unavailable.'}), 503
+        return jsonify({'error': f'Auth service unavailable: {e}'}), 503
 
 
 @app.route('/api/auth/logout', methods=['POST'])
