@@ -29,7 +29,7 @@ function _connect() {
         _handlers.get(name)?.forEach(cb => { try { cb(data); } catch {} });
     };
 
-    ['recipe', 'meals', 'grocery'].forEach(name => {
+    ['recipe', 'meals', 'grocery', 'inventory'].forEach(name => {
         _source.addEventListener(name, forward(name));
     });
 

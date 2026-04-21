@@ -336,6 +336,9 @@ def _expiry_status(expires_at: str | None) -> str | None:
 
 # ── HA Person Integration ─────────────────────────────────────────────────────
 
+_HIDDEN_KEY = 'hidden_persons'   # stored in schema_meta as JSON list of entity_ids
+
+
 def _ha_get(path: str):
     return requests.get(
         f'{HA_BASE}{path}',
@@ -344,9 +347,42 @@ def _ha_get(path: str):
     )
 
 
+def _get_hidden_persons(c: sqlite3.Connection) -> list[str]:
+    row = c.execute('SELECT value FROM schema_meta WHERE key=?', (_HIDDEN_KEY,)).fetchone()
+    if not row:
+        return []
+    try:
+        return json.loads(row['value']) or []
+    except Exception:
+        return []
+
+
+def _set_hidden_persons(c: sqlite3.Connection, ids: list[str]):
+    c.execute(
+        'INSERT INTO schema_meta (key,value) VALUES (?,?) '
+        'ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+        (_HIDDEN_KEY, json.dumps(ids)),
+    )
+
+
+def _avatar_proxy_url(raw: str) -> str:
+    """Rewrite HA-relative avatar paths to go through our proxy endpoint."""
+    if not raw:
+        return ''
+    # Already a full URL → leave alone
+    if raw.startswith(('http://', 'https://')):
+        return raw
+    # HA returns paths like "/api/image/serve/<hash>/512x512"
+    # Route through our proxy so the browser (on dashboard.fna3.net) can fetch it.
+    return f'/api/inventory/avatar?src={requests.utils.quote(raw, safe="")}'
+
+
 @bp.route('/family')
 def api_family():
-    """Return the roster of HA person entities — used for attribution avatars."""
+    """Return the roster of HA person entities (hidden persons filtered out)."""
+    c = _conn()
+    hidden = set(_get_hidden_persons(c))
+    show_hidden = request.args.get('showHidden') == '1'
     try:
         r = _ha_get('/api/states')
         states = r.json()
@@ -355,20 +391,69 @@ def api_family():
             eid = s.get('entity_id', '')
             if not eid.startswith('person.'):
                 continue
+            if not show_hidden and eid in hidden:
+                continue
             attrs = s.get('attributes', {}) or {}
+            name = attrs.get('friendly_name') or eid.replace('person.', '').replace('_', ' ').title()
             people.append({
                 'id':       eid,
-                'name':     attrs.get('friendly_name') or eid.replace('person.', '').replace('_', ' ').title(),
-                'avatar':   attrs.get('entity_picture', ''),
-                'state':    s.get('state', 'unknown'),  # 'home', 'not_home', etc.
-                'initials': _initials(attrs.get('friendly_name') or eid.replace('person.', '')),
+                'name':     name,
+                'avatar':   _avatar_proxy_url(attrs.get('entity_picture', '')),
+                'state':    s.get('state', 'unknown'),
+                'initials': _initials(name),
                 'color':    _stable_color(eid),
+                'hidden':   eid in hidden,
             })
         people.sort(key=lambda p: p['name'].lower())
         return jsonify(people)
-    except Exception as e:
-        # Never fail — the UI must still work if HA is unreachable
+    except Exception:
         return jsonify([])
+
+
+@bp.route('/family/hidden', methods=['GET', 'POST'])
+def api_family_hidden():
+    """Manage the hidden-persons blocklist (used to hide MQTT / system accounts)."""
+    c = _conn()
+    if request.method == 'GET':
+        return jsonify(_get_hidden_persons(c))
+    body = request.get_json() or {}
+    ids = body.get('hidden') or []
+    if not isinstance(ids, list):
+        return jsonify({'error': 'hidden must be a list'}), 400
+    # Accept only person.* entity_ids
+    ids = [x for x in ids if isinstance(x, str) and x.startswith('person.')]
+    _set_hidden_persons(c, ids)
+    _sse_push('inventory', {'type': 'family'})
+    return jsonify({'ok': True, 'hidden': ids})
+
+
+@bp.route('/avatar')
+def api_avatar_proxy():
+    """
+    Proxy HA-relative avatar images so the browser can load them from
+    dashboard.fna3.net (where /api/image/... doesn't exist directly).
+    Strict whitelist on src paths — only HA image/media endpoints allowed.
+    """
+    src = request.args.get('src', '')
+    if not src.startswith('/api/image/') and not src.startswith('/api/media/'):
+        return jsonify({'error': 'Invalid source'}), 400
+    try:
+        r = requests.get(
+            f'{HA_BASE}{src}',
+            headers={'Authorization': f'Bearer {HA_TOKEN}'},
+            timeout=8,
+            stream=True,
+        )
+        if r.status_code != 200:
+            return ('', r.status_code)
+        ctype = r.headers.get('Content-Type', 'image/jpeg')
+        # Cache aggressively — avatars don't change often
+        return (r.content, 200, {
+            'Content-Type':  ctype,
+            'Cache-Control': 'public, max-age=86400',
+        })
+    except Exception:
+        return ('', 502)
 
 
 def _initials(name: str) -> str:

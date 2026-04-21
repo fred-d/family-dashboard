@@ -18,6 +18,8 @@ import { RecipeApp } from './recipes.js';
 import { RecipeStore } from './recipe-store.js';
 import { GroceryApp } from './grocery.js';
 import { GroceryStore } from './grocery-store.js';
+import { InventoryApp } from './inventory.js';
+import { InventoryStore } from './inventory-store.js';
 import {
     openSettings, closeSettings,
     loadCalendarColors, saveDefaultView,
@@ -46,13 +48,14 @@ Object.assign(window, {
 
 // ── View router ───────────────────────────────────────────────────────────────
 
-const VIEWS = ['calendar', 'meals', 'recipes', 'grocery'];
+const VIEWS = ['calendar', 'meals', 'recipes', 'grocery', 'inventory'];
 
 const VIEW_TITLES = {
-    calendar: 'Family Dashboard',
-    meals:    'Meal Planner',
-    recipes:  'Recipe Book',
-    grocery:  'Shopping List',
+    calendar:  'Family Dashboard',
+    meals:     'Meal Planner',
+    recipes:   'Recipe Book',
+    grocery:   'Shopping List',
+    inventory: 'Kitchen Inventory',
 };
 
 function getActiveView() {
@@ -82,6 +85,7 @@ function switchView(view) {
     }
     if (window.recipeApp  && view === 'recipes') window.recipeApp._loadAndRender();
     if (window.groceryApp && view === 'grocery') window.groceryApp._load();
+    if (window.inventoryApp && view === 'inventory') window.inventoryStore?.refresh('items');
 
     if (view === 'calendar' && window.haCalendar?.calendar) {
         requestAnimationFrame(() => window.haCalendar.calendar.updateSize());
@@ -118,13 +122,20 @@ async function init() {
     setTimeout(updateFilterCircles, 500);
 
     // Stores use backend API — no HA config needed in frontend
-    const mealStore    = new MealStore();
-    const recipeStore  = new RecipeStore();
-    const groceryStore = new GroceryStore();
+    const mealStore      = new MealStore();
+    const recipeStore    = new RecipeStore();
+    const groceryStore   = new GroceryStore();
+    const inventoryStore = new InventoryStore();
+    window.inventoryStore = inventoryStore;
 
-    window.mealPlanner = new MealPlanner(document.getElementById('view-meals'),    mealStore);
-    window.recipeApp   = new RecipeApp(document.getElementById('view-recipes'),   recipeStore);
-    window.groceryApp  = new GroceryApp(document.getElementById('view-grocery'),  groceryStore);
+    window.mealPlanner   = new MealPlanner(document.getElementById('view-meals'),    mealStore);
+    window.recipeApp     = new RecipeApp(document.getElementById('view-recipes'),   recipeStore);
+    window.groceryApp    = new GroceryApp(document.getElementById('view-grocery'),  groceryStore);
+    window.inventoryApp  = new InventoryApp(document.getElementById('view-inventory'), inventoryStore);
+
+    // Initial fetch — inventory store hydrates from localStorage, so UI is
+    // already interactive; this just refreshes against the server.
+    inventoryStore.load();
 
     // Initial route
     switchView(getActiveView());
