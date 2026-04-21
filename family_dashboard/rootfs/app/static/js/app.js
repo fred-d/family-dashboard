@@ -143,6 +143,16 @@ async function init() {
 }
 
 // Wait for auth.js to confirm the user is authenticated before booting.
-// { once: true } ensures init() only ever runs once per page load.
-// auth.js dispatches 'app:authed' after a successful status check or login.
-window.addEventListener('app:authed', init, { once: true });
+// auth.js dispatches 'app:authed' after a successful status check or login,
+// AND sets window.__appAuthed = true. We check the flag on load in case the
+// event already fired before this listener was attached (auth.js's import
+// chain finishes before app.js's, so the race is real and was causing a
+// blank UI on refresh).
+let _booted = false;
+function _bootOnce() {
+    if (_booted) return;
+    _booted = true;
+    init();
+}
+window.addEventListener('app:authed', _bootOnce);
+if (window.__appAuthed) _bootOnce();

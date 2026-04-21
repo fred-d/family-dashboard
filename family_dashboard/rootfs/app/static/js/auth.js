@@ -20,8 +20,11 @@ function _overlay()  { return document.getElementById('authOverlay'); }
 function _show()     { _overlay()?.classList.add('visible'); }
 function _hide() {
     _overlay()?.classList.remove('visible');
-    // Signal app.js that it is safe to initialise (fires at most once per load
-    // because app.js listens with { once: true }).
+    // Signal app.js that it is safe to initialise. Set a flag too — app.js's
+    // import chain is longer than auth.js's, so the event can fire before its
+    // listener is attached. The flag lets app.js detect a missed event on
+    // load and run init() anyway.
+    window.__appAuthed = true;
     window.dispatchEvent(new CustomEvent('app:authed'));
 }
 

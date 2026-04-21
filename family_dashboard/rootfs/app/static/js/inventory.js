@@ -527,7 +527,7 @@ export class InventoryApp {
             upc:       prefill.upc || '',
             image_url: prefill.image_url || '',
             location_id: locId,
-            qty_on_hand: 1,
+            current_qty: 1,
         }).catch(err => alert(err.message));
     }
 }
