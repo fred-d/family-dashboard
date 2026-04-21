@@ -377,15 +377,37 @@ def _avatar_proxy_url(raw: str) -> str:
     return f'/api/inventory/avatar?src={requests.utils.quote(raw, safe="")}'
 
 
+_BOT_NAME_HINTS = ('mqtt', 'bot', 'service', 'system', 'hass', 'node-red', 'esphome')
+
+
+def _auto_hide_bot_accounts(c: sqlite3.Connection, entity_ids: list[str]) -> list[str]:
+    """On first family-load, auto-add obvious bot/service accounts (mqttuser,
+    node-red, etc.) to the hidden-persons list. Idempotent — only touches
+    entities that aren't already in the list."""
+    row = c.execute('SELECT value FROM schema_meta WHERE key=?', (_HIDDEN_KEY,)).fetchone()
+    if row is not None:
+        return _get_hidden_persons(c)  # already seeded — respect user edits
+    auto = [
+        eid for eid in entity_ids
+        if any(h in eid.lower() for h in _BOT_NAME_HINTS)
+    ]
+    _set_hidden_persons(c, auto)
+    c.commit()
+    return auto
+
+
 @bp.route('/family')
 def api_family():
     """Return the roster of HA person entities (hidden persons filtered out)."""
     c = _conn()
-    hidden = set(_get_hidden_persons(c))
     show_hidden = request.args.get('showHidden') == '1'
     try:
         r = _ha_get('/api/states')
         states = r.json()
+        all_person_ids = [s.get('entity_id', '') for s in states
+                          if s.get('entity_id', '').startswith('person.')]
+        # Seed hidden list on first run with obvious bot accounts
+        hidden = set(_auto_hide_bot_accounts(c, all_person_ids))
         people = []
         for s in states:
             eid = s.get('entity_id', '')
