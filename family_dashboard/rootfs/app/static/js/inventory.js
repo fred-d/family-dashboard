@@ -492,19 +492,22 @@ export class InventoryApp {
         if (!this._scanner) this._scanner = new BarcodeScanner();
         this._scanner.open('restock', async (result) => {
             if (!result?.barcode) return;
-            const hit = await this.store.scan(result.barcode);
-            if (hit?.found && hit.item_id) {
-                // Existing on-hand lot — restock it.
-                await this.store.restock(hit.item_id).catch(() => {});
-            } else {
-                // New scan — pre-fill add sheet with whatever we learned.
-                this._openAddSheet({
-                    upc:   result.barcode,
-                    name:  hit?.product?.name  || '',
-                    brand: hit?.product?.brand || '',
-                    image_url: hit?.product?.imageUrl || '',
-                });
+
+            // If we already have an inventory lot for this UPC, just restock
+            // it in place. Otherwise pre-fill the add sheet with whatever
+            // the scanner already resolved (no need to re-hit /scan).
+            const existing = (this.store.items || []).find(i => i.upc === result.barcode);
+            if (existing) {
+                await this.store.restock(existing.id).catch(() => {});
+                return;
             }
+            const p = result.product || {};
+            this._openAddSheet({
+                upc:       result.barcode,
+                name:      p.name  || '',
+                brand:     p.brand || '',
+                image_url: p.imageUrl || '',
+            });
         });
     }
 
