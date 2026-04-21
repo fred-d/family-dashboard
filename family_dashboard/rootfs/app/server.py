@@ -55,6 +55,20 @@ PHOTO_QUALITY  = 82    # JPEG quality (good balance of size vs quality)
 
 app = Flask(__name__, static_folder=str(STATIC), static_url_path='')
 
+
+@app.after_request
+def _no_cache_static(resp):
+    """Force the browser to revalidate JS/CSS/HTML on every request so addon
+    updates don't get masked by a stale module cache. Static assets are tiny
+    and served from the addon over the LAN — bandwidth is not a concern."""
+    try:
+        path = (request.path or '').lower()
+        if path.endswith(('.js', '.css', '.html')) or path == '/':
+            resp.headers['Cache-Control'] = 'no-cache, must-revalidate'
+    except Exception:
+        pass
+    return resp
+
 # ── Auth / Session setup ───────────────────────────────────────────────────────
 
 _SECRET_KEY_FILE = DATA / 'flask_secret.key'
