@@ -843,8 +843,46 @@ def api_items():
     body = request.get_json() or {}
     pid  = body.get('product_id')
     loc  = body.get('location_id')
-    if not pid or not loc:
-        return jsonify({'error': 'product_id and location_id are required'}), 400
+    upc  = re.sub(r'\D', '', str(body.get('upc') or ''))
+    name = (body.get('name') or '').strip()
+
+    # Resolve product from upc if not given. The scan endpoint will have
+    # already cached most products it found, so this is usually a hit.
+    if not pid and upc:
+        row = c.execute(
+            'SELECT product_id FROM barcode_catalog WHERE barcode=?', (upc,)
+        ).fetchone()
+        if row:
+            pid = row['product_id']
+
+    # Still no product? Create one on the fly from whatever the scanner /
+    # manual entry supplied. Requires at least a name.
+    if not pid:
+        if not name:
+            return jsonify(
+                {'error': 'product_id, or upc/name to create one, is required'}
+            ), 400
+        pid = _uid()
+        now = _now()
+        c.execute('''
+            INSERT INTO products
+              (id,name,brand,category_id,image_url,default_unit,
+               min_threshold,tracks_percent,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
+        ''', (
+            pid, name, body.get('brand', ''),
+            body.get('category_id'), body.get('image_url', ''),
+            'count', 1, 0, now, now,
+        ))
+        if upc:
+            c.execute(
+                'INSERT OR REPLACE INTO barcode_catalog '
+                '(barcode,product_id,source,raw_data,cached_at) VALUES (?,?,?,?,?)',
+                (upc, pid, 'manual', None, now),
+            )
+
+    if not loc:
+        return jsonify({'error': 'location_id is required'}), 400
 
     iid = _uid()
     now = _now()
