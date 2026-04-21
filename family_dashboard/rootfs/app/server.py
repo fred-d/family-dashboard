@@ -34,6 +34,8 @@ from flask import (Flask, Response, jsonify, request, session,
                    send_from_directory, stream_with_context)
 from PIL import Image
 
+import inventory as inventory_module  # new Kitchen Inventory module
+
 # ── Configuration ──────────────────────────────────────────────────────────────
 
 DATA     = pathlib.Path('/data')
@@ -639,5 +641,10 @@ if __name__ == '__main__':
     # Ensure all data directories exist on startup
     for d in (RECIPES, MEALS, GROCERY, PHOTOS):
         d.mkdir(parents=True, exist_ok=True)
+
+    # Wire up the Kitchen Inventory module (SQLite-backed replacement for
+    # the old JSON pantry/grocery data). Shares our SSE broadcaster so
+    # inventory changes fan out to all connected browsers in real time.
+    inventory_module.init(app, _sse_push)
 
     app.run(host='0.0.0.0', port=8099, threaded=True)
