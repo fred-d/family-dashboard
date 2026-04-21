@@ -230,12 +230,24 @@ export class BarcodeScanner {
                 <div class="scanner-lookup-text">Looking up <code>${barcode}</code>…</div>
             </div>`);
 
-        let product;
+        let product = { found: false };
         try {
-            const r = await fetch(apiUrl(`/api/upc/${encodeURIComponent(barcode)}`));
-            product = await r.json();
-        } catch {
-            product = { found: false };
+            const r = await fetch(apiUrl(`/api/inventory/scan/${encodeURIComponent(barcode)}`));
+            const data = await r.json();
+            // Normalize the cascading-scan response shape to what the
+            // confirm-modal expects (flat fields with camelCase imageUrl).
+            const p = data.product || {};
+            product = {
+                found:    !!data.found,
+                source:   data.source,        // 'local' | 'off' | 'obf' | 'opff' | 'opf' | 'upcitemdb'
+                tried:    data.tried,         // populated when no tier matched
+                name:     p.name  || '',
+                brand:    p.brand || '',
+                imageUrl: p.image_url || '',
+                category: p.category_id || '',
+            };
+        } catch (err) {
+            console.warn('[Scanner] Lookup failed:', err);
         }
         product.upc = barcode;
 
