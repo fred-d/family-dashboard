@@ -16,7 +16,7 @@
  * backend) instead of being stored as base64 data URLs.
  */
 import { isoWeek, weekDates, formatWeekRange } from './utils.js';
-import { BarcodeScanner } from './scanner.js';
+import { BarcodeScanner } from './scanner.js?v=2';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
