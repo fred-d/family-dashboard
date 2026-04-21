@@ -44,8 +44,23 @@ SCHEMA_VERSION = 1
 HA_BASE   = 'http://supervisor/core'
 HA_TOKEN  = os.environ.get('SUPERVISOR_TOKEN', '')
 
-OFF_URL   = 'https://world.openfoodfacts.org/api/v0/product/{}.json'
 OFF_UA    = 'FamilyDashboard-Inventory/2.0'
+
+# Open Food Facts split into product-type-specific databases. We cascade
+# through them so non-food UPCs (toiletries, cleaning, dental, batteries,
+# generic merchandise) still resolve. Order matters: cheapest-likely-hit
+# first. OpenProductsFacts is the catch-all for everything that doesn't
+# fit the more specific buckets.
+OFF_DBS = [
+    ('off',  'world.openfoodfacts.org',     'food'),
+    ('obf',  'world.openbeautyfacts.org',   'beauty'),
+    ('opff', 'world.openpetfoodfacts.org',  'pet food'),
+    ('opf',  'world.openproductsfacts.org', 'general products'),
+]
+
+# UPCitemDB free tier — ~100 lookups/day, no auth required. Used as a
+# final fallback when none of the OFF databases have the barcode.
+UPCITEMDB_URL = 'https://api.upcitemdb.com/prod/trial/lookup?upc={}'
 
 # Injected at blueprint registration — wired up to server.py's _sse_push
 _sse_push: Callable[[str, dict], None] = lambda event, data: None
@@ -1076,18 +1091,74 @@ def _valid_barcode(bc: str) -> bool:
     return bool(re.fullmatch(r'\d{6,14}', bc))
 
 
+def _lookup_off_db(host: str, barcode: str) -> tuple[dict | None, str]:
+    """Query a single Open Food Facts–family database. Returns (normalized
+    product dict | None, debug message). Never raises."""
+    url = f'https://{host}/api/v0/product/{barcode}.json'
+    try:
+        r = requests.get(url, headers={'User-Agent': OFF_UA}, timeout=8)
+        data = r.json()
+        status = data.get('status')
+        if status != 1 or 'product' not in data:
+            return None, f'{r.status_code}: {data.get("status_verbose", "no match")}'
+        p = data['product']
+        name  = (p.get('product_name_en') or p.get('product_name') or '').strip()
+        brand = (p.get('brands') or '').split(',')[0].strip()
+        tags  = p.get('categories_tags', [])
+        image = p.get('image_front_small_url') or p.get('image_url') or ''
+        return {
+            'name':  name,
+            'brand': brand,
+            'tags':  tags,
+            'image': image,
+            'raw':   p,
+        }, f'{r.status_code}: hit'
+    except Exception as e:
+        return None, f'error: {type(e).__name__}: {e}'
+
+
+def _lookup_upcitemdb(barcode: str) -> tuple[dict | None, str]:
+    """UPCitemDB free tier — generic catch-all. Never raises."""
+    try:
+        r = requests.get(UPCITEMDB_URL.format(barcode),
+                         headers={'User-Agent': OFF_UA}, timeout=8)
+        data = r.json()
+        items = data.get('items') or []
+        if not items:
+            msg = data.get('message') or 'no match'
+            return None, f'{r.status_code}: {msg}'
+        item = items[0]
+        return {
+            'name':  (item.get('title') or '').strip(),
+            'brand': (item.get('brand') or '').strip(),
+            'tags':  [item.get('category', '')] if item.get('category') else [],
+            'image': (item.get('images') or [''])[0],
+            'raw':   item,
+        }, f'{r.status_code}: hit'
+    except Exception as e:
+        return None, f'error: {type(e).__name__}: {e}'
+
+
 @bp.route('/scan/<barcode>')
 def api_scan(barcode):
     """
     Cascading UPC lookup:
-      1. Local barcode_catalog (instant)
-      2. Open Food Facts (cached on hit)
-      3. {found:false} if neither matches
+      1. Local barcode_catalog (instant cache)
+      2. Open Food Facts databases in order:
+         food → beauty → pet food → general products
+      3. UPCitemDB free tier (catch-all)
+      4. {found:false, tried:[…]} if every tier missed
+
+    Pass ?debug=1 to include each tier's raw response in the result for
+    troubleshooting.
     """
+    debug = request.args.get('debug') == '1'
+
     if not _valid_barcode(barcode):
         return jsonify({'found': False, 'error': 'Invalid barcode'}), 400
 
     c = _conn()
+    tried: list[dict] = []
 
     # ── Tier 1: local catalog ────────────────────────────────────────────────
     hit = c.execute('''
@@ -1104,45 +1175,58 @@ def api_scan(barcode):
             'barcode': barcode,
             'product': p,
         })
+    tried.append({'tier': 'local', 'result': 'miss'})
 
-    # ── Tier 2: Open Food Facts ──────────────────────────────────────────────
-    try:
-        r = requests.get(OFF_URL.format(barcode),
-                         headers={'User-Agent': OFF_UA}, timeout=8)
-        data = r.json()
-        if data.get('status') == 1 and 'product' in data:
-            p = data['product']
-            name  = (p.get('product_name_en') or p.get('product_name') or '').strip()
-            brand = (p.get('brands') or '').split(',')[0].strip()
-            tags  = p.get('categories_tags', [])
-            cat   = _guess_category(tags, name)
-            image = p.get('image_front_small_url') or p.get('image_url') or ''
+    # ── Tier 2: Open Food Facts family ───────────────────────────────────────
+    for short, host, label in OFF_DBS:
+        normalized, msg = _lookup_off_db(host, barcode)
+        tried.append({'tier': short, 'host': host, 'label': label, 'result': msg})
+        if normalized and normalized['name']:
+            return _cache_and_return(c, barcode, short, normalized, tried, debug)
 
-            # Cache the hit as a new Product Master entry
-            pid = _uid()
-            now = _now()
-            c.execute('''
-                INSERT INTO products
-                  (id,name,brand,category_id,image_url,default_unit,
-                   min_threshold,tracks_percent,created_at,updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?)
-            ''', (pid, name or f'Item {barcode}', brand, cat, image, 'count', 1, 0, now, now))
-            c.execute('''
-                INSERT OR REPLACE INTO barcode_catalog
-                  (barcode,product_id,source,raw_data,cached_at) VALUES (?,?,?,?,?)
-            ''', (barcode, pid, 'openfoodfacts', json.dumps(p)[:50000], now))
+    # ── Tier 3: UPCitemDB free tier ──────────────────────────────────────────
+    normalized, msg = _lookup_upcitemdb(barcode)
+    tried.append({'tier': 'upcitemdb', 'host': 'api.upcitemdb.com', 'result': msg})
+    if normalized and normalized['name']:
+        return _cache_and_return(c, barcode, 'upcitemdb', normalized, tried, debug)
 
-            return jsonify({
-                'found':   True,
-                'source':  'openfoodfacts',
-                'barcode': barcode,
-                'product': _product_row(c, pid),
-            })
-    except Exception as e:
-        # Fall through to unknown
-        pass
+    # ── All tiers missed ─────────────────────────────────────────────────────
+    body = {'found': False, 'barcode': barcode, 'tried': [t['tier'] for t in tried]}
+    if debug:
+        body['debug'] = tried
+    return jsonify(body)
 
-    return jsonify({'found': False, 'barcode': barcode})
+
+def _cache_and_return(c, barcode: str, source: str, n: dict,
+                      tried: list, debug: bool):
+    """Persist a freshly-fetched product to local catalog and return the
+    standard scan response shape."""
+    cat = _guess_category(n.get('tags', []), n.get('name', ''))
+    pid = _uid()
+    now = _now()
+    c.execute('''
+        INSERT INTO products
+          (id,name,brand,category_id,image_url,default_unit,
+           min_threshold,tracks_percent,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?)
+    ''', (pid, n['name'] or f'Item {barcode}', n.get('brand', ''), cat,
+          n.get('image', ''), 'count', 1, 0, now, now))
+    c.execute('''
+        INSERT OR REPLACE INTO barcode_catalog
+          (barcode,product_id,source,raw_data,cached_at) VALUES (?,?,?,?,?)
+    ''', (barcode, pid, source,
+          json.dumps(n.get('raw', {}))[:50000], now))
+    c.commit()
+
+    body = {
+        'found':   True,
+        'source':  source,
+        'barcode': barcode,
+        'product': _product_row(c, pid),
+    }
+    if debug:
+        body['debug'] = tried
+    return jsonify(body)
 
 
 @bp.route('/scan/link', methods=['POST'])
