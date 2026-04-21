@@ -30,6 +30,42 @@ import { FamilyPicker } from './family-picker.js';
 import { BarcodeScanner } from './scanner.js';
 import { apiUrl } from './utils.js';
 
+// ── MDI → emoji map ──────────────────────────────────────────────────────────
+// The backend seeds MDI icon names (e.g. "mdi:fridge"). We render those as
+// plain emoji for now — no need to pull in an icon font just for a first look.
+const MDI_EMOJI = {
+    'mdi:food-variant':    '🥫',
+    'mdi:fridge':          '🧊',
+    'mdi:fridge-outline':  '❄️',
+    'mdi:snowflake':       '❄️',
+    'mdi:tag':             '🏷️',
+    'mdi:store':           '🏪',
+    'mdi:store-outline':   '🏬',
+    'mdi:cart':            '🛒',
+    'mdi:cart-variant':    '🛍️',
+    'mdi:carrot':          '🥕',
+    'mdi:cheese':          '🧀',
+    'mdi:food-steak':      '🥩',
+    'mdi:bread-slice':     '🍞',
+    'mdi:sack':            '🌾',
+    'mdi:bottle-tonic':    '🧴',
+    'mdi:cupcake':         '🧁',
+    'mdi:bowl-mix':        '🥣',
+    'mdi:cookie':          '🍪',
+    'mdi:cup':             '🥤',
+    'mdi:spray-bottle':    '🧴',
+    'mdi:lotion':          '🧴',
+    'mdi:paw':             '🐾',
+    'mdi:home-variant':    '🏠',
+    'mdi:dots-horizontal': '📦',
+};
+
+function iconToEmoji(icon) {
+    if (!icon) return '📍';
+    if (icon.startsWith('mdi:')) return MDI_EMOJI[icon] || '📦';
+    return icon; // already an emoji
+}
+
 // ── Tile helpers ─────────────────────────────────────────────────────────────
 
 /** Stock state derived from percent / qty / thresholds. */
@@ -233,7 +269,7 @@ export class InventoryApp {
             ...locs.map(l => ({
                 id: l.id,
                 name: l.name,
-                emoji: l.icon || '📍',
+                emoji: iconToEmoji(l.icon),
                 count: counts[l.id] || 0,
             })),
         ];
@@ -340,7 +376,7 @@ export class InventoryApp {
         const expDays = _daysUntil(it.expires_at);
         const photo  = it.image_url
             ? `<img class="inv-tile-img" src="${_esc(it.image_url)}" alt="" loading="lazy">`
-            : `<div class="inv-tile-img placeholder">${_esc(it.category_emoji || '📦')}</div>`;
+            : `<div class="inv-tile-img placeholder">${_esc(iconToEmoji(it.category_icon || it.category_emoji))}</div>`;
 
         let expBadge = '';
         if (exp === 'expired') expBadge = `<span class="inv-badge expired">Expired</span>`;
@@ -393,7 +429,7 @@ export class InventoryApp {
             <div class="inv-sheet-head">
                 ${it.image_url
                     ? `<img class="inv-sheet-img" src="${_esc(it.image_url)}" alt="">`
-                    : `<div class="inv-sheet-img placeholder">${_esc(it.category_emoji || '📦')}</div>`}
+                    : `<div class="inv-sheet-img placeholder">${_esc(iconToEmoji(it.category_icon || it.category_emoji))}</div>`}
                 <div class="inv-sheet-title-block">
                     <h2 class="inv-sheet-title">${_esc(it.name || 'Unnamed')}</h2>
                     <div class="inv-sheet-sub">
