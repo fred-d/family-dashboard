@@ -162,7 +162,18 @@ export class InventoryStore {
     }
 
     async restock(itemId, by = 1) {
-        return this._post(`/api/inventory/items/${itemId}/restock`, { by });
+        // by may be a number (units) or { by, packs } for pack-aware restock.
+        const body = (typeof by === 'object' && by) ? by : { by };
+        return this._post(`/api/inventory/items/${itemId}/restock`, body);
+    }
+    async restockPacks(itemId, packs = 1) {
+        return this._post(`/api/inventory/items/${itemId}/restock`, { packs });
+    }
+    async needProduct(productId, body = {}) {
+        return this._post(`/api/inventory/products/${productId}/need`, body);
+    }
+    async stockAllBought() {
+        return this._post('/api/inventory/shopping/stock-all-bought', {});
     }
 
     async setPercent(itemId, percent) {
@@ -305,5 +316,7 @@ function _normalizeItem(row) {
         low_qty_threshold:  Number(row.low_qty_threshold ?? row.product_min_threshold ?? 0) || 0,
         percent:            pct == null ? null : Number(pct),
         tracks_percent:     row.tracks_percent ?? row.product_tracks_percent ?? 0,
+        units_per_pack:     Number(row.units_per_pack ?? row.product_units_per_pack ?? 1) || 1,
+        count_unit:         row.count_unit ?? row.product_count_unit ?? 'item',
     };
 }

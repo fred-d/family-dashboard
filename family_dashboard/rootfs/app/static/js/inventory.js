@@ -93,6 +93,32 @@ function _daysUntil(iso) {
     return Math.ceil((d - Date.now()) / 86400_000);
 }
 
+/** Pluralise a unit label for display. */
+function _plural(n, unit) {
+    const u = (unit || 'item').trim();
+    if (n === 1) return `${n} ${u}`;
+    if (/[sx]$/i.test(u)) return `${n} ${u}`;          // already plural-ish
+    return `${n} ${u}s`;
+}
+
+/** Primary qty label for tile / detail. */
+function _qtyLabel(it, pct) {
+    if (it.unit === 'pct') return `${pct}%`;
+    const qty = Math.round(Number(it.qty_on_hand) || 0);
+    return _plural(qty, it.count_unit || 'item');
+}
+
+/** Secondary "≈ N packs of M" line, only meaningful if units_per_pack > 1. */
+function _packSubLabel(it) {
+    const upp = Number(it.units_per_pack) || 1;
+    if (upp <= 1) return '';
+    const qty = Number(it.qty_on_hand) || 0;
+    const packs = qty / upp;
+    if (packs <= 0) return `pack of ${upp}`;
+    const rounded = Math.round(packs * 10) / 10;
+    return `≈ ${rounded} pack${rounded === 1 ? '' : 's'} of ${upp}`;
+}
+
 /** Detect "expiring soon" (≤ 7 days) or "expired". */
 function expiryState(item) {
     const d = _daysUntil(item.expires_at);
@@ -115,6 +141,7 @@ export class InventoryApp {
         this._filter   = 'all';   // 'all' | 'low' | 'expiring' | 'out'
         this._search   = '';
         this._shopStore = 'all';  // store id | 'all'
+        this._walkMode  = false;  // store walk mode (one store, big rows, grouped by aisle)
 
         // Lazy-constructed scanner
         this._scanner = null;
@@ -186,6 +213,16 @@ export class InventoryApp {
                             title="Pull this week's recipe ingredients into the list">
                         📅 From Meal Plan
                     </button>
+                    <button type="button" class="inv-btn inv-btn-secondary"
+                            data-action="walk-toggle" data-walk-toggle
+                            title="Store walk mode — focus on one store, grouped by aisle">
+                        📍 Walk
+                    </button>
+                    <button type="button" class="inv-btn inv-btn-primary"
+                            data-action="stock-all-bought" data-stock-all hidden
+                            title="Move every checked-off item into inventory">
+                        📥 Stock all bought
+                    </button>
                 </div>
                 <div class="inv-shop-list" data-shop-list>
                     <div class="inv-empty" data-shop-empty hidden>
@@ -218,6 +255,8 @@ export class InventoryApp {
         this.$shopList = this.container.querySelector('[data-shop-list]');
         this.$shopEmpty = this.container.querySelector('[data-shop-empty]');
         this.$shopStore = this.container.querySelector('[data-shop-store]');
+        this.$walkBtn   = this.container.querySelector('[data-walk-toggle]');
+        this.$stockAll  = this.container.querySelector('[data-stock-all]');
 
         // Mount family picker
         this._picker = new FamilyPicker(this.store);
@@ -267,6 +306,9 @@ export class InventoryApp {
         this.container.querySelector('[data-action="from-meal-plan"]')
             ?.addEventListener('click', () => this._openMealPlanImport());
 
+        this.$walkBtn?.addEventListener('click', () => this._toggleWalkMode());
+        this.$stockAll?.addEventListener('click', () => this._stockAllBought());
+
         this.$shopStore.addEventListener('change', () => {
             this._shopStore = this.$shopStore.value;
             this._renderShopping();
@@ -276,6 +318,8 @@ export class InventoryApp {
             const cycleBtn = e.target.closest('[data-shop-cycle]');
             const stockBtn = e.target.closest('[data-shop-stock]');
             const delBtn   = e.target.closest('[data-shop-delete]');
+            const qDecBtn  = e.target.closest('[data-shop-qdec]');
+            const qIncBtn  = e.target.closest('[data-shop-qinc]');
             if (cycleBtn) {
                 const id  = cycleBtn.dataset.shopCycle;
                 const row = (this.store.shopping || []).find(s => s.id === id);
@@ -284,6 +328,16 @@ export class InventoryApp {
                            : cur === 'ordered' ? 'bought'
                            : 'needed';
                 this.store.updateShopping(id, { status: next }).catch(() => {});
+            } else if (qDecBtn) {
+                const id  = qDecBtn.dataset.shopQdec;
+                const row = (this.store.shopping || []).find(s => s.id === id);
+                const next = Math.max(1, (Number(row?.qty) || 1) - 1);
+                this.store.updateShopping(id, { qty: next }).catch(() => {});
+            } else if (qIncBtn) {
+                const id  = qIncBtn.dataset.shopQinc;
+                const row = (this.store.shopping || []).find(s => s.id === id);
+                const next = (Number(row?.qty) || 1) + 1;
+                this.store.updateShopping(id, { qty: next }).catch(() => {});
             } else if (stockBtn) {
                 this._stockShoppingRow(stockBtn.dataset.shopStock);
             } else if (delBtn) {
@@ -300,15 +354,20 @@ export class InventoryApp {
 
         // Delegated tile clicks
         this.$grid.addEventListener('click', e => {
-            const btnDec = e.target.closest('[data-dec]');
-            const btnInc = e.target.closest('[data-inc]');
-            const tile   = e.target.closest('.inv-tile');
+            const btnDec  = e.target.closest('[data-dec]');
+            const btnInc  = e.target.closest('[data-inc]');
+            const btnNeed = e.target.closest('[data-need]');
+            const tile    = e.target.closest('.inv-tile');
             if (btnDec) {
                 e.stopPropagation();
                 this.store.consume(btnDec.dataset.dec).catch(() => {});
             } else if (btnInc) {
                 e.stopPropagation();
                 this.store.restock(btnInc.dataset.inc).catch(() => {});
+            } else if (btnNeed) {
+                e.stopPropagation();
+                const it = (this.store.items || []).find(i => i.id === btnNeed.dataset.need);
+                if (it) this._needThis(it);
             } else if (tile) {
                 this._openDetailSheet(tile.dataset.id);
             }
@@ -409,12 +468,25 @@ export class InventoryApp {
 
     _renderShopping() {
         const all = this.store.shopping || [];
-        const filtered = this._shopStore === 'all'
+        let filtered = this._shopStore === 'all'
             ? all
             : all.filter(r => r.store_id === this._shopStore || !r.store_id);
 
+        // Walk mode: hide bought rows so user only sees what's left to grab
+        if (this._walkMode) {
+            filtered = filtered.filter(r => r.status !== 'bought');
+        }
+
         // Clear previous rows but keep empty state element
         this.$shopList.querySelectorAll('.inv-shop-row, .inv-shop-group').forEach(n => n.remove());
+
+        // Toggle "Stock all bought" button based on whether there's anything to stock
+        const anyBought = all.some(r => r.status === 'bought' && r.product_id);
+        if (this.$stockAll) this.$stockAll.hidden = !anyBought;
+
+        // Reflect walk-mode style on the panel
+        this.$shop.classList.toggle('inv-walk-mode', !!this._walkMode);
+        this.$walkBtn?.classList.toggle('active', !!this._walkMode);
 
         if (!filtered.length) {
             this.$shopEmpty.hidden = false;
@@ -422,16 +494,30 @@ export class InventoryApp {
         }
         this.$shopEmpty.hidden = true;
 
-        // Group by category, status (needed first), then name
+        // Build category sort order from config (walk mode follows aisle order)
+        const catSortIdx = new Map();
+        (this.store.config.categories || []).forEach((c, i) => {
+            catSortIdx.set(c.id, Number(c.sort_order) || i);
+        });
+
+        // Group by category
         const groups = new Map();
         for (const row of filtered) {
             const key = row.category_name || 'Uncategorized';
-            if (!groups.has(key)) groups.set(key, []);
-            groups.get(key).push(row);
+            if (!groups.has(key)) groups.set(key, { cat: key, cid: row.category_id, rows: [] });
+            groups.get(key).rows.push(row);
         }
-        const sortedGroups = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
-        const html = sortedGroups.map(([cat, rows]) => {
+        const sortedGroups = [...groups.values()].sort((a, b) => {
+            if (this._walkMode) {
+                const ai = catSortIdx.has(a.cid) ? catSortIdx.get(a.cid) : 9999;
+                const bi = catSortIdx.has(b.cid) ? catSortIdx.get(b.cid) : 9999;
+                if (ai !== bi) return ai - bi;
+            }
+            return a.cat.localeCompare(b.cat);
+        });
+
+        const html = sortedGroups.map(({ cat, rows }) => {
             rows.sort((a, b) =>
                 (a.status === 'bought' ? 1 : 0) - (b.status === 'bought' ? 1 : 0) ||
                 (a.name || '').localeCompare(b.name || ''));
@@ -445,6 +531,34 @@ export class InventoryApp {
         }).join('');
 
         this.$shopEmpty.insertAdjacentHTML('beforebegin', html);
+    }
+
+    _toggleWalkMode() {
+        this._walkMode = !this._walkMode;
+        // Walk mode is most useful filtered to a single store. Auto-pick the
+        // first store on enable; let the user override after.
+        if (this._walkMode && this._shopStore === 'all') {
+            const first = (this.store.config.stores || [])[0];
+            if (first) {
+                this._shopStore = first.id;
+                if (this.$shopStore) this.$shopStore.value = first.id;
+            }
+        }
+        this._renderShopping();
+    }
+
+    async _stockAllBought() {
+        const ok = await this._confirm({
+            title: 'Stock all bought items?',
+            body:  'Every checked-off shopping item will be moved into your inventory using its default location. This can\'t be undone.',
+            confirmLabel: 'Stock all',
+        });
+        if (!ok) return;
+        try {
+            await this.store.stockAllBought();
+        } catch (err) {
+            alert(err.message || 'Failed to stock items.');
+        }
     }
 
     _shopRowHtml(r) {
@@ -470,7 +584,18 @@ export class InventoryApp {
         const photo = r.product_image
             ? `<img class="inv-shop-img" src="${_esc(r.product_image)}" alt="" loading="lazy">`
             : `<div class="inv-shop-img placeholder">🛒</div>`;
-        const qty = Number(r.qty) > 1 ? `×${Number(r.qty)}` : '';
+        const qtyNum  = Math.max(1, Number(r.qty) || 1);
+        const isDone  = status === 'bought';
+        const qtyCtrl = `
+            <div class="inv-shop-qtyctrl" aria-label="Quantity">
+                <button type="button" class="inv-shop-qbtn" data-shop-qdec="${_esc(r.id)}"
+                        ${qtyNum <= 1 || isDone ? 'disabled' : ''}
+                        aria-label="Decrease quantity">−</button>
+                <span class="inv-shop-qnum">${qtyNum}</span>
+                <button type="button" class="inv-shop-qbtn" data-shop-qinc="${_esc(r.id)}"
+                        ${isDone ? 'disabled' : ''}
+                        aria-label="Increase quantity">+</button>
+            </div>`;
         // Tri-state checkbox: empty → 📋 ordered → ✓ bought → empty…
         const checkLabel = status === 'needed' ? 'Mark ordered'
                          : status === 'ordered' ? 'Mark bought'
@@ -489,7 +614,7 @@ export class InventoryApp {
                 </button>
                 ${photo}
                 <div class="inv-shop-body">
-                    <div class="inv-shop-name">${_esc(r.name)} ${qty ? `<span class="inv-shop-qty">${qty}</span>` : ''}</div>
+                    <div class="inv-shop-name">${_esc(r.name)}</div>
                     <div class="inv-shop-meta">
                         ${sourceBadge}
                         ${statusBadge}
@@ -497,6 +622,7 @@ export class InventoryApp {
                         ${personChip}
                     </div>
                 </div>
+                ${qtyCtrl}
                 ${stockBtn}
                 <button type="button" class="inv-shop-del" data-shop-delete="${_esc(r.id)}"
                         aria-label="Remove from list">×</button>
@@ -690,9 +816,8 @@ export class InventoryApp {
         if (exp === 'expired') expBadge = `<span class="inv-badge expired">Expired</span>`;
         else if (exp === 'soon') expBadge = `<span class="inv-badge soon">${expDays}d</span>`;
 
-        const qtyLabel = it.unit === 'pct'
-            ? `${pct}%`
-            : `${it.qty_on_hand ?? 0}${it.unit ? ' ' + it.unit : ''}`;
+        const qtyLabel = _qtyLabel(it, pct);
+        const subLabel = _packSubLabel(it);
 
         return `
             <article class="inv-tile state-${state}" data-id="${_esc(it.id)}">
@@ -711,12 +836,17 @@ export class InventoryApp {
                         <div class="inv-meter-fill" style="width:${pct}%"></div>
                     </div>
                     <div class="inv-tile-row">
-                        <span class="inv-tile-qty">${_esc(qtyLabel)}</span>
+                        <span class="inv-tile-qty">
+                            ${_esc(qtyLabel)}
+                            ${subLabel ? `<span class="inv-tile-qty-sub">${_esc(subLabel)}</span>` : ''}
+                        </span>
                         <div class="inv-tile-actions">
                             <button type="button" class="inv-qbtn" data-dec="${_esc(it.id)}"
-                                    aria-label="Consume one" ${it.qty_on_hand <= 0 ? 'disabled' : ''}>−</button>
+                                    aria-label="Use one ${_esc(it.count_unit || 'item')}" ${it.qty_on_hand <= 0 ? 'disabled' : ''}>−</button>
                             <button type="button" class="inv-qbtn" data-inc="${_esc(it.id)}"
-                                    aria-label="Restock one">+</button>
+                                    aria-label="Add one ${_esc(it.count_unit || 'item')}">+</button>
+                            <button type="button" class="inv-qbtn need" data-need="${_esc(it.id)}"
+                                    aria-label="Add to shopping list" title="Need this">🛒</button>
                         </div>
                     </div>
                 </div>
@@ -731,6 +861,10 @@ export class InventoryApp {
         if (!it) return;
         const pct = _effectivePercent(it);
         const loc = this.store.locationById(it.location_id);
+        const upp = Number(it.units_per_pack) || 1;
+        const unitLbl = it.count_unit || 'item';
+        const showPack = upp > 1;
+        const tracksPct = Number(it.tracks_percent) === 1;
 
         this.$sheetCard.innerHTML = `
             <button type="button" class="inv-sheet-close" data-sheet-close aria-label="Close">×</button>
@@ -746,20 +880,34 @@ export class InventoryApp {
                 </div>
             </div>
 
-            <div class="inv-sheet-meter">
-                <input type="range" min="0" max="100" value="${pct}" step="5"
-                       class="inv-sheet-slider" data-pct>
-                <div class="inv-sheet-pct" data-pct-display>${pct}%</div>
+            <div class="inv-sheet-qty-block">
+                <div class="inv-sheet-qty-num" data-qty-display>${_esc(_qtyLabel(it, pct))}</div>
+                ${showPack ? `<div class="inv-sheet-qty-sub">${_esc(_packSubLabel(it))}</div>` : ''}
+                <div class="inv-sheet-qty-stepper">
+                    <button type="button" class="inv-qbtn big" data-cmd="dec"
+                            ${it.qty_on_hand <= 0 ? 'disabled' : ''}
+                            aria-label="Use one ${_esc(unitLbl)}">− 1 ${_esc(unitLbl)}</button>
+                    <input type="number" class="inv-input inv-sheet-qty-input"
+                           min="0" step="1" value="${Math.round(it.qty_on_hand || 0)}"
+                           data-qty-set>
+                    <button type="button" class="inv-qbtn big" data-cmd="inc"
+                            aria-label="Add one ${_esc(unitLbl)}">+ 1 ${_esc(unitLbl)}</button>
+                </div>
+                ${showPack ? `
+                    <button type="button" class="inv-btn inv-btn-secondary inv-sheet-pack-btn"
+                            data-cmd="inc-pack">📦 + 1 pack (${upp} ${_esc(unitLbl)}s)</button>` : ''}
             </div>
+
+            ${tracksPct ? `
+                <div class="inv-sheet-meter">
+                    <input type="range" min="0" max="100" value="${pct}" step="5"
+                           class="inv-sheet-slider" data-pct>
+                    <div class="inv-sheet-pct" data-pct-display>${pct}%</div>
+                </div>` : ''}
 
             <div class="inv-sheet-actions">
-                <button type="button" class="inv-btn inv-btn-secondary"
-                        data-cmd="dec">− Consume</button>
-                <button type="button" class="inv-btn inv-btn-primary"
-                        data-cmd="inc">+ Restock</button>
-            </div>
-
-            <div class="inv-sheet-actions inv-sheet-actions-secondary">
+                <button type="button" class="inv-btn inv-btn-primary inv-btn-need"
+                        data-cmd="need">🛒 Need this</button>
                 <button type="button" class="inv-btn inv-btn-ghost"
                         data-cmd="edit">✎ Edit</button>
                 <button type="button" class="inv-btn inv-btn-ghost inv-btn-danger-text"
@@ -778,26 +926,49 @@ export class InventoryApp {
                 </div>` : ''}
         `;
 
-        const slider  = this.$sheetCard.querySelector('[data-pct]');
-        const display = this.$sheetCard.querySelector('[data-pct-display]');
-        slider.addEventListener('input', () => {
-            display.textContent = `${slider.value}%`;
-        });
-        slider.addEventListener('change', () => {
-            this.store.setPercent(id, Number(slider.value)).catch(() => {});
-        });
+        if (tracksPct) {
+            const slider  = this.$sheetCard.querySelector('[data-pct]');
+            const display = this.$sheetCard.querySelector('[data-pct-display]');
+            slider.addEventListener('input', () => { display.textContent = `${slider.value}%`; });
+            slider.addEventListener('change', () => {
+                this.store.setPercent(id, Number(slider.value)).catch(() => {});
+            });
+        }
 
         this.$sheetCard.querySelector('[data-cmd="dec"]')
-            .addEventListener('click', () => this.store.consume(id).catch(() => {}));
+            ?.addEventListener('click', () => this.store.consume(id).catch(() => {}));
         this.$sheetCard.querySelector('[data-cmd="inc"]')
-            .addEventListener('click', () => this.store.restock(id).catch(() => {}));
+            ?.addEventListener('click', () => this.store.restock(id).catch(() => {}));
+        this.$sheetCard.querySelector('[data-cmd="inc-pack"]')
+            ?.addEventListener('click', () => this.store.restockPacks(id, 1).catch(() => {}));
+        this.$sheetCard.querySelector('[data-cmd="need"]')
+            ?.addEventListener('click', () => this._needThis(it));
         this.$sheetCard.querySelector('[data-cmd="edit"]')
             ?.addEventListener('click', () => this._openItemModal({ mode: 'edit', itemId: id }));
         this.$sheetCard.querySelector('[data-cmd="delete"]')
             ?.addEventListener('click', () => this._deleteItem(it));
 
+        // Direct qty edit — fires when user blurs / hits enter
+        const $set = this.$sheetCard.querySelector('[data-qty-set]');
+        $set?.addEventListener('change', () => {
+            const v = Math.max(0, Math.round(Number($set.value) || 0));
+            this.store.updateItem(id, { current_qty: v }).catch(() => {});
+        });
+
         this.$sheet.hidden = false;
         requestAnimationFrame(() => this.$sheet.classList.add('open'));
+    }
+
+    async _needThis(it) {
+        if (!it?.product_id) {
+            alert('This item has no linked product — open Edit and pick a product first.');
+            return;
+        }
+        try {
+            await this.store.needProduct(it.product_id, { qty: 1 });
+        } catch (err) {
+            alert(err.message || 'Could not add to shopping list.');
+        }
     }
 
     _closeSheet() {
@@ -817,7 +988,8 @@ export class InventoryApp {
             // whatever the scanner resolved so the user can pick a location.
             const existing = (this.store.items || []).find(i => i.upc === result.barcode);
             if (existing) {
-                await this.store.restock(existing.id).catch(() => {});
+                // Scanning a pack home → add a whole pack worth of units.
+                await this.store.restockPacks(existing.id, 1).catch(() => {});
                 return;
             }
             const p = result.product || {};
@@ -873,6 +1045,8 @@ export class InventoryApp {
             location_id: item.location_id || locations[0].id,
             current_qty: item.qty_on_hand ?? 1,
             min_threshold: item.low_qty_threshold ?? 1,
+            units_per_pack: item.units_per_pack ?? 1,
+            count_unit:  item.count_unit || 'item',
             expires_at:  item.expires_at ? String(item.expires_at).slice(0, 10) : '',
             notes:       item.notes || '',
         } : {
@@ -884,6 +1058,8 @@ export class InventoryApp {
             location_id: prefill.location_id || locations[0].id,
             current_qty: prefill.current_qty ?? 1,
             min_threshold: prefill.min_threshold ?? 1,
+            units_per_pack: prefill.units_per_pack ?? 1,
+            count_unit:  prefill.count_unit || 'item',
             expires_at:  prefill.expires_at  || '',
             notes:       prefill.notes       || '',
         };
@@ -948,6 +1124,21 @@ export class InventoryApp {
                         <span class="inv-field-label">Low at</span>
                         <input type="number" class="inv-input" name="min_threshold"
                                min="0" step="1" value="${Number(v.min_threshold)}">
+                    </label>
+
+                    <label class="inv-field">
+                        <span class="inv-field-label">Units / pack</span>
+                        <input type="number" class="inv-input" name="units_per_pack"
+                               min="1" step="1" value="${Number(v.units_per_pack) || 1}"
+                               title="How many individual units come in one purchased pack (e.g. 6 packets per box)">
+                    </label>
+
+                    <label class="inv-field">
+                        <span class="inv-field-label">Unit name</span>
+                        <input type="text" class="inv-input" name="count_unit"
+                               value="${_esc(v.count_unit || 'item')}"
+                               placeholder="packet, battery, can…"
+                               title="What you call one individual unit">
                     </label>
 
                     <label class="inv-field inv-field-wide">
@@ -1031,6 +1222,8 @@ export class InventoryApp {
                     brand:        data.brand || '',
                     category_id:  data.category_id || null,
                     min_threshold: Number(data.min_threshold) || 1,
+                    units_per_pack: Math.max(1, Number(data.units_per_pack) || 1),
+                    count_unit:   (data.count_unit || 'item').trim() || 'item',
                 };
                 const itemPatch = {
                     location_id:  data.location_id,
@@ -1053,6 +1246,8 @@ export class InventoryApp {
                     location_id:  data.location_id,
                     current_qty:  Number(data.current_qty) || 1,
                     min_threshold: Number(data.min_threshold) || 1,
+                    units_per_pack: Math.max(1, Number(data.units_per_pack) || 1),
+                    count_unit:   (data.count_unit || 'item').trim() || 'item',
                     expires_at:   data.expires_at || null,
                 });
             }
