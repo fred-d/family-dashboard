@@ -872,7 +872,10 @@ def api_items():
         ''', (
             pid, name, body.get('brand', ''),
             body.get('category_id'), body.get('image_url', ''),
-            'count', 1, 0, now, now,
+            body.get('default_unit', 'count'),
+            float(body.get('min_threshold') or 1),
+            1 if body.get('tracks_percent') else 0,
+            now, now,
         ))
         if upc:
             c.execute(
