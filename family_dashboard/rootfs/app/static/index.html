@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#667eea">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -16,7 +19,7 @@
     <!-- App styles (load order matters) -->
     <link rel="stylesheet" href="css/auth.css?v=2">
     <link rel="stylesheet" href="css/vars.css?v=13">
-    <link rel="stylesheet" href="css/shell.css?v=13">
+    <link rel="stylesheet" href="css/shell.css?v=14">
     <link rel="stylesheet" href="css/calendar.css?v=13">
     <link rel="stylesheet" href="css/meals.css?v=13">
     <link rel="stylesheet" href="css/recipes.css?v=13">
@@ -383,7 +386,7 @@
     <!-- Auth gate — runs immediately on load, shows login overlay if needed -->
     <script type="module" src="js/auth.js?v=6"></script>
     <!-- App entry point as ES module -->
-    <script type="module" src="js/app.js?v=22"></script>
+    <script type="module" src="js/app.js?v=23"></script>
 
 </body>
 </html>
