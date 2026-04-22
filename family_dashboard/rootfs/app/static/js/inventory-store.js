@@ -193,6 +193,33 @@ export class InventoryStore {
 
     async saveHiddenPersons(ids)      { return this._post('/api/inventory/family/hidden', { hidden: ids }); }
 
+    // ── Reference data CRUD (locations / categories / stores) ────────────────
+
+    async addLocation(data)           { return this._post('/api/inventory/locations', data); }
+    async updateLocation(id, patch)   { return this._patch(`/api/inventory/locations/${id}`, patch); }
+    async deleteLocation(id)          { return this._delete(`/api/inventory/locations/${id}`); }
+
+    async addCategory(data)           { return this._post('/api/inventory/categories', data); }
+    async updateCategory(id, patch)   { return this._patch(`/api/inventory/categories/${id}`, patch); }
+    async deleteCategory(id)          { return this._delete(`/api/inventory/categories/${id}`); }
+
+    async addStore(data)              { return this._post('/api/inventory/stores', data); }
+    async updateStore(id, patch)      { return this._patch(`/api/inventory/stores/${id}`, patch); }
+    async deleteStore(id)             { return this._delete(`/api/inventory/stores/${id}`); }
+
+    // ── Generic-product flows ────────────────────────────────────────────────
+
+    async linkBarcode(barcode, productId) {
+        return this._post('/api/inventory/scan/link', { barcode, product_id: productId });
+    }
+    async mergeProducts(srcId, dstId) {
+        return this._post(`/api/inventory/products/${srcId}/merge`, { into: dstId });
+    }
+    async loadProducts() {
+        await this.refresh('products');
+        return this.products;
+    }
+
     // ── HTTP helpers ─────────────────────────────────────────────────────────
 
     async _post(path, body)   { return this._send('POST',   path, body); }

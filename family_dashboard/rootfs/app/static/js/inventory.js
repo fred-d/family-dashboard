@@ -141,6 +141,8 @@ export class InventoryApp {
                     <button type="button" class="inv-btn inv-btn-primary" data-action="add">
                         <span class="inv-btn-icon">＋</span> Add Item
                     </button>
+                    <button type="button" class="inv-btn inv-btn-secondary inv-btn-icon-only"
+                            data-action="settings" aria-label="Inventory settings" title="Settings">⚙</button>
                 </div>
             </div>
 
@@ -248,6 +250,8 @@ export class InventoryApp {
                 if (this._mode === 'shopping') this._openShoppingAddModal();
                 else this._openAddSheet();
             });
+        this.container.querySelector('[data-action="settings"]')
+            .addEventListener('click', () => this._openSettings());
 
         this.$modes.addEventListener('click', e => {
             const btn = e.target.closest('.inv-mode');
@@ -1029,6 +1033,150 @@ export class InventoryApp {
             this._closeSheet();
         } catch (err) {
             alert(err.message || 'Delete failed.');
+        }
+    }
+
+    // ── Settings: locations / categories / stores CRUD ───────────────────────
+
+    _openSettings(initialTab = 'locations') {
+        this._renderSettings(initialTab);
+        this.$sheet.hidden = false;
+        requestAnimationFrame(() => this.$sheet.classList.add('open'));
+    }
+
+    _renderSettings(activeTab) {
+        const tab = activeTab || this._settingsTab || 'locations';
+        this._settingsTab = tab;
+
+        const tabsHtml = ['locations', 'categories', 'stores'].map(t => `
+            <button type="button" class="inv-set-tab${t === tab ? ' active' : ''}"
+                    data-set-tab="${t}">
+                ${t === 'locations' ? '📍 Locations'
+                  : t === 'categories' ? '🏷 Categories'
+                  : '🏪 Stores'}
+            </button>
+        `).join('');
+
+        const rows = (tab === 'locations' ? this.store.config.locations
+                    : tab === 'categories' ? this.store.config.categories
+                    : this.store.config.stores) || [];
+
+        const rowsHtml = rows.length ? rows.map(r => `
+            <div class="inv-set-row" data-set-id="${_esc(r.id)}">
+                <span class="inv-set-emoji">${_esc(iconToEmoji(r.icon))}</span>
+                <input type="text" class="inv-input inv-set-name" value="${_esc(r.name)}"
+                       data-set-name="${_esc(r.id)}">
+                <input type="color" class="inv-set-color" value="${_esc(r.color || '#888888')}"
+                       data-set-color="${_esc(r.id)}" title="Color">
+                <input type="number" class="inv-input inv-set-sort" value="${Number(r.sort_order || 0)}"
+                       data-set-sort="${_esc(r.id)}" title="Sort order" min="0">
+                <button type="button" class="inv-icon-btn" data-set-save="${_esc(r.id)}"
+                        title="Save changes">💾</button>
+                <button type="button" class="inv-icon-btn danger" data-set-delete="${_esc(r.id)}"
+                        title="Delete">🗑</button>
+            </div>
+        `).join('') : `<div class="inv-set-empty">No ${tab} yet — add one below.</div>`;
+
+        this.$sheetCard.innerHTML = `
+            <button type="button" class="inv-sheet-close" data-sheet-close aria-label="Close">×</button>
+            <h2 class="inv-form-title">Inventory Settings</h2>
+            <div class="inv-set-tabs">${tabsHtml}</div>
+            <div class="inv-set-list">${rowsHtml}</div>
+            <form class="inv-set-add" data-set-add novalidate>
+                <input type="text" class="inv-input" name="emoji"
+                       placeholder="🥫" maxlength="3" style="max-width:60px">
+                <input type="text" class="inv-input" name="name" required
+                       placeholder="New ${tab.slice(0, -1)} name…">
+                <input type="color" class="inv-set-color" name="color" value="#4a90e2">
+                <button type="submit" class="inv-btn inv-btn-primary">＋ Add</button>
+            </form>
+            <p class="inv-set-hint">Save with 💾. Delete is blocked while items still reference a location, but a category/store with rows that depend on it will be unlinked.</p>
+        `;
+
+        // Wire tab switching
+        this.$sheetCard.querySelectorAll('[data-set-tab]').forEach(b =>
+            b.addEventListener('click', () => this._renderSettings(b.dataset.setTab)));
+
+        // Wire row save/delete
+        this.$sheetCard.querySelectorAll('[data-set-save]').forEach(b =>
+            b.addEventListener('click', () => this._settingsSave(tab, b.dataset.setSave)));
+        this.$sheetCard.querySelectorAll('[data-set-delete]').forEach(b =>
+            b.addEventListener('click', () => this._settingsDelete(tab, b.dataset.setDelete)));
+
+        // Wire add form
+        this.$sheetCard.querySelector('[data-set-add]')
+            .addEventListener('submit', e => { e.preventDefault(); this._settingsAdd(tab, e.target); });
+    }
+
+    async _settingsSave(tab, id) {
+        const $row = this.$sheetCard.querySelector(`.inv-set-row[data-set-id="${CSS.escape(id)}"]`);
+        if (!$row) return;
+        const patch = {
+            name:       $row.querySelector('[data-set-name]').value.trim(),
+            color:      $row.querySelector('[data-set-color]').value,
+            sort_order: Number($row.querySelector('[data-set-sort]').value) || 0,
+        };
+        if (!patch.name) return;
+        const fn = tab === 'locations' ? this.store.updateLocation
+                 : tab === 'categories' ? this.store.updateCategory
+                 : this.store.updateStore;
+        try {
+            await fn.call(this.store, id, patch);
+            // SSE will trigger config re-fetch which re-renders
+        } catch (err) {
+            alert(err.message || 'Save failed.');
+        }
+    }
+
+    async _settingsDelete(tab, id) {
+        const list = (tab === 'locations' ? this.store.config.locations
+                    : tab === 'categories' ? this.store.config.categories
+                    : this.store.config.stores) || [];
+        const row = list.find(r => r.id === id);
+        const ok = await this._confirm({
+            title: `Delete "${row?.name || id}"?`,
+            body:  tab === 'locations'
+                ? 'You can only delete an empty location — move or remove its items first.'
+                : 'Items currently using this will simply lose the link.',
+            confirmLabel: '🗑 Delete',
+            danger: true,
+        });
+        if (!ok) { this._renderSettings(tab); return; }
+        const fn = tab === 'locations' ? this.store.deleteLocation
+                 : tab === 'categories' ? this.store.deleteCategory
+                 : this.store.deleteStore;
+        try {
+            await fn.call(this.store, id);
+            this._renderSettings(tab);
+        } catch (err) {
+            alert(err.message || 'Delete failed.');
+            this._renderSettings(tab);
+        }
+    }
+
+    async _settingsAdd(tab, form) {
+        const data  = Object.fromEntries(new FormData(form));
+        const name  = (data.name || '').trim();
+        if (!name) return;
+        const emoji = (data.emoji || '').trim();
+        const payload = {
+            name,
+            color: data.color || '#888888',
+            // If they typed an emoji, store it as-is. Otherwise leave the
+            // backend default (e.g. mdi:store) which the iconToEmoji map
+            // covers for the seeded items.
+            ...(emoji ? { icon: emoji } : {}),
+        };
+        const fn = tab === 'locations' ? this.store.addLocation
+                 : tab === 'categories' ? this.store.addCategory
+                 : this.store.addStore;
+        try {
+            await fn.call(this.store, payload);
+            form.reset();
+            // Wait for SSE-driven config refresh, then re-render
+            setTimeout(() => this._renderSettings(tab), 200);
+        } catch (err) {
+            alert(err.message || 'Add failed.');
         }
     }
 

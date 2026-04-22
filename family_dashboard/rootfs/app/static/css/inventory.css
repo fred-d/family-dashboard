@@ -636,6 +636,104 @@
   color: var(--color-text);
 }
 
+/* ── Settings modal (locations / categories / stores) ───────────────────── */
+
+.inv-set-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--color-surface);
+  padding: 4px;
+  border-radius: var(--r-md);
+  margin-bottom: 12px;
+}
+.inv-set-tab {
+  flex: 1;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  color: var(--color-muted);
+  border-radius: calc(var(--r-md) - 2px);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.inv-set-tab.active {
+  background: var(--color-bg);
+  color: var(--theme-primary);
+  box-shadow: 0 1px 3px rgba(0,0,0,.08);
+}
+
+.inv-set-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 50vh;
+  overflow-y: auto;
+  margin-bottom: 14px;
+}
+.inv-set-empty {
+  padding: 18px;
+  text-align: center;
+  color: var(--color-muted);
+  font-size: 13px;
+}
+.inv-set-row {
+  display: grid;
+  grid-template-columns: 32px 1fr 36px 56px auto auto;
+  gap: 6px;
+  align-items: center;
+  padding: 6px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-sm);
+}
+.inv-set-emoji { font-size: 22px; text-align: center; }
+.inv-set-name  { font-size: 14px; }
+.inv-set-color {
+  width: 36px; height: 32px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-sm);
+  padding: 0; cursor: pointer; background: transparent;
+}
+.inv-set-sort { padding: 6px 8px; font-size: 12px; }
+
+.inv-icon-btn {
+  width: 32px; height: 32px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  border-radius: var(--r-sm);
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--color-text);
+}
+.inv-icon-btn:hover { background: var(--color-surface); }
+.inv-icon-btn.danger { color: var(--color-danger); border-color: color-mix(in srgb, var(--color-danger) 30%, transparent); }
+.inv-icon-btn.danger:hover { background: color-mix(in srgb, var(--color-danger) 10%, transparent); }
+
+.inv-set-add {
+  display: grid;
+  grid-template-columns: 60px 1fr 36px auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  background: var(--color-surface);
+  border-radius: var(--r-md);
+  margin-bottom: 8px;
+}
+
+.inv-set-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-muted);
+  line-height: 1.4;
+}
+
+.inv-btn-icon-only {
+  padding: 8px 12px;
+  min-width: 0;
+}
+
 /* ── Confirm modal (Promise-based replacement for window.confirm) ────────── */
 
 .inv-confirm {
