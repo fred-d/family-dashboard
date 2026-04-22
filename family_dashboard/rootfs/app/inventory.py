@@ -1463,6 +1463,76 @@ def api_shopping_item(sid):
     return jsonify({'ok': True})
 
 
+@bp.route('/shopping/<sid>/stock', methods=['POST'])
+def api_shopping_stock(sid):
+    """
+    Promote a shopping_list row into inventory ("scanned home").
+
+    Body: { location_id?: str, current_qty?: float, expires_at?: str|null,
+            notes?: str|null }
+
+    Behaviour
+      - Requires the shopping row to have a product_id (auto rows always do;
+        manual rows acquire one once linked or created via scan).
+      - Inserts/merges into inventory at the chosen location. If a row for the
+        same product+location already exists, qty is added to it instead of
+        creating a duplicate row.
+      - Deletes the shopping row, logs history, re-runs auto_shopping_sync.
+    """
+    body = request.get_json() or {}
+    c = _conn()
+    row = c.execute('SELECT * FROM shopping_list WHERE id=?', (sid,)).fetchone()
+    if not row:
+        return jsonify({'error': 'Shopping item not found'}), 404
+    pid = row['product_id']
+    if not pid:
+        return jsonify({'error': 'Shopping item has no linked product — '
+                                  'edit it and pick a product first'}), 400
+
+    loc = body.get('location_id')
+    if not loc:
+        # Fall back to the product's default location, or first location overall.
+        prod = _product_row(c, pid) or {}
+        loc = prod.get('default_location_id')
+    if not loc:
+        first = c.execute('SELECT id FROM locations ORDER BY sort_order LIMIT 1').fetchone()
+        loc = first['id'] if first else None
+    if not loc:
+        return jsonify({'error': 'No location available — pass location_id'}), 400
+
+    qty = float(body.get('current_qty', row['qty'] or 1))
+    now = _now()
+    existing = c.execute(
+        'SELECT * FROM inventory WHERE product_id=? AND location_id=?',
+        (pid, loc)).fetchone()
+    if existing:
+        new_q = float(existing['current_qty']) + qty
+        c.execute('UPDATE inventory SET current_qty=?, last_scanned_at=?, updated_at=? '
+                  'WHERE id=?', (new_q, now, now, existing['id']))
+        iid = existing['id']
+        _log_history(c, iid, pid, 'stock', qty, new_q, _person_id(),
+                     body.get('notes') or 'Stocked from shopping list')
+    else:
+        iid = _uid()
+        c.execute('''
+            INSERT INTO inventory
+              (id,product_id,location_id,current_qty,unit,percent_remaining,
+               purchased_at,expires_at,added_by,last_scanned_at,notes,
+               created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ''', (iid, pid, loc, qty, row['unit'] or 'count', None,
+              now, body.get('expires_at'), _person_id(), now,
+              body.get('notes') or 'Stocked from shopping list', now, now))
+        _log_history(c, iid, pid, 'stock', qty, qty, _person_id(),
+                     body.get('notes') or 'Stocked from shopping list')
+
+    c.execute('DELETE FROM shopping_list WHERE id=?', (sid,))
+    _auto_shopping_sync(c, pid)
+    _sse_push('inventory', {'type': 'items'})
+    _sse_push('inventory', {'type': 'shopping'})
+    return jsonify({'ok': True, 'inventory_id': iid, 'location_id': loc})
+
+
 def _auto_shopping_sync(c: sqlite3.Connection, pid: str):
     """
     After any inventory change, recalculate auto shopping state for this product.
