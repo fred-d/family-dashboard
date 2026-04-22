@@ -28,7 +28,7 @@
 
 import { FamilyPicker } from './family-picker.js';
 import { BarcodeScanner } from './scanner.js?v=2';
-import { apiUrl } from './utils.js';
+import { apiUrl, isoWeek, weekDates } from './utils.js';
 
 // ── MDI → emoji map ──────────────────────────────────────────────────────────
 // The backend seeds MDI icon names (e.g. "mdi:fridge"). We render those as
@@ -181,6 +181,11 @@ export class InventoryApp {
                             <option value="all">All stores</option>
                         </select>
                     </label>
+                    <button type="button" class="inv-btn inv-btn-secondary"
+                            data-action="from-meal-plan"
+                            title="Pull this week's recipe ingredients into the list">
+                        📅 From Meal Plan
+                    </button>
                 </div>
                 <div class="inv-shop-list" data-shop-list>
                     <div class="inv-empty" data-shop-empty hidden>
@@ -258,6 +263,9 @@ export class InventoryApp {
             if (!btn) return;
             this._setMode(btn.dataset.mode);
         });
+
+        this.container.querySelector('[data-action="from-meal-plan"]')
+            ?.addEventListener('click', () => this._openMealPlanImport());
 
         this.$shopStore.addEventListener('change', () => {
             this._shopStore = this.$shopStore.value;
@@ -1072,6 +1080,166 @@ export class InventoryApp {
         } catch (err) {
             alert(err.message || 'Delete failed.');
         }
+    }
+
+    // ── Pull from meal plan ──────────────────────────────────────────────────
+
+    /**
+     * Open a modal that walks this week's meal plan, collects every linked
+     * recipe's ingredients, dedupes them, and lets the user pick which ones to
+     * push to the shopping list.
+     */
+    async _openMealPlanImport() {
+        const mealStore   = window.mealPlanner?.store;
+        const recipeStore = window.recipeApp?.store;
+
+        // Initial loading frame
+        this.$sheetCard.innerHTML = `
+            <button type="button" class="inv-sheet-close" data-sheet-close aria-label="Close">×</button>
+            <h2 class="inv-form-title">📅 From Meal Plan</h2>
+            <div class="inv-mp-loading">Reading this week's meals…</div>
+        `;
+        this.$sheet.hidden = false;
+        requestAnimationFrame(() => this.$sheet.classList.add('open'));
+
+        if (!mealStore || !recipeStore) {
+            this.$sheetCard.querySelector('.inv-mp-loading').textContent =
+                'Meal Planner or Recipes app is not loaded.';
+            return;
+        }
+
+        const today    = new Date();
+        const weekKey  = isoWeek(today);
+        const dates    = weekDates(today);
+        // Make sure we have the latest data from HA — cached if offline
+        const fresh = await mealStore.fetchFromHA(weekKey).catch(() =>
+            mealStore.loadCached(weekKey));
+        const weekData = fresh || mealStore.loadCached(weekKey);
+
+        const DAYS  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const MEAL  = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snack: 'Snack' };
+        const map   = new Map(); // key (lowercased name) → { name, amount, unit, sources:Set, alreadyOnList }
+
+        const existingNames = new Set(
+            (this.store.shopping || [])
+                .filter(s => s.status !== 'bought')
+                .map(s => (s.name || '').toLowerCase().trim())
+        );
+
+        for (let i = 0; i < 7; i++) {
+            const dayData = weekData[i] || weekData[String(i)] || {};
+            for (const [mealType, meal] of Object.entries(dayData)) {
+                if (!meal?.recipeSlug) continue;
+                let recipe = recipeStore.loadCachedRecipe?.(meal.recipeSlug);
+                if (!recipe) {
+                    try { recipe = await recipeStore.fetchRecipe(meal.recipeSlug); }
+                    catch { continue; }
+                }
+                if (!recipe?.ingredients?.length) continue;
+                const dayLabel = `${DAYS[dates[i]?.getDay?.() ?? i]} ${MEAL[mealType] || mealType}`;
+                for (const ing of recipe.ingredients) {
+                    const name = (ing?.name || '').trim();
+                    if (!name) continue;
+                    const key = name.toLowerCase();
+                    if (!map.has(key)) {
+                        map.set(key, {
+                            name, amount: ing.amount || '', unit: ing.unit || '',
+                            sources: new Set(), alreadyOnList: existingNames.has(key),
+                        });
+                    }
+                    map.get(key).sources.add(`${recipe.name || 'Recipe'} · ${dayLabel}`);
+                }
+            }
+        }
+
+        const all = [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+        if (!all.length) {
+            this.$sheetCard.innerHTML = `
+                <button type="button" class="inv-sheet-close" data-sheet-close aria-label="Close">×</button>
+                <h2 class="inv-form-title">📅 From Meal Plan</h2>
+                <div class="inv-set-empty">
+                    No linked recipes found for this week.<br>
+                    Plan some meals (with recipes attached) first.
+                </div>
+            `;
+            return;
+        }
+
+        const rowsHtml = all.map((ing, idx) => {
+            const amt = [ing.amount, ing.unit].filter(Boolean).join(' ');
+            const srcList = [...ing.sources].slice(0, 3).join(' • ');
+            return `
+                <label class="inv-mp-row${ing.alreadyOnList ? ' already' : ''}">
+                    <input type="checkbox" class="inv-mp-check" data-idx="${idx}"
+                           ${ing.alreadyOnList ? 'disabled' : 'checked'}>
+                    <div class="inv-mp-body">
+                        <div class="inv-mp-name">${_esc(ing.name)}
+                            ${amt ? `<span class="inv-mp-amt">${_esc(amt)}</span>` : ''}
+                            ${ing.alreadyOnList ? `<span class="inv-mp-already">✓ on list</span>` : ''}
+                        </div>
+                        <div class="inv-mp-src">${_esc(srcList)}</div>
+                    </div>
+                </label>
+            `;
+        }).join('');
+
+        this.$sheetCard.innerHTML = `
+            <button type="button" class="inv-sheet-close" data-sheet-close aria-label="Close">×</button>
+            <h2 class="inv-form-title">📅 From Meal Plan</h2>
+            <p class="inv-set-hint">
+                Found <strong>${all.length}</strong> ingredient${all.length === 1 ? '' : 's'} this week.
+                Items already on your list are pre-disabled.
+            </p>
+            <div class="inv-mp-controls">
+                <button type="button" class="inv-btn inv-btn-ghost inv-btn-tiny" data-mp-all>☑ Select all</button>
+                <button type="button" class="inv-btn inv-btn-ghost inv-btn-tiny" data-mp-none>☐ Deselect</button>
+            </div>
+            <div class="inv-mp-list">${rowsHtml}</div>
+            <div class="inv-form-actions">
+                <span></span>
+                <div class="inv-form-actions-right">
+                    <button type="button" class="inv-btn inv-btn-secondary" data-sheet-close>Cancel</button>
+                    <button type="button" class="inv-btn inv-btn-primary" data-mp-add>＋ Add selected</button>
+                </div>
+            </div>
+        `;
+
+        const $list = this.$sheetCard.querySelector('.inv-mp-list');
+        this.$sheetCard.querySelector('[data-mp-all]').addEventListener('click', () => {
+            $list.querySelectorAll('.inv-mp-check:not([disabled])').forEach(cb => cb.checked = true);
+        });
+        this.$sheetCard.querySelector('[data-mp-none]').addEventListener('click', () => {
+            $list.querySelectorAll('.inv-mp-check:not([disabled])').forEach(cb => cb.checked = false);
+        });
+        this.$sheetCard.querySelector('[data-mp-add]').addEventListener('click', async (e) => {
+            const $btn = e.currentTarget;
+            const checks = $list.querySelectorAll('.inv-mp-check:not([disabled])');
+            const picks = [];
+            checks.forEach(cb => {
+                if (cb.checked) {
+                    const ing = all[Number(cb.dataset.idx)];
+                    if (ing) picks.push(ing);
+                }
+            });
+            if (!picks.length) { this._closeSheet(); return; }
+            $btn.disabled = true; $btn.textContent = `Adding ${picks.length}…`;
+            let added = 0;
+            for (const ing of picks) {
+                const amt = [ing.amount, ing.unit].filter(Boolean).join(' ');
+                try {
+                    await this.store.addShopping({
+                        name:  ing.name,
+                        qty:   1,
+                        notes: amt ? `Meal plan · ${amt}` : 'Meal plan',
+                    });
+                    added++;
+                } catch { /* keep going */ }
+            }
+            this._closeSheet();
+            if (added < picks.length) {
+                alert(`Added ${added} of ${picks.length} — some failed to save.`);
+            }
+        });
     }
 
     // ── Tri-state shopping: stock-to-inventory ───────────────────────────────

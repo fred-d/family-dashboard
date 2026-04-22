@@ -18,7 +18,7 @@ import { RecipeApp } from './recipes.js';
 import { RecipeStore } from './recipe-store.js';
 import { GroceryApp } from './grocery.js';
 import { GroceryStore } from './grocery-store.js';
-import { InventoryApp } from './inventory.js?v=8';
+import { InventoryApp } from './inventory.js?v=9';
 import { InventoryStore } from './inventory-store.js?v=5';
 import {
     openSettings, closeSettings,

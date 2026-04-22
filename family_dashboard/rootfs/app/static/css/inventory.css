@@ -1048,6 +1048,50 @@
     margin-left: 8px;
 }
 
+/* ── Pull from meal plan ─────────────────────────────────────────────────── */
+
+.inv-mp-loading {
+    padding: 24px 8px;
+    color: var(--color-muted);
+    text-align: center;
+}
+.inv-mp-controls {
+    display: flex; gap: 8px; margin: 8px 0;
+}
+.inv-mp-list {
+    max-height: 50vh;
+    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 4px;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 6px;
+    background: var(--color-surface, #fff);
+}
+.inv-mp-row {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+}
+.inv-mp-row:hover { background: var(--color-bg-soft, #f5f5f7); }
+.inv-mp-row.already { opacity: 0.55; cursor: default; }
+.inv-mp-check { margin-top: 3px; flex: none; }
+.inv-mp-body { min-width: 0; flex: 1; }
+.inv-mp-name {
+    font-weight: 600; font-size: 14px;
+    display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+}
+.inv-mp-amt {
+    font-weight: 500; font-size: 12px; color: var(--color-muted);
+}
+.inv-mp-already {
+    font-size: 11px; font-weight: 600;
+    color: var(--theme-primary);
+}
+.inv-mp-src {
+    font-size: 12px; color: var(--color-muted); margin-top: 2px;
+}
+
 /* ── Dark / theme-aware tweaks ───────────────────────────────────────────── */
 
 /* Override row fades to use theme tokens so custom themes still look right */
