@@ -820,6 +820,63 @@ def api_product(pid):
     return jsonify({'ok': True})
 
 
+@bp.route('/products/<pid>/merge', methods=['POST'])
+def api_product_merge(pid):
+    """
+    Merge product `pid` (the source) into another product (the destination).
+    Used for the 'generic product + brand alias' flow when you discover two
+    products in the catalog are actually the same thing — e.g. "Crystal Light
+    Lemonade" and "Great Value Lemonade" both become "Lemonade Pitcher Packet".
+
+    All inventory rows, barcodes, shopping rows, and history get re-pointed
+    at the destination, then the source product is removed. Inventory rows
+    in the same location are summed so you don't end up with two stacks.
+    """
+    body = request.get_json() or {}
+    dst  = body.get('into')
+    if not dst or dst == pid:
+        return jsonify({'error': 'Destination product (into) is required and must differ'}), 400
+
+    c = _conn()
+    if not _product_row(c, pid) or not _product_row(c, dst):
+        return jsonify({'error': 'Source or destination product not found'}), 404
+
+    # Coalesce inventory rows that already exist in the destination at the
+    # same location — sum the qty into the destination row, drop the source.
+    dups = c.execute('''
+        SELECT s.id AS src_id, d.id AS dst_id, s.current_qty AS src_qty
+        FROM inventory s
+        JOIN inventory d
+          ON d.product_id = ? AND d.location_id = s.location_id
+        WHERE s.product_id = ?
+    ''', (dst, pid)).fetchall()
+    for row in dups:
+        c.execute('UPDATE inventory SET current_qty = current_qty + ?, updated_at=? '
+                  'WHERE id=?', (row['src_qty'], _now(), row['dst_id']))
+        c.execute('DELETE FROM inventory WHERE id=?', (row['src_id'],))
+
+    # Anything left points at the source — repoint at destination
+    c.execute('UPDATE inventory       SET product_id=? WHERE product_id=?', (dst, pid))
+    c.execute('UPDATE barcode_catalog SET product_id=? WHERE product_id=?', (dst, pid))
+    c.execute('UPDATE shopping_list   SET product_id=? WHERE product_id=?', (dst, pid))
+    c.execute('UPDATE inventory_history SET product_id=? WHERE product_id=?', (dst, pid))
+
+    # Drop any duplicate "auto" shopping rows now both pointing at dst
+    c.execute('''
+        DELETE FROM shopping_list
+        WHERE source='auto' AND product_id=? AND id NOT IN (
+            SELECT MIN(id) FROM shopping_list WHERE source='auto' AND product_id=?
+        )
+    ''', (dst, dst))
+
+    c.execute('DELETE FROM products WHERE id=?', (pid,))
+    # Re-run the auto-sync for the destination so its threshold state is
+    # accurate after the qty rollup
+    _auto_shopping_sync(c, dst)
+    _sse_push('inventory', {'type': 'products'})
+    return jsonify({'ok': True, 'into': dst})
+
+
 # ── Inventory CRUD ────────────────────────────────────────────────────────────
 
 def _inv_with_product(c: sqlite3.Connection, where: str = '', args: tuple = ()) -> list[dict]:

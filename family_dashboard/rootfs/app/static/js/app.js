@@ -18,8 +18,8 @@ import { RecipeApp } from './recipes.js';
 import { RecipeStore } from './recipe-store.js';
 import { GroceryApp } from './grocery.js';
 import { GroceryStore } from './grocery-store.js';
-import { InventoryApp } from './inventory.js';
-import { InventoryStore } from './inventory-store.js';
+import { InventoryApp } from './inventory.js?v=7';
+import { InventoryStore } from './inventory-store.js?v=4';
 import {
     openSettings, closeSettings,
     loadCalendarColors, saveDefaultView,

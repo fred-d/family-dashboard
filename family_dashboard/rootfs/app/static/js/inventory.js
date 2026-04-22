@@ -930,13 +930,23 @@ export class InventoryApp {
                     <div class="inv-form-meta">
                         <span class="inv-form-meta-label">UPC</span>
                         <span class="inv-mono">${_esc(v.upc)}</span>
+                        ${!isEdit ? `
+                            <button type="button" class="inv-btn inv-btn-ghost inv-btn-tiny"
+                                    data-form-link aria-label="Link this barcode to an existing product">
+                                🔗 Link to existing…
+                            </button>` : ''}
                     </div>` : ''}
 
                 <div class="inv-form-actions">
                     ${isEdit ? `
-                        <button type="button" class="inv-btn inv-btn-danger" data-form-delete>
-                            🗑 Delete
-                        </button>` : '<span></span>'}
+                        <div class="inv-form-actions-left">
+                            <button type="button" class="inv-btn inv-btn-danger" data-form-delete>
+                                🗑 Delete
+                            </button>
+                            <button type="button" class="inv-btn inv-btn-ghost" data-form-merge>
+                                ⇨ Merge into…
+                            </button>
+                        </div>` : '<span></span>'}
                     <div class="inv-form-actions-right">
                         <button type="button" class="inv-btn inv-btn-secondary" data-sheet-close>Cancel</button>
                         <button type="submit" class="inv-btn inv-btn-primary">
@@ -956,6 +966,11 @@ export class InventoryApp {
         if (isEdit) {
             this.$sheetCard.querySelector('[data-form-delete]')
                 ?.addEventListener('click', () => this._deleteItem(item));
+            this.$sheetCard.querySelector('[data-form-merge]')
+                ?.addEventListener('click', () => this._mergeItem(item));
+        } else {
+            this.$sheetCard.querySelector('[data-form-link]')
+                ?.addEventListener('click', () => this._linkScannedBarcode(v.upc));
         }
 
         this.$sheet.hidden = false;
@@ -1033,6 +1048,134 @@ export class InventoryApp {
             this._closeSheet();
         } catch (err) {
             alert(err.message || 'Delete failed.');
+        }
+    }
+
+    // ── Generic products: link scanned UPC / merge ───────────────────────────
+
+    /**
+     * Open a searchable product picker. Resolves to the chosen product id, or
+     * null if the user cancels. excludeId hides one row (used by merge so you
+     * can't merge a product into itself).
+     */
+    async _openProductPicker({ title = 'Pick a product', excludeId = null,
+                               confirmLabel = 'Choose' } = {}) {
+        // Make sure we have the products list. The store fetches lazily.
+        try { await this.store.loadProducts(); } catch { /* fall through */ }
+        const all = (this.store.products || [])
+            .filter(p => p.id !== excludeId)
+            .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+        return new Promise(resolve => {
+            const prevHTML = this.$sheetCard.innerHTML;
+            const wasOpen  = !this.$sheet.hidden;
+            const renderRows = (q) => {
+                const ql = (q || '').trim().toLowerCase();
+                const rows = ql
+                    ? all.filter(p => `${p.name || ''} ${p.brand || ''}`.toLowerCase().includes(ql))
+                    : all;
+                return rows.length ? rows.slice(0, 200).map(p => `
+                    <button type="button" class="inv-pick-row" data-pick="${_esc(p.id)}">
+                        ${p.image_url
+                            ? `<img class="inv-pick-img" src="${_esc(p.image_url)}" alt="" loading="lazy">`
+                            : `<div class="inv-pick-img placeholder">📦</div>`}
+                        <div class="inv-pick-body">
+                            <div class="inv-pick-name">${_esc(p.name || 'Unnamed')}</div>
+                            <div class="inv-pick-sub">${_esc(p.brand || '')}</div>
+                        </div>
+                    </button>
+                `).join('') : `<div class="inv-set-empty">No matches.</div>`;
+            };
+
+            this.$sheetCard.innerHTML = `
+                <button type="button" class="inv-sheet-close" data-pick-cancel aria-label="Close">×</button>
+                <h2 class="inv-form-title">${_esc(title)}</h2>
+                <label class="inv-field">
+                    <span class="inv-field-label">Search</span>
+                    <input type="search" class="inv-input" data-pick-search
+                           placeholder="Type a name or brand…" autocomplete="off">
+                </label>
+                <div class="inv-pick-list" data-pick-list>${renderRows('')}</div>
+                <div class="inv-form-actions">
+                    <span></span>
+                    <div class="inv-form-actions-right">
+                        <button type="button" class="inv-btn inv-btn-secondary" data-pick-cancel>Cancel</button>
+                    </div>
+                </div>
+            `;
+
+            const finish = (id) => {
+                if (wasOpen) this.$sheetCard.innerHTML = prevHTML;
+                else         this._closeSheet();
+                resolve(id);
+            };
+            const $list   = this.$sheetCard.querySelector('[data-pick-list]');
+            const $search = this.$sheetCard.querySelector('[data-pick-search]');
+            $search.addEventListener('input', () => { $list.innerHTML = renderRows($search.value); });
+            $list.addEventListener('click', e => {
+                const btn = e.target.closest('[data-pick]');
+                if (btn) finish(btn.dataset.pick);
+            });
+            this.$sheetCard.querySelectorAll('[data-pick-cancel]').forEach(b =>
+                b.addEventListener('click', () => finish(null)));
+            if (!wasOpen) {
+                this.$sheet.hidden = false;
+                requestAnimationFrame(() => this.$sheet.classList.add('open'));
+            }
+            setTimeout(() => $search.focus(), 220);
+        });
+    }
+
+    async _linkScannedBarcode(upc) {
+        if (!upc) return;
+        const pid = await this._openProductPicker({
+            title: `Link UPC ${upc} to…`,
+            confirmLabel: 'Link',
+        });
+        if (!pid) return;
+        try {
+            await this.store.linkBarcode(upc, pid);
+            // Re-open Add modal pre-filled with the chosen product so the user
+            // can pick a location and qty for the new inventory row.
+            const p = (this.store.products || []).find(x => x.id === pid) || {};
+            this._openItemModal({
+                mode: 'add',
+                prefill: {
+                    upc,
+                    name:        p.name      || '',
+                    brand:       p.brand     || '',
+                    image_url:   p.image_url || '',
+                    category_id: p.category_id || '',
+                },
+            });
+        } catch (err) {
+            alert(err.message || 'Link failed.');
+        }
+    }
+
+    async _mergeItem(item) {
+        if (!item?.product_id) {
+            alert('This item has no linked product to merge.');
+            return;
+        }
+        const dst = await this._openProductPicker({
+            title: `Merge "${item.name}" into…`,
+            excludeId: item.product_id,
+            confirmLabel: 'Merge',
+        });
+        if (!dst) return;
+        const ok = await this._confirm({
+            title: 'Merge products?',
+            body:  `All inventory, history, shopping entries, and barcodes from "${item.name}" will move to the chosen product. This can't be undone.`,
+            confirmLabel: '⇨ Merge',
+            danger: true,
+        });
+        if (!ok) return;
+        try {
+            await this.store.mergeProducts(item.product_id, dst);
+            this._closeSheet();
+        } catch (err) {
+            alert(err.message || 'Merge failed.');
         }
     }
 
