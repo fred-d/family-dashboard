@@ -265,13 +265,19 @@ export class InventoryApp {
         });
 
         this.$shopList.addEventListener('click', e => {
-            const checkBtn = e.target.closest('[data-shop-toggle]');
+            const cycleBtn = e.target.closest('[data-shop-cycle]');
+            const stockBtn = e.target.closest('[data-shop-stock]');
             const delBtn   = e.target.closest('[data-shop-delete]');
-            if (checkBtn) {
-                const id = checkBtn.dataset.shopToggle;
+            if (cycleBtn) {
+                const id  = cycleBtn.dataset.shopCycle;
                 const row = (this.store.shopping || []).find(s => s.id === id);
-                const next = row?.status === 'bought' ? 'needed' : 'bought';
+                const cur = row?.status || 'needed';
+                const next = cur === 'needed' ? 'ordered'
+                           : cur === 'ordered' ? 'bought'
+                           : 'needed';
                 this.store.updateShopping(id, { status: next }).catch(() => {});
+            } else if (stockBtn) {
+                this._stockShoppingRow(stockBtn.dataset.shopStock);
             } else if (delBtn) {
                 this.store.deleteShopping(delBtn.dataset.shopDelete).catch(() => {});
             }
@@ -434,7 +440,9 @@ export class InventoryApp {
     }
 
     _shopRowHtml(r) {
-        const done = r.status === 'bought';
+        const status = r.status === 'ordered' ? 'ordered'
+                      : r.status === 'bought' ? 'bought'
+                      : 'needed';
         const person = r.added_by ? this.store.personById(r.added_by) : null;
         const personChip = person ? `
             <span class="inv-shop-chip" style="background:${_esc(person.color || '#6b7280')}"
@@ -448,25 +456,40 @@ export class InventoryApp {
         const sourceBadge = r.source === 'auto'
             ? `<span class="inv-shop-source auto" title="Auto-added: stock below minimum">⟳ auto</span>`
             : '';
+        const statusBadge = status === 'ordered'
+            ? `<span class="inv-shop-source ordered" title="Marked as ordered / in cart">📋 ordered</span>`
+            : '';
         const photo = r.product_image
             ? `<img class="inv-shop-img" src="${_esc(r.product_image)}" alt="" loading="lazy">`
             : `<div class="inv-shop-img placeholder">🛒</div>`;
         const qty = Number(r.qty) > 1 ? `×${Number(r.qty)}` : '';
+        // Tri-state checkbox: empty → 📋 ordered → ✓ bought → empty…
+        const checkLabel = status === 'needed' ? 'Mark ordered'
+                         : status === 'ordered' ? 'Mark bought'
+                         : 'Reset to needed';
+        const checkGlyph = status === 'needed' ? ''
+                         : status === 'ordered' ? '📋' : '✓';
+        const stockBtn = (status === 'ordered' || status === 'bought') && r.product_id
+            ? `<button type="button" class="inv-shop-stock" data-shop-stock="${_esc(r.id)}"
+                       title="Stock to inventory" aria-label="Stock to inventory">📥</button>`
+            : '';
         return `
-            <div class="inv-shop-row${done ? ' done' : ''}">
-                <button type="button" class="inv-shop-check" data-shop-toggle="${_esc(r.id)}"
-                        aria-label="${done ? 'Mark needed' : 'Mark bought'}">
-                    ${done ? '✓' : ''}
+            <div class="inv-shop-row status-${status}">
+                <button type="button" class="inv-shop-check tri-${status}"
+                        data-shop-cycle="${_esc(r.id)}" aria-label="${checkLabel}">
+                    ${checkGlyph}
                 </button>
                 ${photo}
                 <div class="inv-shop-body">
                     <div class="inv-shop-name">${_esc(r.name)} ${qty ? `<span class="inv-shop-qty">${qty}</span>` : ''}</div>
                     <div class="inv-shop-meta">
                         ${sourceBadge}
+                        ${statusBadge}
                         ${storeChip}
                         ${personChip}
                     </div>
                 </div>
+                ${stockBtn}
                 <button type="button" class="inv-shop-del" data-shop-delete="${_esc(r.id)}"
                         aria-label="Remove from list">×</button>
             </div>
@@ -1049,6 +1072,91 @@ export class InventoryApp {
         } catch (err) {
             alert(err.message || 'Delete failed.');
         }
+    }
+
+    // ── Tri-state shopping: stock-to-inventory ───────────────────────────────
+
+    async _stockShoppingRow(sid) {
+        const row = (this.store.shopping || []).find(s => s.id === sid);
+        if (!row) return;
+        const locations = this.store.config.locations || [];
+        if (!locations.length) {
+            alert('No locations configured. Add one in Settings first.');
+            return;
+        }
+        const defaultLoc = locations[0].id;
+        const loc = await this._pickLocation({
+            title: `Stock "${row.name}" to…`,
+            defaultId: defaultLoc,
+            qty: row.qty || 1,
+        });
+        if (!loc) return;
+        try {
+            await this.store.stockShopping(sid, {
+                location_id: loc.location_id,
+                current_qty: loc.qty,
+            });
+        } catch (err) {
+            alert(err.message || 'Stock failed.');
+        }
+    }
+
+    /** Mini modal to pick location + qty before stocking. */
+    _pickLocation({ title, defaultId, qty = 1 } = {}) {
+        const locations = this.store.config.locations || [];
+        return new Promise(resolve => {
+            const prevHTML = this.$sheetCard.innerHTML;
+            const wasOpen  = !this.$sheet.hidden;
+            this.$sheetCard.innerHTML = `
+                <button type="button" class="inv-sheet-close" data-stock-cancel aria-label="Close">×</button>
+                <h2 class="inv-form-title">${_esc(title || 'Stock to inventory')}</h2>
+                <form class="inv-form" data-stock-form novalidate>
+                    <div class="inv-form-grid">
+                        <label class="inv-field">
+                            <span class="inv-field-label">Location</span>
+                            <select class="inv-input" name="location_id" required>
+                                ${locations.map(l => `
+                                    <option value="${_esc(l.id)}"${l.id === defaultId ? ' selected' : ''}>
+                                        ${_esc(iconToEmoji(l.icon))} ${_esc(l.name)}
+                                    </option>`).join('')}
+                            </select>
+                        </label>
+                        <label class="inv-field">
+                            <span class="inv-field-label">Quantity</span>
+                            <input type="number" class="inv-input" name="qty"
+                                   min="0" step="1" value="${Number(qty)}">
+                        </label>
+                    </div>
+                    <div class="inv-form-actions">
+                        <span></span>
+                        <div class="inv-form-actions-right">
+                            <button type="button" class="inv-btn inv-btn-secondary" data-stock-cancel>Cancel</button>
+                            <button type="submit" class="inv-btn inv-btn-primary">📥 Stock it</button>
+                        </div>
+                    </div>
+                </form>
+            `;
+            const finish = (val) => {
+                if (wasOpen) this.$sheetCard.innerHTML = prevHTML;
+                else         this._closeSheet();
+                resolve(val);
+            };
+            const $form = this.$sheetCard.querySelector('[data-stock-form]');
+            $form.addEventListener('submit', e => {
+                e.preventDefault();
+                const data = Object.fromEntries(new FormData($form));
+                finish({
+                    location_id: data.location_id,
+                    qty:         Number(data.qty) || 1,
+                });
+            });
+            this.$sheetCard.querySelectorAll('[data-stock-cancel]').forEach(b =>
+                b.addEventListener('click', () => finish(null)));
+            if (!wasOpen) {
+                this.$sheet.hidden = false;
+                requestAnimationFrame(() => this.$sheet.classList.add('open'));
+            }
+        });
     }
 
     // ── Generic products: link scanned UPC / merge ───────────────────────────

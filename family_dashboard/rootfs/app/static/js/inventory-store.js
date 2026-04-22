@@ -190,6 +190,7 @@ export class InventoryStore {
     async addShopping(data)           { return this._post('/api/inventory/shopping', data); }
     async updateShopping(id, patch)   { return this._patch(`/api/inventory/shopping/${id}`, patch); }
     async deleteShopping(id)          { return this._delete(`/api/inventory/shopping/${id}`); }
+    async stockShopping(id, body = {}){ return this._post(`/api/inventory/shopping/${id}/stock`, body); }
 
     async saveHiddenPersons(ids)      { return this._post('/api/inventory/family/hidden', { hidden: ids }); }
 
