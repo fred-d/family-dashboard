@@ -636,6 +636,169 @@
   color: var(--color-text);
 }
 
+/* ── Mode toggle (Inventory / Shopping) ──────────────────────────────────── */
+
+.inv-modes {
+  display: inline-flex;
+  background: var(--color-surface);
+  border-radius: var(--r-md);
+  padding: 4px;
+  gap: 2px;
+}
+.inv-mode {
+  padding: 8px 14px;
+  border: none;
+  background: transparent;
+  color: var(--color-muted);
+  border-radius: calc(var(--r-md) - 2px);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.inv-mode:hover { color: var(--color-text); }
+.inv-mode.active {
+  background: var(--color-bg);
+  color: var(--theme-primary);
+  box-shadow: 0 1px 3px rgba(0,0,0,.08);
+}
+
+/* ── Shopping list ───────────────────────────────────────────────────────── */
+
+.inv-shop {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.inv-shop-toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+.inv-shop-toolbar .inv-field { max-width: 320px; }
+.inv-shop-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.inv-shop-group-head {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 8px 4px 4px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 6px;
+}
+.inv-shop-row {
+  display: grid;
+  grid-template-columns: 32px 48px 1fr 32px;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  margin-bottom: 6px;
+}
+.inv-shop-row.done {
+  opacity: 0.55;
+}
+.inv-shop-row.done .inv-shop-name { text-decoration: line-through; }
+.inv-shop-check {
+  width: 28px; height: 28px;
+  border: 2px solid var(--color-border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--theme-primary);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.inv-shop-row.done .inv-shop-check {
+  background: var(--theme-primary);
+  border-color: var(--theme-primary);
+  color: var(--color-white);
+}
+.inv-shop-img {
+  width: 44px; height: 44px;
+  border-radius: var(--r-sm);
+  object-fit: cover;
+  background: var(--color-surface);
+}
+.inv-shop-img.placeholder {
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+}
+.inv-shop-body { min-width: 0; }
+.inv-shop-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.inv-shop-qty {
+  font-weight: 500;
+  color: var(--color-muted);
+  font-size: 13px;
+}
+.inv-shop-meta {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+.inv-shop-source {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-primary) 12%, transparent);
+  color: var(--theme-primary);
+}
+.inv-shop-store {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text);
+}
+.inv-shop-chip {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  color: var(--color-white);
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.inv-shop-del {
+  width: 28px; height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 18px;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+}
+.inv-shop-del:hover {
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+  color: var(--color-danger);
+}
+
 /* ── Responsive: phone layout ────────────────────────────────────────────── */
 
 @media (max-width: 900px) {
@@ -661,6 +824,10 @@
   .inv-qbtn       { width: 28px; height: 28px; font-size: 16px; }
 
   .inv-sheet-card { max-width: 100%; }
+
+  .inv-modes { width: 100%; justify-content: center; }
+  .inv-mode { flex: 1; padding: 8px 10px; font-size: 12px; }
+  .inv-shop-toolbar .inv-field { max-width: none; }
 
   .inv-form-grid { grid-template-columns: 1fr; }
   .inv-form-actions { flex-direction: column-reverse; align-items: stretch; }
