@@ -110,9 +110,11 @@ export class InventoryApp {
         this.store     = store;
 
         // View state
+        this._mode     = 'inventory'; // 'inventory' | 'shopping'
         this._location = 'all';   // location id | 'all'
         this._filter   = 'all';   // 'all' | 'low' | 'expiring' | 'out'
         this._search   = '';
+        this._shopStore = 'all';  // store id | 'all'
 
         // Lazy-constructed scanner
         this._scanner = null;
@@ -128,6 +130,10 @@ export class InventoryApp {
         this.container.innerHTML = `
             <div class="inv-topbar">
                 <div class="inv-family"></div>
+                <div class="inv-modes" data-modes>
+                    <button type="button" class="inv-mode active" data-mode="inventory">📦 Inventory</button>
+                    <button type="button" class="inv-mode" data-mode="shopping">🛒 Shopping</button>
+                </div>
                 <div class="inv-actions">
                     <button type="button" class="inv-btn inv-btn-secondary" data-action="scan">
                         <span class="inv-btn-icon">📷</span> Scan
@@ -164,6 +170,25 @@ export class InventoryApp {
                 </div>
             </div>
 
+            <!-- Shopping list panel (hidden in inventory mode) -->
+            <div class="inv-shop" data-shop hidden>
+                <div class="inv-shop-toolbar">
+                    <label class="inv-field inv-field-wide">
+                        <span class="inv-field-label">Store</span>
+                        <select class="inv-input" data-shop-store>
+                            <option value="all">All stores</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="inv-shop-list" data-shop-list>
+                    <div class="inv-empty" data-shop-empty hidden>
+                        <div class="inv-empty-icon">🛒</div>
+                        <div class="inv-empty-title">Shopping list is empty</div>
+                        <div class="inv-empty-sub">Items appear here when stock falls below the minimum, or add one with <strong>＋ Add Item</strong>.</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Item detail sheet (bottom drawer on phone, centre modal on tablet) -->
             <div class="inv-sheet" data-sheet hidden>
                 <div class="inv-sheet-backdrop" data-sheet-close></div>
@@ -181,6 +206,11 @@ export class InventoryApp {
         this.$sheet    = this.container.querySelector('[data-sheet]');
         this.$sheetCard = this.container.querySelector('[data-sheet-card]');
         this.$search   = this.container.querySelector('.inv-search-input');
+        this.$modes    = this.container.querySelector('[data-modes]');
+        this.$shop     = this.container.querySelector('[data-shop]');
+        this.$shopList = this.container.querySelector('[data-shop-list]');
+        this.$shopEmpty = this.container.querySelector('[data-shop-empty]');
+        this.$shopStore = this.container.querySelector('[data-shop-store]');
 
         // Mount family picker
         this._picker = new FamilyPicker(this.store);
@@ -214,7 +244,34 @@ export class InventoryApp {
         this.container.querySelector('[data-action="scan"]')
             .addEventListener('click', () => this._openScanner());
         this.container.querySelector('[data-action="add"]')
-            .addEventListener('click', () => this._openAddSheet());
+            .addEventListener('click', () => {
+                if (this._mode === 'shopping') this._openShoppingAddModal();
+                else this._openAddSheet();
+            });
+
+        this.$modes.addEventListener('click', e => {
+            const btn = e.target.closest('.inv-mode');
+            if (!btn) return;
+            this._setMode(btn.dataset.mode);
+        });
+
+        this.$shopStore.addEventListener('change', () => {
+            this._shopStore = this.$shopStore.value;
+            this._renderShopping();
+        });
+
+        this.$shopList.addEventListener('click', e => {
+            const checkBtn = e.target.closest('[data-shop-toggle]');
+            const delBtn   = e.target.closest('[data-shop-delete]');
+            if (checkBtn) {
+                const id = checkBtn.dataset.shopToggle;
+                const row = (this.store.shopping || []).find(s => s.id === id);
+                const next = row?.status === 'bought' ? 'needed' : 'bought';
+                this.store.updateShopping(id, { status: next }).catch(() => {});
+            } else if (delBtn) {
+                this.store.deleteShopping(delBtn.dataset.shopDelete).catch(() => {});
+            }
+        });
 
         this.$sheet.addEventListener('click', e => {
             if (e.target.matches('[data-sheet-close]')) this._closeSheet();
@@ -244,13 +301,42 @@ export class InventoryApp {
 
     _bindStore() {
         this._off = [
-            this.store.on('config', () => { this._renderLocations(); this._renderGrid(); }),
-            this.store.on('items',  () => { this._renderGrid(); this._renderStats(); }),
-            this.store.on('stats',  () => this._renderStats()),
+            this.store.on('config', () => {
+                this._renderLocations();
+                this._renderShopStores();
+                this._renderGrid();
+                this._renderShopping();
+            }),
+            this.store.on('items',    () => { this._renderGrid(); this._renderStats(); }),
+            this.store.on('stats',    () => this._renderStats()),
+            this.store.on('shopping', () => { this._renderStats(); this._renderShopping(); }),
+            this.store.on('family',   () => this._renderShopping()),
         ];
         this._renderLocations();
+        this._renderShopStores();
         this._renderStats();
         this._renderGrid();
+        this._renderShopping();
+    }
+
+    _setMode(mode) {
+        if (mode !== 'inventory' && mode !== 'shopping') return;
+        this._mode = mode;
+        this.$modes.querySelectorAll('.inv-mode').forEach(b =>
+            b.classList.toggle('active', b.dataset.mode === mode));
+        const isShop = mode === 'shopping';
+        this.container.classList.toggle('inv-shopping-mode', isShop);
+        this.$shop.hidden = !isShop;
+        // Hide inventory-only chrome
+        this.$loctabs.hidden = isShop;
+        this.$filters.hidden = isShop;
+        this.$grid.hidden    = isShop;
+        // Re-label primary action
+        const $add = this.container.querySelector('[data-action="add"]');
+        if ($add) $add.lastChild.textContent = isShop ? ' Add to List' : ' Add Item';
+        // Hide Scan in shopping mode (not the right action there)
+        const $scan = this.container.querySelector('[data-action="scan"]');
+        if ($scan) $scan.hidden = isShop;
     }
 
     destroy() {
@@ -285,6 +371,190 @@ export class InventoryApp {
                 <span class="inv-loctab-count">${t.count}</span>
             </button>
         `).join('');
+    }
+
+    // ── Render: shopping store dropdown ──────────────────────────────────────
+
+    _renderShopStores() {
+        const stores = this.store.config.stores || [];
+        const cur = this._shopStore;
+        this.$shopStore.innerHTML = `
+            <option value="all"${cur === 'all' ? ' selected' : ''}>All stores</option>
+            ${stores.map(s => `
+                <option value="${_esc(s.id)}"${s.id === cur ? ' selected' : ''}>
+                    ${_esc(iconToEmoji(s.icon))} ${_esc(s.name)}
+                </option>`).join('')}
+        `;
+    }
+
+    // ── Render: shopping list ────────────────────────────────────────────────
+
+    _renderShopping() {
+        const all = this.store.shopping || [];
+        const filtered = this._shopStore === 'all'
+            ? all
+            : all.filter(r => r.store_id === this._shopStore || !r.store_id);
+
+        // Clear previous rows but keep empty state element
+        this.$shopList.querySelectorAll('.inv-shop-row, .inv-shop-group').forEach(n => n.remove());
+
+        if (!filtered.length) {
+            this.$shopEmpty.hidden = false;
+            return;
+        }
+        this.$shopEmpty.hidden = true;
+
+        // Group by category, status (needed first), then name
+        const groups = new Map();
+        for (const row of filtered) {
+            const key = row.category_name || 'Uncategorized';
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(row);
+        }
+        const sortedGroups = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+
+        const html = sortedGroups.map(([cat, rows]) => {
+            rows.sort((a, b) =>
+                (a.status === 'bought' ? 1 : 0) - (b.status === 'bought' ? 1 : 0) ||
+                (a.name || '').localeCompare(b.name || ''));
+            const rowsHtml = rows.map(r => this._shopRowHtml(r)).join('');
+            return `
+                <div class="inv-shop-group">
+                    <div class="inv-shop-group-head">${_esc(cat)}</div>
+                    ${rowsHtml}
+                </div>
+            `;
+        }).join('');
+
+        this.$shopEmpty.insertAdjacentHTML('beforebegin', html);
+    }
+
+    _shopRowHtml(r) {
+        const done = r.status === 'bought';
+        const person = r.added_by ? this.store.personById(r.added_by) : null;
+        const personChip = person ? `
+            <span class="inv-shop-chip" style="background:${_esc(person.color || '#6b7280')}"
+                  title="Requested by ${_esc(person.name || '')}">
+                ${_esc((person.name || '?').slice(0, 1))}
+            </span>` : '';
+        const storeChip = r.store_name ? `
+            <span class="inv-shop-store" style="border-color:${_esc(r.store_color || 'var(--color-border)')}">
+                ${_esc(r.store_name)}
+            </span>` : '';
+        const sourceBadge = r.source === 'auto'
+            ? `<span class="inv-shop-source auto" title="Auto-added: stock below minimum">⟳ auto</span>`
+            : '';
+        const photo = r.product_image
+            ? `<img class="inv-shop-img" src="${_esc(r.product_image)}" alt="" loading="lazy">`
+            : `<div class="inv-shop-img placeholder">🛒</div>`;
+        const qty = Number(r.qty) > 1 ? `×${Number(r.qty)}` : '';
+        return `
+            <div class="inv-shop-row${done ? ' done' : ''}">
+                <button type="button" class="inv-shop-check" data-shop-toggle="${_esc(r.id)}"
+                        aria-label="${done ? 'Mark needed' : 'Mark bought'}">
+                    ${done ? '✓' : ''}
+                </button>
+                ${photo}
+                <div class="inv-shop-body">
+                    <div class="inv-shop-name">${_esc(r.name)} ${qty ? `<span class="inv-shop-qty">${qty}</span>` : ''}</div>
+                    <div class="inv-shop-meta">
+                        ${sourceBadge}
+                        ${storeChip}
+                        ${personChip}
+                    </div>
+                </div>
+                <button type="button" class="inv-shop-del" data-shop-delete="${_esc(r.id)}"
+                        aria-label="Remove from list">×</button>
+            </div>
+        `;
+    }
+
+    // ── Shopping: add modal ──────────────────────────────────────────────────
+
+    _openShoppingAddModal() {
+        const stores = this.store.config.stores || [];
+        const categories = this.store.config.categories || [];
+
+        this.$sheetCard.innerHTML = `
+            <button type="button" class="inv-sheet-close" data-sheet-close aria-label="Close">×</button>
+            <h2 class="inv-form-title">Add to Shopping List</h2>
+
+            <form class="inv-form" data-shop-form novalidate>
+                <label class="inv-field">
+                    <span class="inv-field-label">Item</span>
+                    <input type="text" class="inv-input" name="name" required autocomplete="off"
+                           placeholder="e.g. Crest toothpaste (mint)">
+                </label>
+
+                <div class="inv-form-grid">
+                    <label class="inv-field">
+                        <span class="inv-field-label">Quantity</span>
+                        <input type="number" class="inv-input" name="qty"
+                               min="1" step="1" value="1">
+                    </label>
+                    <label class="inv-field">
+                        <span class="inv-field-label">Store</span>
+                        <select class="inv-input" name="store_id">
+                            <option value="">— Any —</option>
+                            ${stores.map(s => `
+                                <option value="${_esc(s.id)}">
+                                    ${_esc(iconToEmoji(s.icon))} ${_esc(s.name)}
+                                </option>`).join('')}
+                        </select>
+                    </label>
+                    <label class="inv-field inv-field-wide">
+                        <span class="inv-field-label">Category</span>
+                        <select class="inv-input" name="category_id">
+                            <option value="">— None —</option>
+                            ${categories.map(c => `
+                                <option value="${_esc(c.id)}">
+                                    ${_esc(iconToEmoji(c.icon))} ${_esc(c.name)}
+                                </option>`).join('')}
+                        </select>
+                    </label>
+                    <label class="inv-field inv-field-wide">
+                        <span class="inv-field-label">Notes</span>
+                        <input type="text" class="inv-input" name="notes" autocomplete="off"
+                               placeholder="optional — brand, flavor, who it's for…">
+                    </label>
+                </div>
+
+                <div class="inv-form-actions">
+                    <span></span>
+                    <div class="inv-form-actions-right">
+                        <button type="button" class="inv-btn inv-btn-secondary" data-sheet-close>Cancel</button>
+                        <button type="submit" class="inv-btn inv-btn-primary">＋ Add</button>
+                    </div>
+                </div>
+            </form>
+        `;
+
+        const $form = this.$sheetCard.querySelector('[data-shop-form]');
+        $form.addEventListener('submit', async e => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData($form));
+            const name = (data.name || '').trim();
+            if (!name) { $form.querySelector('[name="name"]')?.focus(); return; }
+            const $btn = $form.querySelector('button[type="submit"]');
+            if ($btn) { $btn.disabled = true; $btn.textContent = 'Adding…'; }
+            try {
+                await this.store.addShopping({
+                    name,
+                    qty:         Number(data.qty) || 1,
+                    store_id:    data.store_id || null,
+                    category_id: data.category_id || null,
+                    notes:       data.notes || '',
+                });
+                this._closeSheet();
+            } catch (err) {
+                alert(err.message || 'Add failed.');
+                if ($btn) { $btn.disabled = false; $btn.textContent = '＋ Add'; }
+            }
+        });
+
+        this.$sheet.hidden = false;
+        requestAnimationFrame(() => this.$sheet.classList.add('open'));
+        setTimeout(() => $form.querySelector('[name="name"]')?.focus(), 220);
     }
 
     // ── Render: stats rail ───────────────────────────────────────────────────

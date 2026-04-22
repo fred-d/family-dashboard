@@ -60,10 +60,14 @@ const VIEW_TITLES = {
 
 function getActiveView() {
     const hash = location.hash.replace('#', '');
+    // Sunset: #grocery is now an alias for #inventory (Shopping mode lives there)
+    if (hash === 'grocery') return 'inventory';
     return VIEWS.includes(hash) ? hash : 'calendar';
 }
 
 function switchView(view) {
+    // Sunset: redirect any remaining grocery callers to inventory
+    if (view === 'grocery') view = 'inventory';
     document.querySelectorAll('.nav-link').forEach(link => {
         link.classList.toggle('active', link.dataset.section === view);
     });
