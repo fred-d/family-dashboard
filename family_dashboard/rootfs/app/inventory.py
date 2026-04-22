@@ -251,6 +251,15 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
+def _https(url: str | None) -> str:
+    """Coerce http:// → https:// so cached product images don't trip
+    mixed-content warnings when the dashboard is served via the Cloudflare
+    Tunnel. Anything else (empty, https://, data:, relative) passes through."""
+    if isinstance(url, str) and url.startswith('http://'):
+        return 'https://' + url[len('http://'):]
+    return url or ''
+
+
 def _init_db(app: Flask):
     """Create tables, seed reference data, stamp schema version."""
     DATA.mkdir(parents=True, exist_ok=True)
@@ -285,6 +294,12 @@ def _init_db(app: Flask):
                 'VALUES (?,?,?,?,?,?)',
                 [(i, n, ic, co, so, now) for (i, n, ic, co, so) in SEED_STORES],
             )
+
+        # One-time scrub: upgrade any cached http:// product images to https://
+        # so the dashboard (served over HTTPS via Cloudflare Tunnel) doesn't
+        # trigger mixed-content warnings.
+        c.execute("UPDATE products SET image_url = 'https://' || substr(image_url, 8) "
+                  "WHERE image_url LIKE 'http://%'")
 
         c.execute(
             'INSERT INTO schema_meta (key,value) VALUES (?,?) '
@@ -729,7 +744,7 @@ def api_products():
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (
         pid, name, body.get('brand', ''),
-        body.get('category_id'), body.get('image_url', ''),
+        body.get('category_id'), _https(body.get('image_url', '')),
         body.get('default_location_id'), body.get('default_store_id'),
         body.get('default_unit', 'count'),
         float(body.get('min_threshold', 1)),
@@ -871,7 +886,7 @@ def api_items():
             VALUES (?,?,?,?,?,?,?,?,?,?)
         ''', (
             pid, name, body.get('brand', ''),
-            body.get('category_id'), body.get('image_url', ''),
+            body.get('category_id'), _https(body.get('image_url', '')),
             body.get('default_unit', 'count'),
             float(body.get('min_threshold') or 1),
             1 if body.get('tracks_percent') else 0,
@@ -1026,9 +1041,12 @@ def api_stats():
     c = _conn()
     total = c.execute('SELECT COUNT(*) FROM inventory').fetchone()[0]
 
+    # Match the frontend's stockState(): qty <= threshold counts as LOW.
+    # Strict < missed the common qty=1, threshold=1 case so the LOW pill
+    # disagreed with the on-screen badges.
     low = c.execute('''
         SELECT COUNT(*) FROM inventory i JOIN products p ON p.id = i.product_id
-        WHERE i.current_qty > 0 AND i.current_qty < p.min_threshold
+        WHERE i.current_qty > 0 AND i.current_qty <= p.min_threshold
     ''').fetchone()[0]
 
     out = c.execute('''
@@ -1251,7 +1269,7 @@ def _cache_and_return(c, barcode: str, source: str, n: dict,
            min_threshold,tracks_percent,created_at,updated_at)
         VALUES (?,?,?,?,?,?,?,?,?,?)
     ''', (pid, n['name'] or f'Item {barcode}', n.get('brand', ''), cat,
-          n.get('image', ''), 'count', 1, 0, now, now))
+          _https(n.get('image', '')), 'count', 1, 0, now, now))
     c.execute('''
         INSERT OR REPLACE INTO barcode_catalog
           (barcode,product_id,source,raw_data,cached_at) VALUES (?,?,?,?,?)

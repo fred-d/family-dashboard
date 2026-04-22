@@ -565,35 +565,8 @@ def _guess_category(tags: list, name: str) -> str:
     return 'other'
 
 
-@app.route('/api/upc/<barcode>')
-def api_upc_lookup(barcode):
-    """Proxy UPC barcode lookup to Open Food Facts. Returns product info or {found:false}."""
-    if not re.fullmatch(r'\d{6,14}', barcode):
-        return jsonify({'found': False, 'error': 'Invalid barcode'}), 400
-    try:
-        r = requests.get(
-            f'https://world.openfoodfacts.org/api/v0/product/{barcode}.json',
-            headers={'User-Agent': 'FamilyDashboard/1.1'},
-            timeout=8
-        )
-        data = r.json()
-        if data.get('status') != 1 or 'product' not in data:
-            return jsonify({'found': False})
-        p     = data['product']
-        name  = (p.get('product_name_en') or p.get('product_name') or '').strip()
-        brand = p.get('brands', '').split(',')[0].strip()
-        tags  = p.get('categories_tags', [])
-        return jsonify({
-            'found':    True,
-            'upc':      barcode,
-            'name':     name,
-            'brand':    brand,
-            'category': _guess_category(tags, name),
-            'imageUrl': p.get('image_front_small_url') or p.get('image_url') or '',
-        })
-    except Exception as e:
-        app.logger.warning(f'[upc] lookup failed for {barcode}: {e}')
-        return jsonify({'found': False, 'error': 'Lookup unavailable'})
+# Legacy /api/upc/<barcode> was removed — the scanner now uses the richer
+# cascading /api/inventory/scan/<upc> endpoint in inventory.py.
 
 
 # ── Photo API ─────────────────────────────────────────────────────────────────

@@ -128,8 +128,10 @@ html, body {
 }
 
 /* ── View sections (toggled by router) ── */
-.view-section          { display: none; height: 100%; flex-direction: column; }
-.view-section.active   { display: flex; }
+/* !important so child classes that set their own display (e.g. .inv) cannot
+   override the inactive state from a later-loaded stylesheet. */
+.view-section          { display: none !important; height: 100%; flex-direction: column; }
+.view-section.active   { display: flex !important; }
 
 /* ── Calendar filter pills ── */
 .calendar-filters { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
