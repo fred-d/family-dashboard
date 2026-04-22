@@ -636,6 +636,34 @@
   color: var(--color-text);
 }
 
+/* ── Confirm modal (Promise-based replacement for window.confirm) ────────── */
+
+.inv-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px;
+}
+.inv-confirm-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0;
+}
+.inv-confirm-body {
+  font-size: 14px;
+  color: var(--color-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+.inv-confirm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.inv-confirm-actions .inv-btn { min-width: 100px; justify-content: center; }
+
 /* ── Mode toggle (Inventory / Shopping) ──────────────────────────────────── */
 
 .inv-modes {

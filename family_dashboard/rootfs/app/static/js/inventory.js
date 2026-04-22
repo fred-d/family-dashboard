@@ -1017,7 +1017,12 @@ export class InventoryApp {
     }
 
     async _deleteItem(item) {
-        const ok = window.confirm(`Delete "${item.name || 'this item'}"? This can't be undone.`);
+        const ok = await this._confirm({
+            title: 'Delete this item?',
+            body:  `"${item.name || 'this item'}" will be removed from your inventory. This can't be undone.`,
+            confirmLabel: '🗑 Delete',
+            danger: true,
+        });
         if (!ok) return;
         try {
             await this.store.deleteItem(item.id);
@@ -1025,6 +1030,52 @@ export class InventoryApp {
         } catch (err) {
             alert(err.message || 'Delete failed.');
         }
+    }
+
+    /**
+     * Promise-based confirm modal that matches the rest of the inventory UI
+     * (the native window.confirm looked out of place). Resolves to true if
+     * the user clicks the confirm button, false on cancel / backdrop / Esc.
+     */
+    _confirm({ title, body, confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = false } = {}) {
+        return new Promise(resolve => {
+            // Reuse the existing sheet so we get its backdrop, animation,
+            // and Esc-to-close wiring for free.
+            const prevHTML = this.$sheetCard.innerHTML;
+            const wasOpen  = !this.$sheet.hidden;
+            this.$sheetCard.innerHTML = `
+                <div class="inv-confirm">
+                    <h2 class="inv-confirm-title">${_esc(title || 'Are you sure?')}</h2>
+                    ${body ? `<p class="inv-confirm-body">${_esc(body)}</p>` : ''}
+                    <div class="inv-confirm-actions">
+                        <button type="button" class="inv-btn inv-btn-secondary" data-confirm-cancel>
+                            ${_esc(cancelLabel)}
+                        </button>
+                        <button type="button" class="inv-btn ${danger ? 'inv-btn-danger' : 'inv-btn-primary'}"
+                                data-confirm-ok>
+                            ${_esc(confirmLabel)}
+                        </button>
+                    </div>
+                </div>
+            `;
+            const finish = (result) => {
+                if (wasOpen) {
+                    // Restore the previous sheet contents (e.g. detail sheet)
+                    this.$sheetCard.innerHTML = prevHTML;
+                } else {
+                    this._closeSheet();
+                }
+                resolve(result);
+            };
+            this.$sheetCard.querySelector('[data-confirm-ok]')
+                .addEventListener('click', () => finish(true));
+            this.$sheetCard.querySelector('[data-confirm-cancel]')
+                .addEventListener('click', () => finish(false));
+            if (!wasOpen) {
+                this.$sheet.hidden = false;
+                requestAnimationFrame(() => this.$sheet.classList.add('open'));
+            }
+        });
     }
 }
 

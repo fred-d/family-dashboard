@@ -11,22 +11,24 @@
     position:        fixed;
     inset:           0;
     z-index:         9999;
-    display:         flex;
     align-items:     center;
     justify-content: center;
     background:      rgba(15, 23, 42, 0.80);
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
 
-    /* Hidden by default — auth.js adds .visible */
-    opacity:        0;
-    pointer-events: none;
-    transition:     opacity 0.2s ease;
+    /* Hidden by default — auth.js adds .visible.
+       display:none (not opacity:0) so the form input doesn't get
+       focused/clicked-through and isn't visible to assistive tech or
+       DevTools page inspectors. */
+    display: none;
+    opacity: 0;
+    transition: opacity 0.2s ease;
 }
 
 #authOverlay.visible {
-    opacity:        1;
-    pointer-events: all;
+    display: flex;
+    opacity: 1;
 }
 
 /* ── Login card ── */
