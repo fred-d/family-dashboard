@@ -136,12 +136,13 @@ export class InventoryApp {
         this.store     = store;
 
         // View state
-        this._mode     = 'inventory'; // 'inventory' | 'shopping'
-        this._location = 'all';   // location id | 'all'
-        this._filter   = 'all';   // 'all' | 'low' | 'expiring' | 'out'
-        this._search   = '';
+        this._tab       = 'inventory'; // 'inventory' | 'shopping'
+        this._viewStyle = 'list';      // 'list' | 'grid'
+        this._location  = 'all';   // location id | 'all'
+        this._filter    = 'all';   // 'all' | 'low' | 'expiring' | 'out'
+        this._search    = '';
         this._shopStore = 'all';  // store id | 'all'
-        this._walkMode  = false;  // store walk mode (one store, big rows, grouped by aisle)
+        this._walkOpen  = false;   // walk mode overlay open
 
         // Lazy-constructed scanner
         this._scanner = null;
@@ -155,114 +156,158 @@ export class InventoryApp {
     _renderShell() {
         this.container.classList.add('inv');
         this.container.innerHTML = `
-            <div class="inv-topbar">
+            <!-- Header: family + actions -->
+            <div class="inv-header">
                 <div class="inv-family"></div>
-                <div class="inv-modes" data-modes>
-                    <button type="button" class="inv-mode active" data-mode="inventory">📦 Inventory</button>
-                    <button type="button" class="inv-mode" data-mode="shopping">🛒 Shopping</button>
-                </div>
-                <div class="inv-actions">
+                <div class="inv-header-actions">
                     <button type="button" class="inv-btn inv-btn-secondary" data-action="scan">
-                        <span class="inv-btn-icon">📷</span> Scan
+                        📷 Scan
                     </button>
                     <button type="button" class="inv-btn inv-btn-primary" data-action="add">
-                        <span class="inv-btn-icon">＋</span> Add Item
+                        ＋ Add
                     </button>
-                    <button type="button" class="inv-btn inv-btn-secondary inv-btn-icon-only"
-                            data-action="settings" aria-label="Inventory settings" title="Settings">⚙</button>
+                    <button type="button" class="inv-btn inv-btn-ghost inv-btn-icon-only"
+                            data-action="settings" aria-label="Settings" title="Settings">⚙</button>
                 </div>
             </div>
 
-            <div class="inv-searchrow">
-                <label class="inv-search">
-                    <span class="inv-search-icon" aria-hidden="true">🔍</span>
-                    <input type="search" class="inv-search-input"
-                           placeholder="Search items, brands, categories…" autocomplete="off">
-                </label>
-                <div class="inv-stats" data-stats-rail></div>
-            </div>
+            <!-- Tab bar -->
+            <nav class="inv-tabs" data-tabs>
+                <button type="button" class="inv-tab active" data-tab="inventory">
+                    📦 Inventory
+                    <span class="inv-tab-badge" data-badge-inv>0</span>
+                </button>
+                <button type="button" class="inv-tab" data-tab="shopping">
+                    🛒 Shopping
+                    <span class="inv-tab-badge" data-badge-shop>0</span>
+                </button>
+            </nav>
 
-            <nav class="inv-loctabs" data-loctabs></nav>
+            <!-- ══ INVENTORY PANEL ══ -->
+            <div class="inv-panel" data-panel="inventory">
 
-            <div class="inv-filters" data-filters>
-                <button class="inv-chip active" data-filter="all">All</button>
-                <button class="inv-chip" data-filter="low">Low Stock</button>
-                <button class="inv-chip" data-filter="expiring">Expiring</button>
-                <button class="inv-chip" data-filter="out">Out</button>
-            </div>
-
-            <div class="inv-grid" data-grid>
-                <div class="inv-empty" data-empty hidden>
-                    <div class="inv-empty-icon">📦</div>
-                    <div class="inv-empty-title">Nothing here yet</div>
-                    <div class="inv-empty-sub">Scan a barcode or tap <strong>Add Item</strong> to get started.</div>
-                </div>
-            </div>
-
-            <!-- Shopping list panel (hidden in inventory mode) -->
-            <div class="inv-shop" data-shop hidden>
-                <div class="inv-shop-toolbar">
-                    <label class="inv-field inv-field-wide">
-                        <span class="inv-field-label">Store</span>
-                        <select class="inv-input" data-shop-store>
-                            <option value="all">All stores</option>
-                        </select>
+                <div class="inv-inv-toolbar">
+                    <label class="inv-search">
+                        <span class="inv-search-icon" aria-hidden="true">🔍</span>
+                        <input type="search" class="inv-search-input"
+                               placeholder="Search items, brands, categories…" autocomplete="off">
                     </label>
-                    <button type="button" class="inv-btn inv-btn-secondary"
-                            data-action="from-meal-plan"
-                            title="Pull this week's recipe ingredients into the list">
-                        📅 From Meal Plan
-                    </button>
-                    <button type="button" class="inv-btn inv-btn-secondary"
-                            data-action="walk-toggle" data-walk-toggle
-                            title="Store walk mode — focus on one store, grouped by aisle">
-                        📍 Walk
-                    </button>
-                    <button type="button" class="inv-btn inv-btn-primary"
-                            data-action="stock-all-bought" data-stock-all hidden
-                            title="Move every checked-off item into inventory">
-                        📥 Stock all bought
-                    </button>
+                    <button type="button" class="inv-btn inv-btn-ghost inv-btn-icon-only inv-view-toggle"
+                            data-view-toggle title="Switch between list and grid">⊞</button>
+                    <div class="inv-stats" data-stats-rail></div>
                 </div>
-                <div class="inv-shop-list" data-shop-list>
-                    <div class="inv-empty" data-shop-empty hidden>
-                        <div class="inv-empty-icon">🛒</div>
-                        <div class="inv-empty-title">Shopping list is empty</div>
-                        <div class="inv-empty-sub">Items appear here when stock falls below the minimum, or add one with <strong>＋ Add Item</strong>.</div>
+
+                <nav class="inv-loctabs" data-loctabs></nav>
+
+                <div class="inv-filters" data-filters>
+                    <button class="inv-chip active" data-filter="all">All</button>
+                    <button class="inv-chip" data-filter="low">Low</button>
+                    <button class="inv-chip" data-filter="expiring">Expiring</button>
+                    <button class="inv-chip" data-filter="out">Out</button>
+                </div>
+
+                <div class="inv-content" data-content>
+                    <div class="inv-empty" data-empty hidden>
+                        <div class="inv-empty-icon">📦</div>
+                        <div class="inv-empty-title">Nothing here yet</div>
+                        <div class="inv-empty-sub">Scan a barcode or tap <strong>＋ Add</strong> to get started.</div>
                     </div>
                 </div>
             </div>
 
-            <!-- Item detail sheet (bottom drawer on phone, centre modal on tablet) -->
+            <!-- ══ SHOPPING PANEL ══ -->
+            <div class="inv-panel" data-panel="shopping" hidden>
+
+                <div class="inv-shop-header">
+                    <select class="inv-input inv-shop-store-select" data-shop-store>
+                        <option value="all">All stores</option>
+                    </select>
+                    <button type="button" class="inv-btn inv-btn-secondary"
+                            data-action="walk-mode" title="In-store walk mode">
+                        🏪 Walk
+                    </button>
+                    <button type="button" class="inv-btn inv-btn-secondary"
+                            data-action="from-meal-plan">
+                        📅 From Meal Plan
+                    </button>
+                    <button type="button" class="inv-btn inv-btn-primary"
+                            data-stock-all hidden>
+                        📥 Stock all bought
+                    </button>
+                </div>
+
+                <div class="inv-shop-progress" data-shop-progress hidden>
+                    <div class="inv-shop-progress-bar">
+                        <div class="inv-shop-progress-fill" data-shop-progress-fill></div>
+                    </div>
+                    <span class="inv-shop-progress-label" data-shop-progress-label></span>
+                </div>
+
+                <div class="inv-shop-list" data-shop-list>
+                    <div class="inv-empty" data-shop-empty hidden>
+                        <div class="inv-empty-icon">🛒</div>
+                        <div class="inv-empty-title">Shopping list is empty</div>
+                        <div class="inv-empty-sub">Items appear here when stock falls below minimum, or add one with <strong>＋ Add</strong>.</div>
+                    </div>
+                </div>
+
+                <!-- Walk mode overlay (full-screen) -->
+                <div class="inv-walk-overlay" data-walk-overlay hidden>
+                    <div class="inv-walk-header">
+                        <div class="inv-walk-header-left">
+                            <div class="inv-walk-title">🏪 Store Walk</div>
+                            <div class="inv-walk-subtitle" data-walk-subtitle>Loading…</div>
+                        </div>
+                        <button type="button" class="inv-walk-close" data-walk-close>✕ Done</button>
+                    </div>
+                    <div class="inv-walk-progress-bar">
+                        <div class="inv-walk-progress-fill" data-walk-fill style="width:0%"></div>
+                    </div>
+                    <div class="inv-walk-items" data-walk-items></div>
+                </div>
+            </div>
+
+            <!-- Detail sheet -->
             <div class="inv-sheet" data-sheet hidden>
                 <div class="inv-sheet-backdrop" data-sheet-close></div>
                 <div class="inv-sheet-card" data-sheet-card></div>
             </div>
         `;
 
-        // Cache refs
-        this.$family   = this.container.querySelector('.inv-family');
-        this.$stats    = this.container.querySelector('[data-stats-rail]');
-        this.$loctabs  = this.container.querySelector('[data-loctabs]');
-        this.$filters  = this.container.querySelector('[data-filters]');
-        this.$grid     = this.container.querySelector('[data-grid]');
-        this.$empty    = this.container.querySelector('[data-empty]');
-        this.$sheet    = this.container.querySelector('[data-sheet]');
-        this.$sheetCard = this.container.querySelector('[data-sheet-card]');
-        this.$search   = this.container.querySelector('.inv-search-input');
-        this.$modes    = this.container.querySelector('[data-modes]');
-        this.$shop     = this.container.querySelector('[data-shop]');
-        this.$shopList = this.container.querySelector('[data-shop-list]');
-        this.$shopEmpty = this.container.querySelector('[data-shop-empty]');
-        this.$shopStore = this.container.querySelector('[data-shop-store]');
-        this.$walkBtn   = this.container.querySelector('[data-walk-toggle]');
-        this.$stockAll  = this.container.querySelector('[data-stock-all]');
+        // ── Cache refs ────────────────────────────────────────────────────────
 
-        // Mount family picker
+        this.$family      = this.container.querySelector('.inv-family');
+        this.$tabs        = this.container.querySelector('[data-tabs]');
+        this.$invPanel    = this.container.querySelector('[data-panel="inventory"]');
+        this.$shopPanel   = this.container.querySelector('[data-panel="shopping"]');
+        this.$stats       = this.container.querySelector('[data-stats-rail]');
+        this.$loctabs     = this.container.querySelector('[data-loctabs]');
+        this.$filters     = this.container.querySelector('[data-filters]');
+        this.$content     = this.container.querySelector('[data-content]');
+        this.$empty       = this.container.querySelector('[data-empty]');
+        this.$sheet       = this.container.querySelector('[data-sheet]');
+        this.$sheetCard   = this.container.querySelector('[data-sheet-card]');
+        this.$search      = this.container.querySelector('.inv-search-input');
+        this.$viewToggle  = this.container.querySelector('[data-view-toggle]');
+        this.$shopStore   = this.container.querySelector('[data-shop-store]');
+        this.$shopList    = this.container.querySelector('[data-shop-list]');
+        this.$shopEmpty   = this.container.querySelector('[data-shop-empty]');
+        this.$shopProgress = this.container.querySelector('[data-shop-progress]');
+        this.$shopProgressFill  = this.container.querySelector('[data-shop-progress-fill]');
+        this.$shopProgressLabel = this.container.querySelector('[data-shop-progress-label]');
+        this.$walkOverlay = this.container.querySelector('[data-walk-overlay]');
+        this.$walkSubtitle = this.container.querySelector('[data-walk-subtitle]');
+        this.$walkFill    = this.container.querySelector('[data-walk-fill]');
+        this.$walkItems   = this.container.querySelector('[data-walk-items]');
+        this.$stockAll    = this.container.querySelector('[data-stock-all]');
+        this.$badgeInv    = this.container.querySelector('[data-badge-inv]');
+        this.$badgeShop   = this.container.querySelector('[data-badge-shop]');
+
+        // Mount family picker (compact)
         this._picker = new FamilyPicker(this.store);
         this.$family.appendChild(this._picker.el);
 
-        // ── Wire interactions ────────────────────────────────────────────────
+        // ── Wire interactions ─────────────────────────────────────────────────
 
         this.$search.addEventListener('input', e => {
             this._search = e.target.value.trim().toLowerCase();
@@ -287,26 +332,30 @@ export class InventoryApp {
             this._renderGrid();
         });
 
+        this.$tabs.addEventListener('click', e => {
+            const btn = e.target.closest('[data-tab]');
+            if (!btn) return;
+            this._setTab(btn.dataset.tab);
+        });
+
+        this.$viewToggle.addEventListener('click', () => this._toggleViewStyle());
+
         this.container.querySelector('[data-action="scan"]')
             .addEventListener('click', () => this._openScanner());
         this.container.querySelector('[data-action="add"]')
             .addEventListener('click', () => {
-                if (this._mode === 'shopping') this._openShoppingAddModal();
+                if (this._tab === 'shopping') this._openShoppingAddModal();
                 else this._openAddSheet();
             });
         this.container.querySelector('[data-action="settings"]')
             .addEventListener('click', () => this._openSettings());
 
-        this.$modes.addEventListener('click', e => {
-            const btn = e.target.closest('.inv-mode');
-            if (!btn) return;
-            this._setMode(btn.dataset.mode);
-        });
-
         this.container.querySelector('[data-action="from-meal-plan"]')
             ?.addEventListener('click', () => this._openMealPlanImport());
 
-        this.$walkBtn?.addEventListener('click', () => this._toggleWalkMode());
+        this.container.querySelector('[data-action="walk-mode"]')
+            ?.addEventListener('click', () => this._openWalkMode());
+
         this.$stockAll?.addEventListener('click', () => this._stockAllBought());
 
         this.$shopStore.addEventListener('change', () => {
@@ -345,19 +394,12 @@ export class InventoryApp {
             }
         });
 
-        this.$sheet.addEventListener('click', e => {
-            if (e.target.matches('[data-sheet-close]')) this._closeSheet();
-        });
-        document.addEventListener('keydown', e => {
-            if (e.key === 'Escape' && !this.$sheet.hidden) this._closeSheet();
-        });
-
-        // Delegated tile clicks
-        this.$grid.addEventListener('click', e => {
+        // Delegated inventory content clicks (tiles and list rows)
+        this.$content.addEventListener('click', e => {
             const btnDec  = e.target.closest('[data-dec]');
             const btnInc  = e.target.closest('[data-inc]');
             const btnNeed = e.target.closest('[data-need]');
-            const tile    = e.target.closest('.inv-tile');
+            const tile    = e.target.closest('.inv-tile, .inv-row');
             if (btnDec) {
                 e.stopPropagation();
                 this.store.consume(btnDec.dataset.dec).catch(() => {});
@@ -371,6 +413,21 @@ export class InventoryApp {
             } else if (tile) {
                 this._openDetailSheet(tile.dataset.id);
             }
+        });
+
+        this.$sheet.addEventListener('click', e => {
+            if (e.target.matches('[data-sheet-close]')) this._closeSheet();
+        });
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') {
+                if (this._walkOpen) { this._closeWalkMode(); return; }
+                if (!this.$sheet.hidden) this._closeSheet();
+            }
+        });
+
+        // Walk overlay
+        this.$walkOverlay.addEventListener('click', e => {
+            if (e.target.closest('[data-walk-close]')) this._closeWalkMode();
         });
     }
 
@@ -386,7 +443,17 @@ export class InventoryApp {
             }),
             this.store.on('items',    () => { this._renderGrid(); this._renderStats(); }),
             this.store.on('stats',    () => this._renderStats()),
-            this.store.on('shopping', () => { this._renderStats(); this._renderShopping(); }),
+            this.store.on('shopping', () => {
+                this._renderStats();
+                this._renderShopping();
+                if (this._walkOpen) {
+                    const storeId = this._shopStore !== 'all' ? this._shopStore
+                        : ((this.store.config.stores || [])[0]?.id || null);
+                    let fresh = this.store.shopping || [];
+                    if (storeId) fresh = fresh.filter(r => r.store_id === storeId || !r.store_id);
+                    this._renderWalkItems(fresh.filter(r => r.status !== 'bought'));
+                }
+            }),
             this.store.on('family',   () => this._renderShopping()),
         ];
         this._renderLocations();
@@ -396,24 +463,121 @@ export class InventoryApp {
         this._renderShopping();
     }
 
-    _setMode(mode) {
-        if (mode !== 'inventory' && mode !== 'shopping') return;
-        this._mode = mode;
-        this.$modes.querySelectorAll('.inv-mode').forEach(b =>
-            b.classList.toggle('active', b.dataset.mode === mode));
-        const isShop = mode === 'shopping';
-        this.container.classList.toggle('inv-shopping-mode', isShop);
-        this.$shop.hidden = !isShop;
-        // Hide inventory-only chrome
-        this.$loctabs.hidden = isShop;
-        this.$filters.hidden = isShop;
-        this.$grid.hidden    = isShop;
-        // Re-label primary action
+    _setTab(tab) {
+        if (tab !== 'inventory' && tab !== 'shopping') return;
+        this._tab = tab;
+        this.$tabs.querySelectorAll('[data-tab]').forEach(b =>
+            b.classList.toggle('active', b.dataset.tab === tab));
+        this.$invPanel.hidden  = tab !== 'inventory';
+        this.$shopPanel.hidden = tab !== 'shopping';
+        // Re-label Add button
         const $add = this.container.querySelector('[data-action="add"]');
-        if ($add) $add.lastChild.textContent = isShop ? ' Add to List' : ' Add Item';
-        // Hide Scan in shopping mode (not the right action there)
-        const $scan = this.container.querySelector('[data-action="scan"]');
-        if ($scan) $scan.hidden = isShop;
+        if ($add) $add.textContent = tab === 'shopping' ? '＋ Add to List' : '＋ Add';
+    }
+
+    _toggleViewStyle() {
+        this._viewStyle = this._viewStyle === 'list' ? 'grid' : 'list';
+        this.$viewToggle.textContent = this._viewStyle === 'grid' ? '≡' : '⊞';
+        this.$viewToggle.title = this._viewStyle === 'grid' ? 'Switch to list view' : 'Switch to grid view';
+        this.$content.classList.toggle('inv-content-grid', this._viewStyle === 'grid');
+        this._renderGrid();
+    }
+
+    _openWalkMode() {
+        const stores = this.store.config.stores || [];
+        // Default to selected store or first store
+        let storeId = this._shopStore !== 'all' ? this._shopStore : (stores[0]?.id || null);
+        let all = this.store.shopping || [];
+        let items = storeId ? all.filter(r => r.store_id === storeId || !r.store_id) : all;
+        items = items.filter(r => r.status !== 'bought');
+
+        this._walkOpen = true;
+        this.$walkOverlay.hidden = false;
+        requestAnimationFrame(() => this.$walkOverlay.classList.add('open'));
+        this._renderWalkItems(items);
+    }
+
+    _renderWalkItems(items) {
+        const catSortIdx = new Map();
+        (this.store.config.categories || []).forEach((c, i) => {
+            catSortIdx.set(c.id, Number(c.sort_order) || i);
+        });
+
+        const groups = new Map();
+        for (const row of items) {
+            const key = row.category_name || 'Other';
+            if (!groups.has(key)) groups.set(key, { key, cid: row.category_id, rows: [] });
+            groups.get(key).rows.push(row);
+        }
+        const sortedGroups = [...groups.values()].sort((a, b) => {
+            const ai = catSortIdx.has(a.cid) ? catSortIdx.get(a.cid) : 9999;
+            const bi = catSortIdx.has(b.cid) ? catSortIdx.get(b.cid) : 9999;
+            return ai - bi || a.key.localeCompare(b.key);
+        });
+
+        const total = items.length;
+        const done  = (this.store.shopping || []).filter(r => r.status === 'bought').length;
+
+        if (this.$walkFill) this.$walkFill.style.width = total > 0 ? `${(done / (done + total)) * 100}%` : '0%';
+        if (this.$walkSubtitle) this.$walkSubtitle.textContent = `${total} items left to grab`;
+
+        if (!items.length) {
+            this.$walkItems.innerHTML = `
+                <div class="inv-walk-done">
+                    <div style="font-size:56px;margin-bottom:12px">🎉</div>
+                    <div class="inv-walk-done-title">All done!</div>
+                    <div class="inv-walk-done-sub">Nothing left to grab. Tap Done to finish.</div>
+                </div>`;
+            return;
+        }
+
+        this.$walkItems.innerHTML = sortedGroups.map(({ key, rows }) => `
+            <div class="inv-walk-group">
+                <div class="inv-walk-group-head">${_esc(key)}</div>
+                ${rows.map(r => {
+                    const status = r.status || 'needed';
+                    const photo = r.product_image
+                        ? `<img class="inv-walk-img" src="${_esc(r.product_image)}" alt="" loading="lazy">`
+                        : `<div class="inv-walk-img placeholder">🛒</div>`;
+                    const qtyNum = Math.max(1, Number(r.qty) || 1);
+                    return `
+                        <div class="inv-walk-row status-${status}" data-walk-row="${_esc(r.id)}">
+                            <button type="button" class="inv-walk-check tri-${status}"
+                                    data-walk-cycle="${_esc(r.id)}"
+                                    aria-label="Mark bought">
+                                ${status === 'bought' ? '✓' : status === 'ordered' ? '📋' : ''}
+                            </button>
+                            ${photo}
+                            <div class="inv-walk-info">
+                                <div class="inv-walk-name">${_esc(r.name)}</div>
+                                ${qtyNum > 1 ? `<div class="inv-walk-qty">× ${qtyNum}</div>` : ''}
+                            </div>
+                        </div>`;
+                }).join('')}
+            </div>`).join('');
+
+        // Bind walk check buttons
+        this.$walkItems.querySelectorAll('[data-walk-cycle]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const id  = btn.dataset.walkCycle;
+                const row = (this.store.shopping || []).find(s => s.id === id);
+                const cur = row?.status || 'needed';
+                const next = cur === 'bought' ? 'needed' : 'bought';
+                await this.store.updateShopping(id, { status: next }).catch(() => {});
+                // Re-render walk view with fresh data
+                const storeId = this._shopStore !== 'all' ? this._shopStore
+                    : ((this.store.config.stores || [])[0]?.id || null);
+                let fresh = this.store.shopping || [];
+                if (storeId) fresh = fresh.filter(r => r.store_id === storeId || !r.store_id);
+                this._renderWalkItems(fresh.filter(r => r.status !== 'bought'));
+            });
+        });
+    }
+
+    _closeWalkMode() {
+        this._walkOpen = false;
+        this.$walkOverlay.classList.remove('open');
+        setTimeout(() => { this.$walkOverlay.hidden = true; }, 250);
     }
 
     destroy() {
@@ -472,11 +636,6 @@ export class InventoryApp {
             ? all
             : all.filter(r => r.store_id === this._shopStore || !r.store_id);
 
-        // Walk mode: hide bought rows so user only sees what's left to grab
-        if (this._walkMode) {
-            filtered = filtered.filter(r => r.status !== 'bought');
-        }
-
         // Clear previous rows but keep empty state element
         this.$shopList.querySelectorAll('.inv-shop-row, .inv-shop-group').forEach(n => n.remove());
 
@@ -484,9 +643,17 @@ export class InventoryApp {
         const anyBought = all.some(r => r.status === 'bought' && r.product_id);
         if (this.$stockAll) this.$stockAll.hidden = !anyBought;
 
-        // Reflect walk-mode style on the panel
-        this.$shop.classList.toggle('inv-walk-mode', !!this._walkMode);
-        this.$walkBtn?.classList.toggle('active', !!this._walkMode);
+        // Update progress bar
+        const total = all.length;
+        const bought = all.filter(r => r.status === 'bought').length;
+        if (this.$shopProgress) {
+            this.$shopProgress.hidden = total === 0;
+            if (total > 0) {
+                const pct = Math.round((bought / total) * 100);
+                if (this.$shopProgressFill)  this.$shopProgressFill.style.width  = `${pct}%`;
+                if (this.$shopProgressLabel) this.$shopProgressLabel.textContent = `${bought} of ${total} in cart`;
+            }
+        }
 
         if (!filtered.length) {
             this.$shopEmpty.hidden = false;
@@ -508,14 +675,8 @@ export class InventoryApp {
             groups.get(key).rows.push(row);
         }
 
-        const sortedGroups = [...groups.values()].sort((a, b) => {
-            if (this._walkMode) {
-                const ai = catSortIdx.has(a.cid) ? catSortIdx.get(a.cid) : 9999;
-                const bi = catSortIdx.has(b.cid) ? catSortIdx.get(b.cid) : 9999;
-                if (ai !== bi) return ai - bi;
-            }
-            return a.cat.localeCompare(b.cat);
-        });
+        const sortedGroups = [...groups.values()].sort((a, b) =>
+            a.cat.localeCompare(b.cat));
 
         const html = sortedGroups.map(({ cat, rows }) => {
             rows.sort((a, b) =>
@@ -534,17 +695,7 @@ export class InventoryApp {
     }
 
     _toggleWalkMode() {
-        this._walkMode = !this._walkMode;
-        // Walk mode is most useful filtered to a single store. Auto-pick the
-        // first store on enable; let the user override after.
-        if (this._walkMode && this._shopStore === 'all') {
-            const first = (this.store.config.stores || [])[0];
-            if (first) {
-                this._shopStore = first.id;
-                if (this.$shopStore) this.$shopStore.value = first.id;
-            }
-        }
-        this._renderShopping();
+        this._openWalkMode();
     }
 
     async _stockAllBought() {
@@ -745,24 +896,99 @@ export class InventoryApp {
                 <span class="inv-stat-lbl">🛒 list</span>
             </div>
         `;
+        // Update tab badges
+        const total = this.store.stats?.total ?? (this.store.items || []).length;
+        if (this.$badgeInv)  this.$badgeInv.textContent  = total;
+        if (this.$badgeShop) this.$badgeShop.textContent = shoppingCount;
     }
 
     // ── Render: grid ─────────────────────────────────────────────────────────
 
     _renderGrid() {
+        if (this._viewStyle === 'list') return this._renderInventoryList();
+        return this._renderInventoryGrid();
+    }
+
+    _renderInventoryGrid() {
         const items = this._visibleItems();
+        // Ensure grid wrapper exists
+        let $grid = this.$content.querySelector('.inv-grid');
+        if (!$grid) {
+            this.$content.querySelectorAll('.inv-list, .inv-grid').forEach(n => n.remove());
+            $grid = document.createElement('div');
+            $grid.className = 'inv-grid';
+            this.$content.insertBefore($grid, this.$empty);
+        }
         if (!items.length) {
             this.$empty.hidden = false;
-            // Clear previous tiles (but keep empty state)
-            this.$grid.querySelectorAll('.inv-tile').forEach(n => n.remove());
+            $grid.querySelectorAll('.inv-tile').forEach(n => n.remove());
             return;
         }
         this.$empty.hidden = true;
+        $grid.querySelectorAll('.inv-tile').forEach(n => n.remove());
+        $grid.insertAdjacentHTML('afterbegin', items.map(it => this._tileHtml(it)).join(''));
+    }
 
-        const html = items.map(it => this._tileHtml(it)).join('');
-        // Preserve empty state element; replace tiles only
-        this.$grid.querySelectorAll('.inv-tile').forEach(n => n.remove());
-        this.$empty.insertAdjacentHTML('beforebegin', html);
+    _renderInventoryList() {
+        const items = this._visibleItems();
+        // Ensure list wrapper exists
+        let $list = this.$content.querySelector('.inv-list');
+        if (!$list) {
+            this.$content.querySelectorAll('.inv-list, .inv-grid').forEach(n => n.remove());
+            $list = document.createElement('div');
+            $list.className = 'inv-list';
+            this.$content.insertBefore($list, this.$empty);
+        }
+        if (!items.length) {
+            this.$empty.hidden = false;
+            $list.innerHTML = '';
+            return;
+        }
+        this.$empty.hidden = true;
+        $list.innerHTML = items.map(it => this._rowHtml(it)).join('');
+    }
+
+    _rowHtml(it) {
+        const state   = stockState(it);
+        const pct     = _effectivePercent(it);
+        const qtyLabel = _qtyLabel(it, pct);
+        const subLabel = _packSubLabel(it);
+        const exp      = expiryState(it);
+        const expDays  = _daysUntil(it.expires_at);
+
+        let statusBadge = '';
+        if (state === 'out') statusBadge = `<span class="inv-badge out">Out</span>`;
+        else if (state === 'low') statusBadge = `<span class="inv-badge low">Low</span>`;
+        else if (exp === 'expired') statusBadge = `<span class="inv-badge expired">Expired</span>`;
+        else if (exp === 'soon') statusBadge = `<span class="inv-badge soon">${expDays}d</span>`;
+
+        const photo = it.image_url
+            ? `<img class="inv-row-img" src="${_esc(it.image_url)}" alt="" loading="lazy">`
+            : `<div class="inv-row-img placeholder">${_esc(iconToEmoji(it.category_icon || it.category_emoji))}</div>`;
+
+        const loc = this.store.locationById(it.location_id);
+        const meta = [it.brand, loc?.name].filter(Boolean).join(' · ');
+
+        return `
+            <div class="inv-row state-${state}" data-id="${_esc(it.id)}">
+                <div class="inv-row-thumb">${photo}</div>
+                <div class="inv-row-body">
+                    <div class="inv-row-name">${_esc(it.name || 'Unnamed')} ${statusBadge}</div>
+                    <div class="inv-row-meta">${_esc(meta)}${subLabel ? ` · <span class="inv-row-pack">${_esc(subLabel)}</span>` : ''}</div>
+                </div>
+                <div class="inv-row-qty-wrap">
+                    <span class="inv-row-qty">${_esc(qtyLabel)}</span>
+                    ${Number(it.tracks_percent) ? `<div class="inv-row-meter"><div class="inv-row-meter-fill" style="width:${pct}%"></div></div>` : ''}
+                </div>
+                <div class="inv-row-actions">
+                    <button type="button" class="inv-qbtn" data-dec="${_esc(it.id)}"
+                            aria-label="Use one" ${it.qty_on_hand <= 0 ? 'disabled' : ''}>−</button>
+                    <button type="button" class="inv-qbtn" data-inc="${_esc(it.id)}"
+                            aria-label="Add one">+</button>
+                    <button type="button" class="inv-qbtn need" data-need="${_esc(it.id)}"
+                            aria-label="Need" title="Add to shopping list">🛒</button>
+                </div>
+            </div>`;
     }
 
     _visibleItems() {
