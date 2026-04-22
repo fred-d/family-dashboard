@@ -52,7 +52,7 @@ export class InventoryStore {
     constructor() {
         // ── In-memory state (hydrated from localStorage on construct) ────────
         this.config   = _load(CACHE_CONFIG,    { locations: [], categories: [], stores: [] });
-        this.items    = _load(CACHE_ITEMS,     []);
+        this.items    = _load(CACHE_ITEMS,     []).map(_normalizeItem);
         this.products = [];
         this.shopping = _load(CACHE_SHOPPING,  []);
         this.family   = _load(CACHE_FAMILY,    []);
@@ -106,7 +106,15 @@ export class InventoryStore {
         try {
             const res = await fetch(apiUrl(path));
             if (!res.ok) return;
-            const data = await res.json();
+            let data = await res.json();
+            // Normalize joined inventory rows: backend uses product_* and
+            // current_qty / percent_remaining / product_min_threshold; the UI
+            // code was written against name / brand / image_url / qty_on_hand
+            // / percent / low_qty_threshold. Alias rather than renaming the
+            // backend so other consumers stay happy.
+            if (key === 'items' && Array.isArray(data)) {
+                data = data.map(_normalizeItem);
+            }
             this[key] = data;
             _save(`fc_inv_${key}`, data);
             this._emit(key);
@@ -246,4 +254,28 @@ function _loadRaw(key, fallback) {
 
 function _save(key, value) {
     try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* quota — ignore */ }
+}
+
+/**
+ * Map an inventory row from the backend (joined with products) into the flat
+ * shape the UI expects. Keeps the original fields too so anything that reads
+ * the raw column name still works.
+ */
+function _normalizeItem(row) {
+    if (!row || typeof row !== 'object') return row;
+    const qty = Number(row.current_qty ?? row.qty_on_hand ?? 0);
+    const pct = row.percent_remaining ?? row.percent ?? null;
+    return {
+        ...row,
+        // Display fields pulled off the joined product
+        name:       row.name       ?? row.product_name       ?? '',
+        brand:      row.brand      ?? row.product_brand      ?? '',
+        image_url:  row.image_url  ?? row.product_image      ?? '',
+        category_id:row.category_id?? row.product_category_id?? null,
+        // Quantity / threshold aliases
+        qty_on_hand:        Number.isFinite(qty) ? qty : 0,
+        low_qty_threshold:  Number(row.low_qty_threshold ?? row.product_min_threshold ?? 0) || 0,
+        percent:            pct == null ? null : Number(pct),
+        tracks_percent:     row.tracks_percent ?? row.product_tracks_percent ?? 0,
+    };
 }

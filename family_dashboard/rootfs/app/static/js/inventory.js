@@ -77,10 +77,13 @@ function stockState(item) {
 }
 
 function _effectivePercent(item) {
-    if (item.percent != null) return Math.max(0, Math.min(100, item.percent));
+    const pct = Number(item?.percent);
+    if (Number.isFinite(pct)) return Math.max(0, Math.min(100, pct));
     // No percent set — derive from qty vs par_qty (target on-hand quantity).
-    const par = item.par_qty || item.low_qty_threshold || 1;
-    return Math.max(0, Math.min(100, Math.round((item.qty_on_hand / par) * 100)));
+    const qty = Number(item?.qty_on_hand);
+    const par = Number(item?.par_qty || item?.low_qty_threshold) || 1;
+    if (!Number.isFinite(qty) || qty <= 0) return 0;
+    return Math.max(0, Math.min(100, Math.round((qty / par) * 100)));
 }
 
 function _daysUntil(iso) {
