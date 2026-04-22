@@ -3,7 +3,7 @@
 A Home Assistant addon. Beautiful family hub with shared calendar, meal planner,
 recipe book, grocery list, and Kitchen Inventory — all backed by HA data.
 
-Owner: Fred. Deploys via HA Supervisor; reachable on the LAN through HA ingress
+Owner: Freddy. Deploys via HA Supervisor; reachable on the LAN through HA ingress
 and externally via Cloudflare Tunnel at **dashboard.fna3.net**.
 
 ---

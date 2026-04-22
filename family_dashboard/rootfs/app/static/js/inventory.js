@@ -454,6 +454,13 @@ export class InventoryApp {
                         data-cmd="inc">+ Restock</button>
             </div>
 
+            <div class="inv-sheet-actions inv-sheet-actions-secondary">
+                <button type="button" class="inv-btn inv-btn-ghost"
+                        data-cmd="edit">✎ Edit</button>
+                <button type="button" class="inv-btn inv-btn-ghost inv-btn-danger-text"
+                        data-cmd="delete">🗑 Delete</button>
+            </div>
+
             ${it.expires_at ? `
                 <div class="inv-sheet-meta">
                     <span class="inv-sheet-meta-label">Expires</span>
@@ -479,6 +486,10 @@ export class InventoryApp {
             .addEventListener('click', () => this.store.consume(id).catch(() => {}));
         this.$sheetCard.querySelector('[data-cmd="inc"]')
             .addEventListener('click', () => this.store.restock(id).catch(() => {}));
+        this.$sheetCard.querySelector('[data-cmd="edit"]')
+            ?.addEventListener('click', () => this._openItemModal({ mode: 'edit', itemId: id }));
+        this.$sheetCard.querySelector('[data-cmd="delete"]')
+            ?.addEventListener('click', () => this._deleteItem(it));
 
         this.$sheet.hidden = false;
         requestAnimationFrame(() => this.$sheet.classList.add('open'));
@@ -497,41 +508,253 @@ export class InventoryApp {
             if (!result?.barcode) return;
 
             // If we already have an inventory lot for this UPC, just restock
-            // it in place. Otherwise pre-fill the add sheet with whatever
-            // the scanner already resolved (no need to re-hit /scan).
+            // it in place. Otherwise open the Add modal pre-filled with
+            // whatever the scanner resolved so the user can pick a location.
             const existing = (this.store.items || []).find(i => i.upc === result.barcode);
             if (existing) {
                 await this.store.restock(existing.id).catch(() => {});
                 return;
             }
             const p = result.product || {};
-            this._openAddSheet({
-                upc:       result.barcode,
-                name:      p.name  || '',
-                brand:     p.brand || '',
-                image_url: p.imageUrl || '',
+            this._openItemModal({
+                mode: 'add',
+                prefill: {
+                    upc:       result.barcode,
+                    name:      p.name  || '',
+                    brand:     p.brand || '',
+                    image_url: p.imageUrl || '',
+                    category_id: p.category || '',
+                },
             });
         });
     }
 
     _openAddSheet(prefill = {}) {
-        // Placeholder for Phase 2B — for now surface a simple prompt so the
-        // wall tablet can still capture a quick addition.
-        const name = window.prompt('Item name', prefill.name || '');
-        if (!name) return;
-        const locId = this.store.config.locations[0]?.id;
-        if (!locId) {
-            alert('No locations configured.');
+        // Back-compat shim — manual + scan flows now share one modal.
+        this._openItemModal({ mode: 'add', prefill });
+    }
+
+    // ── Add / Edit item modal ────────────────────────────────────────────────
+
+    /**
+     * One modal for create + edit + delete. Reuses the .inv-sheet drawer.
+     *   { mode: 'add' | 'edit', prefill?: {...}, itemId?: string }
+     * In edit mode we hydrate from the existing item by id (so changes from
+     * other tabs / SSE win) and PATCH both the product (name/brand/category/
+     * image/threshold) and the inventory row (location/qty/expires/notes) on
+     * save. In add mode we POST to /items and the backend creates or links
+     * the product from the upc.
+     */
+    _openItemModal({ mode = 'add', prefill = {}, itemId = null } = {}) {
+        const isEdit = mode === 'edit' && itemId;
+        const item   = isEdit ? this.store.items.find(i => i.id === itemId) : null;
+        if (isEdit && !item) return;
+
+        const locations  = this.store.config.locations || [];
+        const categories = this.store.config.categories || [];
+        if (!locations.length) {
+            alert('No locations configured. Add one in settings first.');
             return;
         }
-        this.store.addInventory({
-            name,
-            brand:     prefill.brand || '',
-            upc:       prefill.upc || '',
-            image_url: prefill.image_url || '',
-            location_id: locId,
-            current_qty: 1,
-        }).catch(err => alert(err.message));
+
+        // Field values: edit pulls from the existing item, add pulls from
+        // prefill (which may itself be empty for a fully-manual add).
+        const v = isEdit ? {
+            name:        item.name        || '',
+            brand:       item.brand       || '',
+            upc:         item.upc         || '',
+            image_url:   item.image_url   || '',
+            category_id: item.category_id || '',
+            location_id: item.location_id || locations[0].id,
+            current_qty: item.qty_on_hand ?? 1,
+            min_threshold: item.low_qty_threshold ?? 1,
+            expires_at:  item.expires_at ? String(item.expires_at).slice(0, 10) : '',
+            notes:       item.notes || '',
+        } : {
+            name:        prefill.name        || '',
+            brand:       prefill.brand       || '',
+            upc:         prefill.upc         || '',
+            image_url:   prefill.image_url   || '',
+            category_id: prefill.category_id || '',
+            location_id: prefill.location_id || locations[0].id,
+            current_qty: prefill.current_qty ?? 1,
+            min_threshold: prefill.min_threshold ?? 1,
+            expires_at:  prefill.expires_at  || '',
+            notes:       prefill.notes       || '',
+        };
+
+        const title  = isEdit ? 'Edit Item' : 'Add Item';
+        const photo  = v.image_url
+            ? `<img class="inv-form-photo" src="${_esc(v.image_url)}" alt="">`
+            : `<div class="inv-form-photo placeholder">📦</div>`;
+
+        this.$sheetCard.innerHTML = `
+            <button type="button" class="inv-sheet-close" data-sheet-close aria-label="Close">×</button>
+            <h2 class="inv-form-title">${title}</h2>
+
+            <form class="inv-form" data-form novalidate>
+                <div class="inv-form-head">
+                    ${photo}
+                    <div class="inv-form-head-fields">
+                        <label class="inv-field">
+                            <span class="inv-field-label">Name</span>
+                            <input type="text" class="inv-input" name="name"
+                                   value="${_esc(v.name)}" required autocomplete="off"
+                                   placeholder="e.g. Cheerios">
+                        </label>
+                        <label class="inv-field">
+                            <span class="inv-field-label">Brand</span>
+                            <input type="text" class="inv-input" name="brand"
+                                   value="${_esc(v.brand)}" autocomplete="off"
+                                   placeholder="optional">
+                        </label>
+                    </div>
+                </div>
+
+                <div class="inv-form-grid">
+                    <label class="inv-field">
+                        <span class="inv-field-label">Location</span>
+                        <select class="inv-input" name="location_id" required>
+                            ${locations.map(l => `
+                                <option value="${_esc(l.id)}"${l.id === v.location_id ? ' selected' : ''}>
+                                    ${_esc(iconToEmoji(l.icon))} ${_esc(l.name)}
+                                </option>`).join('')}
+                        </select>
+                    </label>
+
+                    <label class="inv-field">
+                        <span class="inv-field-label">Category</span>
+                        <select class="inv-input" name="category_id">
+                            <option value="">— None —</option>
+                            ${categories.map(c => `
+                                <option value="${_esc(c.id)}"${c.id === v.category_id ? ' selected' : ''}>
+                                    ${_esc(iconToEmoji(c.icon))} ${_esc(c.name)}
+                                </option>`).join('')}
+                        </select>
+                    </label>
+
+                    <label class="inv-field">
+                        <span class="inv-field-label">${isEdit ? 'On hand' : 'Initial qty'}</span>
+                        <input type="number" class="inv-input" name="current_qty"
+                               min="0" step="1" value="${Number(v.current_qty)}">
+                    </label>
+
+                    <label class="inv-field">
+                        <span class="inv-field-label">Low at</span>
+                        <input type="number" class="inv-input" name="min_threshold"
+                               min="0" step="1" value="${Number(v.min_threshold)}">
+                    </label>
+
+                    <label class="inv-field inv-field-wide">
+                        <span class="inv-field-label">Expires</span>
+                        <input type="date" class="inv-input" name="expires_at"
+                               value="${_esc(v.expires_at)}">
+                    </label>
+                </div>
+
+                ${v.upc ? `
+                    <div class="inv-form-meta">
+                        <span class="inv-form-meta-label">UPC</span>
+                        <span class="inv-mono">${_esc(v.upc)}</span>
+                    </div>` : ''}
+
+                <div class="inv-form-actions">
+                    ${isEdit ? `
+                        <button type="button" class="inv-btn inv-btn-danger" data-form-delete>
+                            🗑 Delete
+                        </button>` : '<span></span>'}
+                    <div class="inv-form-actions-right">
+                        <button type="button" class="inv-btn inv-btn-secondary" data-sheet-close>Cancel</button>
+                        <button type="submit" class="inv-btn inv-btn-primary">
+                            ${isEdit ? '💾 Save' : '＋ Add'}
+                        </button>
+                    </div>
+                </div>
+            </form>
+        `;
+
+        const $form = this.$sheetCard.querySelector('[data-form]');
+        $form.addEventListener('submit', e => {
+            e.preventDefault();
+            this._submitItemForm($form, { isEdit, item, prefill });
+        });
+
+        if (isEdit) {
+            this.$sheetCard.querySelector('[data-form-delete]')
+                ?.addEventListener('click', () => this._deleteItem(item));
+        }
+
+        this.$sheet.hidden = false;
+        requestAnimationFrame(() => this.$sheet.classList.add('open'));
+        // Focus name field on add (skip on edit so we don't steal scroll on phones)
+        if (!isEdit) setTimeout(() => $form.querySelector('[name="name"]')?.focus(), 220);
+    }
+
+    async _submitItemForm($form, { isEdit, item, prefill }) {
+        const data = Object.fromEntries(new FormData($form));
+        const name = (data.name || '').trim();
+        if (!name) {
+            $form.querySelector('[name="name"]')?.focus();
+            return;
+        }
+
+        const submitBtn = $form.querySelector('button[type="submit"]');
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Saving…'; }
+
+        try {
+            if (isEdit) {
+                // Patch product (name/brand/category/threshold) AND the inventory
+                // row (location/qty/expires/notes). Two requests, but each is
+                // a no-op if nothing changed for that side.
+                const productPatch = {
+                    name,
+                    brand:        data.brand || '',
+                    category_id:  data.category_id || null,
+                    min_threshold: Number(data.min_threshold) || 1,
+                };
+                const itemPatch = {
+                    location_id:  data.location_id,
+                    current_qty:  Number(data.current_qty) || 0,
+                    expires_at:   data.expires_at || null,
+                };
+                await Promise.all([
+                    item.product_id
+                        ? this.store.updateProduct(item.product_id, productPatch).catch(() => {})
+                        : Promise.resolve(),
+                    this.store.updateItem(item.id, itemPatch),
+                ]);
+            } else {
+                await this.store.addInventory({
+                    name,
+                    brand:        data.brand || '',
+                    category_id:  data.category_id || null,
+                    image_url:    prefill.image_url || '',
+                    upc:          prefill.upc || '',
+                    location_id:  data.location_id,
+                    current_qty:  Number(data.current_qty) || 1,
+                    min_threshold: Number(data.min_threshold) || 1,
+                    expires_at:   data.expires_at || null,
+                });
+            }
+            this._closeSheet();
+        } catch (err) {
+            alert(err.message || 'Save failed.');
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = isEdit ? '💾 Save' : '＋ Add';
+            }
+        }
+    }
+
+    async _deleteItem(item) {
+        const ok = window.confirm(`Delete "${item.name || 'this item'}"? This can't be undone.`);
+        if (!ok) return;
+        try {
+            await this.store.deleteItem(item.id);
+            this._closeSheet();
+        } catch (err) {
+            alert(err.message || 'Delete failed.');
+        }
     }
 }
 
