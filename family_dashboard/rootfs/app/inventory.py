@@ -22,6 +22,7 @@ Real-time updates broadcast via the SSE push function provided at init.
 from __future__ import annotations
 
 import json
+import math
 import os
 import pathlib
 import re
@@ -142,6 +143,8 @@ CREATE TABLE IF NOT EXISTS products (
     min_threshold           REAL DEFAULT 1,
     typical_shelf_life_days INTEGER,
     tracks_percent          INTEGER DEFAULT 0,
+    units_per_pack          REAL DEFAULT 1,
+    count_unit              TEXT DEFAULT 'item',
     notes                   TEXT DEFAULT '',
     created_at              TEXT NOT NULL,
     updated_at              TEXT NOT NULL
@@ -294,6 +297,15 @@ def _init_db(app: Flask):
                 'VALUES (?,?,?,?,?,?)',
                 [(i, n, ic, co, so, now) for (i, n, ic, co, so) in SEED_STORES],
             )
+
+        # ── Migrations ──────────────────────────────────────────────────────
+        # Add product columns introduced in v1.4.7 (multi-unit tracking).
+        # SQLite ALTER ADD COLUMN is idempotent only via PRAGMA check.
+        existing_cols = {row[1] for row in c.execute('PRAGMA table_info(products)')}
+        if 'units_per_pack' not in existing_cols:
+            c.execute("ALTER TABLE products ADD COLUMN units_per_pack REAL DEFAULT 1")
+        if 'count_unit' not in existing_cols:
+            c.execute("ALTER TABLE products ADD COLUMN count_unit TEXT DEFAULT 'item'")
 
         # One-time scrub: upgrade any cached http:// product images to https://
         # so the dashboard (served over HTTPS via Cloudflare Tunnel) doesn't
@@ -739,9 +751,9 @@ def api_products():
     c.execute('''
         INSERT INTO products
           (id,name,brand,category_id,image_url,default_location_id,default_store_id,
-           default_unit,min_threshold,typical_shelf_life_days,tracks_percent,notes,
-           created_at,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           default_unit,min_threshold,typical_shelf_life_days,tracks_percent,
+           units_per_pack,count_unit,notes,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (
         pid, name, body.get('brand', ''),
         body.get('category_id'), _https(body.get('image_url', '')),
@@ -750,6 +762,8 @@ def api_products():
         float(body.get('min_threshold', 1)),
         body.get('typical_shelf_life_days'),
         1 if body.get('tracks_percent') else 0,
+        max(1.0, float(body.get('units_per_pack') or 1)),
+        (body.get('count_unit') or 'item').strip() or 'item',
         body.get('notes', ''),
         now, now,
     ))
@@ -787,12 +801,17 @@ def api_product(pid):
         for k in ('name', 'brand', 'category_id', 'image_url',
                   'default_location_id', 'default_store_id',
                   'default_unit', 'min_threshold',
-                  'typical_shelf_life_days', 'tracks_percent', 'notes'):
+                  'typical_shelf_life_days', 'tracks_percent',
+                  'units_per_pack', 'count_unit', 'notes'):
             if k in body:
                 fields.append(f'{k}=?')
                 v = body[k]
                 if k == 'tracks_percent':
                     v = 1 if v else 0
+                elif k == 'units_per_pack':
+                    v = max(1.0, float(v or 1))
+                elif k == 'count_unit':
+                    v = (str(v or 'item').strip() or 'item')
                 values.append(v)
         if fields:
             fields.append('updated_at=?')
@@ -818,6 +837,104 @@ def api_product(pid):
     c.execute('DELETE FROM products WHERE id=?', (pid,))
     _sse_push('inventory', {'type': 'products'})
     return jsonify({'ok': True})
+
+
+@bp.route('/products/<pid>/need', methods=['POST'])
+def api_product_need(pid):
+    """
+    Add a manual shopping entry for this product. Used by the inventory tile
+    "🛒 Need this" action — you don't have to be in shopping mode to file it.
+
+    Body: { qty?: int (default 1), store_id?: str, notes?: str }
+    Idempotent: if a not-bought row for this product already exists, just
+    bump its qty and store/notes instead of creating a duplicate.
+    """
+    body = request.get_json() or {}
+    c = _conn()
+    p = _product_row(c, pid)
+    if not p:
+        return jsonify({'error': 'Product not found'}), 404
+
+    qty = float(body.get('qty', 1)) or 1
+    now = _now()
+    existing = c.execute('''
+        SELECT * FROM shopping_list
+        WHERE product_id=? AND status != 'bought'
+        ORDER BY created_at DESC LIMIT 1
+    ''', (pid,)).fetchone()
+    if existing:
+        c.execute('UPDATE shopping_list SET qty=?, updated_at=? WHERE id=?',
+                  (float(existing['qty'] or 0) + qty, now, existing['id']))
+        sid = existing['id']
+    else:
+        sid = _uid()
+        c.execute('''
+            INSERT INTO shopping_list
+              (id,product_id,name,qty,unit,store_id,category_id,status,source,
+               added_by,notes,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ''', (sid, pid, p['name'], qty,
+              p.get('default_unit') or 'count',
+              body.get('store_id') or p.get('default_store_id'),
+              p.get('category_id'),
+              'needed', 'manual', _person_id(),
+              body.get('notes', ''), now, now))
+    _sse_push('inventory', {'type': 'shopping'})
+    return jsonify({'ok': True, 'shopping_id': sid})
+
+
+@bp.route('/shopping/stock-all-bought', methods=['POST'])
+def api_shopping_stock_all():
+    """
+    Bulk: stock every shopping row whose status='bought' AND has a product_id.
+    Each row routes to the product's default_location_id, falling back to the
+    first location if unset. Returns counts.
+    """
+    c = _conn()
+    rows = _rows(c.execute('''
+        SELECT * FROM shopping_list WHERE status='bought' AND product_id IS NOT NULL
+    '''))
+    first_loc = c.execute(
+        'SELECT id FROM locations ORDER BY sort_order LIMIT 1').fetchone()
+    fallback_loc = first_loc['id'] if first_loc else None
+    stocked, skipped = 0, 0
+    now = _now()
+    for r in rows:
+        prod = _product_row(c, r['product_id']) or {}
+        loc = prod.get('default_location_id') or fallback_loc
+        if not loc:
+            skipped += 1
+            continue
+        upp = max(1.0, float(prod.get('units_per_pack') or 1))
+        units = float(r['qty'] or 1) * upp
+        existing = c.execute(
+            'SELECT * FROM inventory WHERE product_id=? AND location_id=?',
+            (r['product_id'], loc)).fetchone()
+        if existing:
+            new_q = float(existing['current_qty']) + units
+            c.execute('UPDATE inventory SET current_qty=?, last_scanned_at=?, updated_at=? '
+                      'WHERE id=?', (new_q, now, now, existing['id']))
+            _log_history(c, existing['id'], r['product_id'], 'stock',
+                         units, new_q, _person_id(), 'Bulk stock-all')
+        else:
+            iid = _uid()
+            c.execute('''
+                INSERT INTO inventory
+                  (id,product_id,location_id,current_qty,unit,percent_remaining,
+                   purchased_at,expires_at,added_by,last_scanned_at,notes,
+                   created_at,updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ''', (iid, r['product_id'], loc, units,
+                  r['unit'] or 'count', None, now, None,
+                  _person_id(), now, 'Bulk stock-all', now, now))
+            _log_history(c, iid, r['product_id'], 'stock',
+                         units, units, _person_id(), 'Bulk stock-all')
+        c.execute('DELETE FROM shopping_list WHERE id=?', (r['id'],))
+        _auto_shopping_sync(c, r['product_id'])
+        stocked += 1
+    _sse_push('inventory', {'type': 'items'})
+    _sse_push('inventory', {'type': 'shopping'})
+    return jsonify({'stocked': stocked, 'skipped': skipped})
 
 
 @bp.route('/products/<pid>/merge', methods=['POST'])
@@ -888,7 +1005,9 @@ def _inv_with_product(c: sqlite3.Connection, where: str = '', args: tuple = ()) 
           p.image_url      AS product_image,
           p.category_id    AS product_category_id,
           p.min_threshold  AS product_min_threshold,
-          p.tracks_percent AS product_tracks_percent
+          p.tracks_percent AS product_tracks_percent,
+          p.units_per_pack AS product_units_per_pack,
+          p.count_unit     AS product_count_unit
         FROM inventory i
         JOIN products  p ON p.id = i.product_id
     '''
@@ -939,14 +1058,17 @@ def api_items():
         c.execute('''
             INSERT INTO products
               (id,name,brand,category_id,image_url,default_unit,
-               min_threshold,tracks_percent,created_at,updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?)
+               min_threshold,tracks_percent,units_per_pack,count_unit,
+               created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
         ''', (
             pid, name, body.get('brand', ''),
             body.get('category_id'), _https(body.get('image_url', '')),
             body.get('default_unit', 'count'),
             float(body.get('min_threshold') or 1),
             1 if body.get('tracks_percent') else 0,
+            max(1.0, float(body.get('units_per_pack') or 1)),
+            (str(body.get('count_unit') or 'item').strip() or 'item'),
             now, now,
         ))
         if upc:
@@ -1040,7 +1162,26 @@ def api_item_consume(iid):
 
 @bp.route('/items/<iid>/restock', methods=['POST'])
 def api_item_restock(iid):
-    return _adjust(iid, abs(float((request.get_json() or {}).get('by', 1))), 'restock')
+    """
+    Restock body fields:
+      by:       units to add (default 1)
+      packs:    multiplied by the product's units_per_pack — convenient for
+                "scanned a pack home" flows.
+    `packs` wins if both are sent.
+    """
+    body  = request.get_json() or {}
+    packs = body.get('packs')
+    if packs is not None:
+        c = _conn()
+        row = c.execute('''
+            SELECT p.units_per_pack FROM inventory i
+            JOIN products p ON p.id = i.product_id
+            WHERE i.id=?''', (iid,)).fetchone()
+        upp = float(row['units_per_pack'] or 1) if row else 1.0
+        delta = abs(float(packs)) * max(1.0, upp)
+    else:
+        delta = abs(float(body.get('by', 1)))
+    return _adjust(iid, delta, 'restock')
 
 
 def _adjust(iid: str, delta: float, action: str):
@@ -1500,7 +1641,11 @@ def api_shopping_stock(sid):
     if not loc:
         return jsonify({'error': 'No location available — pass location_id'}), 400
 
-    qty = float(body.get('current_qty', row['qty'] or 1))
+    # Shopping qty is in packs; inventory qty is in units. Multiply.
+    prod = _product_row(c, pid) or {}
+    upp  = max(1.0, float(prod.get('units_per_pack') or 1))
+    raw_qty = float(body.get('current_qty', row['qty'] or 1))
+    qty = raw_qty * upp if 'current_qty' not in body else raw_qty
     now = _now()
     existing = c.execute(
         'SELECT * FROM inventory WHERE product_id=? AND location_id=?',
@@ -1542,7 +1687,7 @@ def _auto_shopping_sync(c: sqlite3.Connection, pid: str):
     """
     row = c.execute('''
         SELECT p.id, p.name, p.min_threshold, p.default_store_id, p.category_id,
-               p.default_unit, p.image_url,
+               p.default_unit, p.image_url, p.units_per_pack,
                COALESCE(SUM(i.current_qty), 0) AS total_qty
         FROM products p
         LEFT JOIN inventory i ON i.product_id = p.id
@@ -1554,12 +1699,16 @@ def _auto_shopping_sync(c: sqlite3.Connection, pid: str):
 
     total     = float(row['total_qty'] or 0)
     threshold = float(row['min_threshold'] or 0)
+    upp       = max(1.0, float(row['units_per_pack'] or 1))
     existing  = c.execute(
         'SELECT * FROM shopping_list WHERE product_id=? AND source=?',
         (pid, 'auto')).fetchone()
 
     if total < threshold:
-        needed = max(1.0, threshold - total)
+        # Express the qty to buy in *packs* (you buy a box, not a packet),
+        # rounding up so we never under-order.
+        units_short = max(1.0, threshold - total)
+        needed = max(1.0, math.ceil(units_short / upp))
         if existing:
             c.execute('UPDATE shopping_list SET qty=?, updated_at=? WHERE id=?',
                       (needed, _now(), existing['id']))
