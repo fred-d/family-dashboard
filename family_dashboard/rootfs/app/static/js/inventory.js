@@ -254,6 +254,8 @@ export class InventoryApp {
                     </button>
                 </div>
 
+                <div class="inv-shop-counts" data-shop-counts></div>
+
                 <div class="inv-shop-progress" data-shop-progress hidden>
                     <div class="inv-shop-progress-bar">
                         <div class="inv-shop-progress-fill" data-shop-progress-fill></div>
@@ -308,6 +310,7 @@ export class InventoryApp {
         this.$search      = this.container.querySelector('.inv-search-input');
         this.$viewToggle  = this.container.querySelector('[data-view-toggle]');
         this.$shopFulfillmentBar = this.container.querySelector('[data-fulfillment-bar]');
+        this.$shopCounts  = this.container.querySelector('[data-shop-counts]');
         this.$shopStore   = this.container.querySelector('[data-shop-store]');
         this.$shopList    = this.container.querySelector('[data-shop-list]');
         this.$shopEmpty   = this.container.querySelector('[data-shop-empty]');
@@ -398,6 +401,13 @@ export class InventoryApp {
             const delBtn   = e.target.closest('[data-shop-delete]');
             const qDecBtn  = e.target.closest('[data-shop-qdec]');
             const qIncBtn  = e.target.closest('[data-shop-qinc]');
+            const flipBtn  = e.target.closest('[data-shop-flip]');
+            if (flipBtn) {
+                this.store.updateShopping(flipBtn.dataset.shopFlip, {
+                    fulfillment: flipBtn.dataset.shopFlipTo,
+                }).catch(() => {});
+                return;
+            }
             if (cycleBtn) {
                 const id  = cycleBtn.dataset.shopCycle;
                 const row = (this.store.shopping || []).find(s => s.id === id);
@@ -480,7 +490,10 @@ export class InventoryApp {
                         : ((this.store.config.stores || [])[0]?.id || null);
                     let fresh = this.store.shopping || [];
                     if (storeId) fresh = fresh.filter(r => r.store_id === storeId || !r.store_id);
-                    this._renderWalkItems(fresh.filter(r => r.status !== 'bought'));
+                    // Walk mode only shows instore items
+                    fresh = fresh.filter(r =>
+                        (r.fulfillment || 'curbside') === 'instore' && r.status !== 'bought');
+                    this._renderWalkItems(fresh);
                 }
             }),
             this.store.on('family',   () => this._renderShopping()),
@@ -515,12 +528,15 @@ export class InventoryApp {
     }
 
     _openWalkMode() {
-        const stores = this.store.config.stores || [];
-        // Default to selected store or first store
-        let storeId = this._shopStore !== 'all' ? this._shopStore : (stores[0]?.id || null);
-        let all = this.store.shopping || [];
-        let items = storeId ? all.filter(r => r.store_id === storeId || !r.store_id) : all;
-        items = items.filter(r => r.status !== 'bought');
+        // Walk mode = physically in the store — only show instore items.
+        // Respect the store dropdown filter if a specific store is selected.
+        let items = this.store.shopping || [];
+        if (this._shopStore !== 'all') {
+            items = items.filter(r => r.store_id === this._shopStore || !r.store_id);
+        }
+        // Keep only instore fulfillment items that aren't already bought
+        items = items.filter(r =>
+            (r.fulfillment || 'curbside') === 'instore' && r.status !== 'bought');
 
         this._walkOpen = true;
         this.$walkOverlay.hidden = false;
@@ -595,12 +611,13 @@ export class InventoryApp {
                 const cur = row?.status || 'needed';
                 const next = cur === 'bought' ? 'needed' : 'bought';
                 await this.store.updateShopping(id, { status: next }).catch(() => {});
-                // Re-render walk view with fresh data
-                const storeId = this._shopStore !== 'all' ? this._shopStore
-                    : ((this.store.config.stores || [])[0]?.id || null);
+                // Re-render walk view — only instore items not yet bought
+                const storeId = this._shopStore !== 'all' ? this._shopStore : null;
                 let fresh = this.store.shopping || [];
                 if (storeId) fresh = fresh.filter(r => r.store_id === storeId || !r.store_id);
-                this._renderWalkItems(fresh.filter(r => r.status !== 'bought'));
+                fresh = fresh.filter(r =>
+                    (r.fulfillment || 'curbside') === 'instore' && r.status !== 'bought');
+                this._renderWalkItems(fresh);
             });
         });
     }
@@ -677,6 +694,16 @@ export class InventoryApp {
         // Toggle "Stock all bought" button based on whether there's anything to stock
         const anyBought = all.some(r => r.status === 'bought' && r.product_id);
         if (this.$stockAll) this.$stockAll.hidden = !anyBought;
+
+        // Fulfillment count line — always shows the global split regardless of filter
+        if (this.$shopCounts) {
+            const nCurbside = all.filter(r => (r.fulfillment || 'curbside') === 'curbside').length;
+            const nInstore  = all.filter(r => r.fulfillment === 'instore').length;
+            this.$shopCounts.innerHTML = all.length
+                ? `<span class="inv-shop-count-chip curbside">🚗 ${nCurbside}</span>`
+                + `<span class="inv-shop-count-chip instore">🏪 ${nInstore}</span>`
+                : '';
+        }
 
         // Update progress bar
         const total = all.length;
@@ -762,11 +789,13 @@ export class InventoryApp {
                 ${_esc(r.store_name)}
             </span>` : '';
         const fulfillment = r.fulfillment || 'curbside';
+        const nextFulfillment = fulfillment === 'curbside' ? 'instore' : 'curbside';
         const fulfillmentBadge = `
-            <span class="inv-shop-fulfillment ${_esc(fulfillment)}"
-                  title="${fulfillment === 'curbside' ? 'Curbside / Delivery' : 'In-Store pickup'}">
+            <button type="button" class="inv-shop-fulfillment ${_esc(fulfillment)}"
+                    data-shop-flip="${_esc(r.id)}" data-shop-flip-to="${nextFulfillment}"
+                    title="Tap to switch to ${nextFulfillment === 'instore' ? 'In-Store' : 'Curbside'}">
                 ${fulfillment === 'curbside' ? '🚗' : '🏪'}
-            </span>`;
+            </button>`;
         const sourceBadge = r.source === 'auto'
             ? `<span class="inv-shop-source auto" title="Auto-added: stock below minimum">⟳ auto</span>`
             : '';
