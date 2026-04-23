@@ -1,0 +1,379 @@
+/* ── Barcode Scanner Overlay ──────────────────────────────────────────────────
+   Injected into document.body by scanner.js.  All rules must be scoped to
+   .scanner-overlay so they don't bleed into the rest of the app.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* ── Backdrop ─────────────────────────────────────────────────────────────── */
+
+.scanner-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.82);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 16px 24px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Modal card ───────────────────────────────────────────────────────────── */
+
+.scanner-modal {
+  background: #111827;           /* near-black */
+  border-radius: 20px;
+  width: min(440px, 100%);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+  flex-shrink: 0;
+}
+
+/* ── Header ───────────────────────────────────────────────────────────────── */
+
+.scanner-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.scanner-mode-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.scanner-mode-tab {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 999px;
+  border: 1.5px solid rgba(255,255,255,0.2);
+  background: transparent;
+  color: rgba(255,255,255,0.55);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.scanner-mode-tab:hover {
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+}
+.scanner-mode-tab.active {
+  background: var(--theme-primary, #6366f1);
+  border-color: var(--theme-primary, #6366f1);
+  color: #fff;
+}
+
+/* Simple title used when scanner is opened in 'need' (add-to-list) mode */
+.scanner-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.scanner-close {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.8);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.scanner-close:hover { background: rgba(255,255,255,0.2); }
+
+/* ── Camera area ──────────────────────────────────────────────────────────── */
+
+.scanner-camera-wrap {
+  position: relative;
+  background: #000;
+  aspect-ratio: 4/3;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* html5-qrcode injects a <video> — make it fill the box */
+.scanner-camera-wrap video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  display: block !important;
+}
+
+/* Hide the canvas / img that html5-qrcode draws on top */
+.scanner-camera-wrap canvas {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100% !important;
+  height: 100% !important;
+  opacity: 0.01;           /* keep it for detection but hide visually */
+  pointer-events: none;
+}
+
+/* The div html5-qrcode uses as its root — fill camera-wrap */
+#scannerQr {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+/* Corner aim brackets */
+.scanner-corners {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.sc-corner {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border-color: #fff;
+  border-style: solid;
+  opacity: 0.85;
+}
+.sc-tl { top: 20%; left: 20%;  border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
+.sc-tr { top: 20%; right: 20%; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
+.sc-bl { bottom: 20%; left: 20%;  border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
+.sc-br { bottom: 20%; right: 20%; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
+
+.scanner-hint-text {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.75);
+  background: rgba(0,0,0,0.4);
+  padding: 4px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* No-camera fallback panel */
+.scanner-no-camera {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 36px 24px;
+  text-align: center;
+  color: rgba(255,255,255,0.7);
+}
+.scanner-no-camera-icon { font-size: 48px; }
+.scanner-no-camera-msg  { font-size: 14px; line-height: 1.5; }
+
+/* ── Result / confirm area ────────────────────────────────────────────────── */
+
+.scanner-result {
+  padding: 16px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Lookup spinner */
+.scanner-lookup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+.scanner-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid rgba(255,255,255,0.2);
+  border-top-color: var(--theme-primary, #6366f1);
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.scanner-lookup-text {
+  font-size: 14px;
+  color: rgba(255,255,255,0.8);
+}
+.scanner-lookup-text code {
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  color: #a5b4fc;
+}
+
+/* Product confirm card */
+.scanner-product {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+.scanner-product-media {
+  flex-shrink: 0;
+}
+.scanner-product-img {
+  width: 64px;
+  height: 64px;
+  border-radius: 10px;
+  object-fit: contain;
+  background: #fff;
+}
+.scanner-product-placeholder {
+  width: 64px;
+  height: 64px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+}
+.scanner-product-info { flex: 1; min-width: 0; }
+.scanner-product-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scanner-product-name.scanner-not-found { color: rgba(255,255,255,0.55); }
+.scanner-product-brand {
+  font-size: 13px;
+  color: rgba(255,255,255,0.55);
+  margin-top: 3px;
+}
+
+/* Manual name entry (when product not found) */
+.scanner-manual-entry { display: flex; flex-direction: column; gap: 6px; }
+
+/* Action buttons row */
+.scanner-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Buttons */
+.scanner-btn {
+  flex: 1;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s;
+  text-align: center;
+}
+.scanner-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.scanner-btn.primary {
+  background: var(--theme-primary, #6366f1);
+  color: #fff;
+}
+.scanner-btn.primary:hover  { opacity: 0.88; }
+.scanner-btn.secondary {
+  background: rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.85);
+}
+.scanner-btn.secondary:hover { background: rgba(255,255,255,0.16); }
+
+/* Shared text input */
+.scanner-input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1.5px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.07);
+  color: #fff;
+  font-size: 14px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+.scanner-input::placeholder { color: rgba(255,255,255,0.35); }
+.scanner-input:focus { border-color: var(--theme-primary, #6366f1); }
+
+/* Fallback section (manual entry + file scan) */
+.scanner-fallback { display: flex; flex-direction: column; gap: 14px; }
+.scanner-fallback-section { display: flex; flex-direction: column; gap: 8px; }
+.scanner-fallback-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.scanner-manual-row { display: flex; gap: 8px; }
+.scanner-manual-row .scanner-input { flex: 1; }
+.scanner-manual-row .scanner-btn { flex: 0 0 auto; }
+
+.scanner-fallback-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: rgba(255,255,255,0.3);
+  font-size: 12px;
+}
+.scanner-fallback-divider::before,
+.scanner-fallback-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(255,255,255,0.1);
+}
+
+.scanner-file-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border: 2px dashed rgba(255,255,255,0.2);
+  border-radius: 10px;
+  color: rgba(255,255,255,0.7);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.scanner-file-label:hover {
+  border-color: var(--theme-primary, #6366f1);
+  background: rgba(99,102,241,0.08);
+  color: #fff;
+}
+
+/* Error state */
+.scanner-error {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  text-align: center;
+}
+.scanner-error-msg {
+  font-size: 14px;
+  color: rgba(255,255,255,0.7);
+  line-height: 1.5;
+}
+
+/* ── Mobile tweaks ────────────────────────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  .scanner-overlay    { padding: 16px 8px 16px; align-items: center; }
+  .scanner-modal      { border-radius: 16px; }
+  .scanner-mode-tab   { padding: 5px 10px; font-size: 12px; }
+  .scanner-product-img,
+  .scanner-product-placeholder { width: 52px; height: 52px; }
+}
