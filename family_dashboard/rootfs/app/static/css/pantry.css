@@ -537,6 +537,21 @@
 }
 .grocery-pantry-alert-btn:hover { opacity: 0.85; }
 
+/* "Add All Low" alert variant — softer yellow than the urgent "out" alert */
+.grocery-pantry-alert.grocery-pantry-alert-low {
+    background:    #fffbeb;
+    border-color:  #fef3c7;
+    color:         #b45309;
+}
+:root[data-theme="dark"] .grocery-pantry-alert.grocery-pantry-alert-low {
+    background:    rgba(234,179,8,0.06);
+    border-color:  rgba(234,179,8,0.18);
+    color:         #fde68a;
+}
+.grocery-pantry-alert.grocery-pantry-alert-low .grocery-pantry-alert-btn {
+    background: #b45309;
+}
+
 /* Pantry grid */
 .grocery-pantry-grid {
     display:               grid;

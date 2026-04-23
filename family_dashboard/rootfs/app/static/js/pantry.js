@@ -406,6 +406,12 @@ export class PantryApp {
                     <button class="grocery-pantry-alert-btn" id="groceryAddAllOut">Add All Out</button>
                 </div>` : ''}
 
+            ${lowItems.length > 0 && (filter === 'all' || filter === 'low') ? `
+                <div class="grocery-pantry-alert grocery-pantry-alert-low">
+                    🟡 <strong>${lowItems.length} item${lowItems.length > 1 ? 's' : ''} low or out</strong> — restock?
+                    <button class="grocery-pantry-alert-btn" id="groceryAddAllLow">Add All Low</button>
+                </div>` : ''}
+
             <div class="pantry-grid" id="pantryGrid">
                 ${items.length === 0
                     ? `<div class="grocery-empty" style="grid-column:1/-1">
@@ -428,6 +434,19 @@ export class PantryApp {
         body.querySelector('#groceryAddPantryItem')?.addEventListener('click', () => this._openInvModal());
         body.querySelector('#groceryAddAllOut')?.addEventListener('click', () => {
             outItems.forEach(inv => this._addFromInventory(inv));
+        });
+        body.querySelector('#groceryAddAllLow')?.addEventListener('click', () => {
+            // "Low" alert covers both low and out items so one button restocks
+            // everything that needs attention. Skip items that already have an
+            // open (non-bought) shopping-list entry to avoid duplicates.
+            const openNames = new Set(
+                this._items
+                    .filter(i => !i.checked)
+                    .map(i => (i.name || '').trim().toLowerCase())
+            );
+            lowItems
+                .filter(inv => !openNames.has((inv.name || '').trim().toLowerCase()))
+                .forEach(inv => this._addFromInventory(inv));
         });
 
         // Scan buttons
@@ -662,6 +681,17 @@ export class PantryApp {
                                placeholder="Brand, size, substitution notes…">
                     </div>
 
+                    <div class="grocery-modal-field">
+                        <label>Added By</label>
+                        <select id="groceryItemAddedBy" class="grocery-modal-input">
+                            <option value="">—</option>
+                            ${FAMILY_MEMBERS.map(m => {
+                                const sel = (item?.addedBy || this._lastAddedBy()) === m ? ' selected' : '';
+                                return `<option value="${this._esc(m)}"${sel}>${this._esc(m)}</option>`;
+                            }).join('')}
+                        </select>
+                    </div>
+
                     ${isNew ? `
                         <div class="grocery-modal-save-pantry">
                             <label class="grocery-checkbox-label">
@@ -734,6 +764,8 @@ export class PantryApp {
             const name = nameInput?.value.trim();
             if (!name) { nameInput?.focus(); return; }
             const fulfillmentActive = overlay.querySelector('.grocery-fulfillment-btn.active');
+            const addedBy = overlay.querySelector('#groceryItemAddedBy')?.value || '';
+            if (addedBy) this._rememberAddedBy(addedBy);
             const data = {
                 name,
                 amount:      overlay.querySelector('#groceryItemAmount')?.value.trim()   || '',
@@ -741,6 +773,7 @@ export class PantryApp {
                 category:    catSelect?.value || detectCategory(name),
                 fulfillment: fulfillmentActive?.dataset.ful || 'curbside',
                 notes:       overlay.querySelector('#groceryItemNotes')?.value.trim()    || '',
+                addedBy:     addedBy || null,
                 photo:       this._editItemPhoto || null,
             };
             if (this._editItem) {
@@ -1571,6 +1604,19 @@ export class PantryApp {
     _esc(s) {
         return String(s ?? '')
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    /**
+     * Family picker: remember the last person who added something so the
+     * picker pre-selects them next time. Per-browser, so different family
+     * members on different devices get their own default.
+     */
+    _lastAddedBy() {
+        try { return localStorage.getItem('pantry.lastAddedBy') || ''; }
+        catch { return ''; }
+    }
+    _rememberAddedBy(name) {
+        try { localStorage.setItem('pantry.lastAddedBy', name); } catch {}
     }
 
     _timeAgo(isoStr) {
