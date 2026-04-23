@@ -441,7 +441,7 @@ export class InventoryApp {
                 this._renderGrid();
                 this._renderShopping();
             }),
-            this.store.on('items',    () => { this._renderGrid(); this._renderStats(); }),
+            this.store.on('items',    () => { this._renderLocations(); this._renderGrid(); this._renderStats(); }),
             this.store.on('stats',    () => this._renderStats()),
             this.store.on('shopping', () => {
                 this._renderStats();
