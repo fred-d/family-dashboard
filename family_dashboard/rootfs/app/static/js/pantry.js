@@ -273,12 +273,22 @@ export class PantryApp {
                 }
             </div>
 
-            <button class="grocery-add-fab" id="groceryAddFab" title="Add item">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22">
-                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                </svg>
-                Add Item
-            </button>
+            <div class="grocery-list-fabs">
+                <button class="grocery-add-fab grocery-scan-fab" id="groceryScanNeedFab" title="Scan to add to list">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22">
+                        <rect x="3" y="6" width="18" height="12" rx="2"/>
+                        <line x1="7" y1="9" x2="7" y2="15"/><line x1="11" y1="9" x2="11" y2="15"/>
+                        <line x1="15" y1="9" x2="15" y2="15"/><line x1="19" y1="9" x2="19" y2="15"/>
+                    </svg>
+                    Scan
+                </button>
+                <button class="grocery-add-fab" id="groceryAddFab" title="Add item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22">
+                        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                    Add Item
+                </button>
+            </div>
         `;
 
         body.querySelectorAll('.grocery-filter-btn').forEach(btn => {
@@ -291,6 +301,7 @@ export class PantryApp {
         body.querySelector('#groceryMealPlanBtn')?.addEventListener('click', () => this._openMealPlanImport());
         body.querySelector('#groceryStaplesBtn')?.addEventListener('click', () => this._addStaples());
         body.querySelector('#groceryAddFab')?.addEventListener('click', () => this._openItemModal());
+        body.querySelector('#groceryScanNeedFab')?.addEventListener('click', () => this._openScanner('need'));
 
         body.querySelectorAll('.grocery-item-row').forEach(row => {
             const id = row.dataset.id;
@@ -1454,6 +1465,35 @@ export class PantryApp {
             } else {
                 // Not in pantry — offer to add to shopping list directly
                 this._openAddToListDirectModal(product, barcode);
+            }
+        } else if (mode === 'need') {
+            // Shopping List quick-add. If we already have a pantry record we
+            // can copy the canonical name/category; otherwise use whatever the
+            // backend cascade lookup returned, falling back to the raw barcode.
+            const existing = this._inventory.find(i => i.upc === barcode) ||
+                             (product.name ? this._inventory.find(i => i.name.toLowerCase() === product.name.toLowerCase()) : null);
+            if (existing) {
+                const onList = this._items.find(
+                    i => !i.checked && (i.inventoryRef === existing.id ||
+                                        i.name.toLowerCase() === existing.name.toLowerCase())
+                );
+                if (onList) {
+                    this._showToast(`✓ ${existing.name} is already on the list`);
+                    return;
+                }
+                this._addFromInventory(existing);
+                this._showToast(`🛒 ${existing.name} added to list`);
+            } else {
+                const name = product.name || `Item ${barcode}`;
+                this._addItem({
+                    name,
+                    category: product.category || detectCategory(name),
+                    notes:    product.brand ? `Brand: ${product.brand}` : '',
+                    photo:    product.imageUrl || null,
+                    source:   'scan',
+                    addedBy:  this._lastAddedBy() || null,
+                });
+                this._showToast(`🛒 ${name} added to list`);
             }
         }
     }

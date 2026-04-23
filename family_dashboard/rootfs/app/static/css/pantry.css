@@ -454,6 +454,33 @@
 }
 .grocery-add-fab:active { transform: translateY(0); }
 
+/* Stack the Scan + Add Item FABs along the bottom-right rail */
+.grocery-list-fabs {
+    position:        fixed;
+    bottom:          24px;
+    right:           24px;
+    display:         flex;
+    flex-direction:  column;
+    align-items:     flex-end;
+    gap:             10px;
+    z-index:         50;
+}
+.grocery-list-fabs .grocery-add-fab {
+    position: static; /* override fixed-positioning so the column lays them out */
+}
+.grocery-scan-fab {
+    background:    var(--color-card);
+    color:         var(--color-text);
+    border:        1px solid var(--color-border);
+    box-shadow:    0 4px 14px rgba(0,0,0,0.18);
+    padding:       12px 18px;
+    font-size:     14px;
+}
+:root[data-theme="dark"] .grocery-scan-fab {
+    background:    rgba(255,255,255,0.06);
+    border-color:  rgba(255,255,255,0.12);
+}
+
 /* ══════════════════════════════════════════════════════════════════
    PANTRY TAB
    ══════════════════════════════════════════════════════════════════ */
