@@ -17,12 +17,12 @@ export class BarcodeScanner {
     constructor() {
         this._qr       = null;   // Html5Qrcode instance
         this._overlay  = null;   // DOM overlay element
-        this._mode     = 'restock'; // 'restock' | 'mark_used'
+        this._mode     = 'restock'; // 'restock' | 'mark_used' | 'need'
         this._onResult = null;
         this._busy     = false;  // debounce after scan
     }
 
-    /** Open the scanner modal. mode = 'restock' | 'mark_used' */
+    /** Open the scanner modal. mode = 'restock' | 'mark_used' | 'need' */
     async open(mode, onResult) {
         if (this._overlay) return; // already open
         this._mode     = mode;
@@ -55,20 +55,26 @@ export class BarcodeScanner {
     // ── DOM ───────────────────────────────────────────────────────────────────
 
     _buildOverlay() {
+        const isNeed = this._mode === 'need';
+        // Header content: shopping-list scan shows a simple label; pantry scan shows mode tabs
+        const headerContent = isNeed
+            ? `<div class="scanner-title">🛒 Scan to Add to List</div>`
+            : `<div class="scanner-mode-tabs">
+                    <button class="scanner-mode-tab${this._mode === 'restock'   ? ' active' : ''}" data-mode="restock">
+                        📥 Restock
+                    </button>
+                    <button class="scanner-mode-tab${this._mode === 'mark_used' ? ' active' : ''}" data-mode="mark_used">
+                        📤 Used / Empty
+                    </button>
+               </div>`;
+
         const el = document.createElement('div');
         el.id        = 'scannerOverlay';
         el.className = 'scanner-overlay';
         el.innerHTML = `
             <div class="scanner-modal">
                 <div class="scanner-header">
-                    <div class="scanner-mode-tabs">
-                        <button class="scanner-mode-tab${this._mode === 'restock'   ? ' active' : ''}" data-mode="restock">
-                            📥 Restock
-                        </button>
-                        <button class="scanner-mode-tab${this._mode === 'mark_used' ? ' active' : ''}" data-mode="mark_used">
-                            📤 Used / Empty
-                        </button>
-                    </div>
+                    ${headerContent}
                     <button class="scanner-close" id="scannerClose" aria-label="Close scanner">✕</button>
                 </div>
 
@@ -90,7 +96,7 @@ export class BarcodeScanner {
         // Close button
         el.querySelector('#scannerClose').addEventListener('click', () => this.close());
 
-        // Mode tabs
+        // Mode tabs (only rendered for restock/mark_used)
         el.querySelectorAll('.scanner-mode-tab').forEach(btn => {
             btn.addEventListener('click', () => {
                 this._mode = btn.dataset.mode;
@@ -255,8 +261,9 @@ export class BarcodeScanner {
     }
 
     _showProductConfirm(product) {
-        const modeLabel  = this._mode === 'restock' ? 'Add to Pantry / Restock' : 'Mark as Used';
-        const actionText = this._mode === 'restock' ? '✅ Confirm Restock' : '📤 Set Status';
+        const actionText = this._mode === 'restock' ? '✅ Confirm Restock'
+                         : this._mode === 'need'    ? '🛒 Add to List'
+                         : '📤 Mark Used / Empty';
 
         this._showResult(`
             <div class="scanner-product">

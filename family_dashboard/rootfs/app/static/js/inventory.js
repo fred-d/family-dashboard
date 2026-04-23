@@ -27,7 +27,7 @@
  */
 
 import { FamilyPicker } from './family-picker.js';
-import { BarcodeScanner } from './scanner.js?v=2';
+import { BarcodeScanner } from './scanner.js?v=3';
 import { apiUrl, isoWeek, weekDates } from './utils.js';
 
 // ── MDI → emoji map ──────────────────────────────────────────────────────────
