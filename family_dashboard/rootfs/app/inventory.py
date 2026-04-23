@@ -1007,7 +1007,10 @@ def _inv_with_product(c: sqlite3.Connection, where: str = '', args: tuple = ()) 
           p.min_threshold  AS product_min_threshold,
           p.tracks_percent AS product_tracks_percent,
           p.units_per_pack AS product_units_per_pack,
-          p.count_unit     AS product_count_unit
+          p.count_unit     AS product_count_unit,
+          (SELECT barcode FROM barcode_catalog
+           WHERE product_id = p.id
+           ORDER BY cached_at DESC LIMIT 1) AS upc
         FROM inventory i
         JOIN products  p ON p.id = i.product_id
     '''
@@ -1045,6 +1048,33 @@ def api_items():
         ).fetchone()
         if row:
             pid = row['product_id']
+            # Apply any user overrides (name/brand/category/thresholds) to the
+            # existing product. The form may contain edits the user made before
+            # hitting "+ Add" — we must not silently discard them.
+            now = _now()
+            updates: list[str] = []
+            vals:    list      = []
+            if name:
+                updates.append('name=?');        vals.append(name)
+            if 'brand' in body:
+                updates.append('brand=?');       vals.append(body.get('brand', ''))
+            if 'category_id' in body:
+                updates.append('category_id=?'); vals.append(body.get('category_id') or None)
+            if 'min_threshold' in body:
+                updates.append('min_threshold=?')
+                vals.append(float(body.get('min_threshold') or 1))
+            if 'units_per_pack' in body:
+                updates.append('units_per_pack=?')
+                vals.append(max(1.0, float(body.get('units_per_pack') or 1)))
+            if 'count_unit' in body:
+                updates.append('count_unit=?')
+                vals.append((str(body.get('count_unit') or 'item').strip() or 'item'))
+            if updates:
+                updates.append('updated_at=?'); vals.append(now)
+                vals.append(pid)
+                c.execute(
+                    f'UPDATE products SET {",".join(updates)} WHERE id=?', vals
+                )
 
     # Still no product? Create one on the fly from whatever the scanner /
     # manual entry supplied. Requires at least a name.
