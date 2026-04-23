@@ -32,7 +32,8 @@ from flask import (Flask, Response, jsonify, request, session,
                    send_from_directory, stream_with_context)
 from PIL import Image
 
-import inventory as inventory_module  # new Kitchen Inventory module
+import pantry as pantry_module  # SQLite-backed Pantry module
+                                # (was inventory.py before the v1.6.0 rename)
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 
@@ -489,7 +490,7 @@ def api_meals(week):
         return jsonify({'ok': True})
 
 
-# UPC lookups are handled by inventory.py's /api/inventory/scan/<upc> endpoint.
+# UPC lookups are handled by pantry.py's /api/pantry/scan/<upc> endpoint.
 
 
 # ── Photo API ─────────────────────────────────────────────────────────────────
@@ -552,9 +553,10 @@ if __name__ == '__main__':
     for d in (RECIPES, MEALS, PHOTOS):
         d.mkdir(parents=True, exist_ok=True)
 
-    # Wire up the Kitchen Inventory module (SQLite-backed replacement for
-    # the old JSON pantry/grocery data). Shares our SSE broadcaster so
-    # inventory changes fan out to all connected browsers in real time.
-    inventory_module.init(app, _sse_push)
+    # Wire up the Pantry module (SQLite-backed replacement for the old JSON
+    # pantry/grocery data). Shares our SSE broadcaster so pantry changes fan
+    # out to all connected browsers in real time. Mounts at /api/pantry/*
+    # with /api/inventory/* as a back-compat alias.
+    pantry_module.init(app, _sse_push)
 
     app.run(host='0.0.0.0', port=8099, threaded=True)

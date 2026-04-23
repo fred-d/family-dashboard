@@ -17,7 +17,7 @@ import { MealStore } from './meal-store.js';
 import { RecipeApp } from './recipes.js';
 import { RecipeStore } from './recipe-store.js';
 import { PantryApp } from './pantry.js?v=4';
-import { PantryStore } from './pantry-store.js?v=3';
+import { PantryStore } from './pantry-store.js?v=4';
 import {
     openSettings, closeSettings,
     loadCalendarColors, saveDefaultView,

@@ -1,8 +1,11 @@
 """
-Kitchen Inventory Module
-========================
-A clean, relational inventory system built on SQLite. Replaces the old
-JSON-based pantry/grocery storage.
+Pantry Module
+=============
+A clean, relational pantry + shopping-list system built on SQLite. Replaces
+the old JSON-based pantry/grocery storage. (Was inventory.py before the
+v1.6.0 rename — file/blueprint renamed for clarity; URL prefix changed
+from /api/inventory/* to /api/pantry/* with the old prefix kept as an
+alias for back-compat.)
 
 Architecture
 ------------
@@ -15,8 +18,10 @@ Architecture
 - Shopping List (shopping_list)      — auto + manual items
 - History (inventory_history)        — audit log for sparklines / attribution
 
-All endpoints are exposed under /api/inventory/* via a Flask Blueprint.
-Real-time updates broadcast via the SSE push function provided at init.
+All endpoints are exposed under /api/pantry/* via a Flask Blueprint
+(`/api/inventory/*` is kept as a back-compat alias — see init() at the
+bottom of the file). Real-time updates broadcast via the SSE push
+function provided at init.
 """
 
 from __future__ import annotations
@@ -68,7 +73,7 @@ _sse_push: Callable[[str, dict], None] = lambda event, data: None
 
 # ── Blueprint ─────────────────────────────────────────────────────────────────
 
-bp = Blueprint('inventory', __name__, url_prefix='/api/inventory')
+bp = Blueprint('pantry', __name__)
 
 
 # ── SQLite connection management ──────────────────────────────────────────────
@@ -430,7 +435,7 @@ def _avatar_proxy_url(raw: str) -> str:
         return raw
     # HA returns paths like "/api/image/serve/<hash>/512x512"
     # Route through our proxy so the browser (on dashboard.fna3.net) can fetch it.
-    return f'/api/inventory/avatar?src={requests.utils.quote(raw, safe="")}'
+    return f'/api/pantry/avatar?src={requests.utils.quote(raw, safe="")}'
 
 
 _BOT_NAME_HINTS = ('mqtt', 'bot', 'service', 'system', 'hass', 'node-red', 'esphome')
@@ -1785,8 +1790,16 @@ def _auto_shopping_sync(c: sqlite3.Connection, pid: str):
 # ── Registration hook (called from server.py) ────────────────────────────────
 
 def init(app: Flask, sse_push: Callable[[str, dict], None]):
-    """Wire the blueprint into the main Flask app and share the SSE broadcaster."""
+    """Wire the blueprint into the main Flask app and share the SSE broadcaster.
+
+    The blueprint is registered at /api/pantry (the new canonical prefix) and
+    again at /api/inventory under a distinct name as a back-compat alias so
+    older clients (or anything still in the wild) keep working through the
+    rename.
+    """
     global _sse_push
     _sse_push = sse_push
     _init_db(app)
-    app.register_blueprint(bp)
+    app.register_blueprint(bp, url_prefix='/api/pantry')
+    app.register_blueprint(bp, url_prefix='/api/inventory',
+                           name='pantry_legacy_alias')

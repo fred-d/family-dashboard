@@ -1,21 +1,21 @@
 /**
  * pantry-store.js — SQLite-backed Pantry data store.
  *
- * PR B: this is now a thin translation layer over the same /api/inventory/*
- * routes that the live InventoryApp/InventoryStore uses. It exposes data in
- * the old "grocery" shape that PantryApp (resurrected in PR A) was written
- * against, so PR C can switch the live app over with minimal UI rewiring.
+ * Thin translation layer over the SQLite-backed Pantry backend. Exposes
+ * data in the old "grocery" shape that PantryApp was originally written
+ * against, so the rest of the UI keeps working unchanged.
  *
- *   Backend routes used (will be renamed to /api/pantry/* in PR D):
- *     GET    /api/inventory/config                  (categories, locations, stores)
- *     GET    /api/inventory/shopping                (joined shopping_list rows)
- *     POST   /api/inventory/shopping                (manual add)
- *     PATCH  /api/inventory/shopping/<sid>          (update fields)
- *     DELETE /api/inventory/shopping/<sid>
- *     GET    /api/inventory/items                   (joined inventory_items rows)
- *     POST   /api/inventory/items                   (add — requires product_id)
- *     PATCH  /api/inventory/items/<iid>
- *     DELETE /api/inventory/items/<iid>
+ *   Backend routes used (renamed from /api/inventory/* in v1.6.0;
+ *   the legacy prefix is still mounted as a back-compat alias):
+ *     GET    /api/pantry/config                  (categories, locations, stores)
+ *     GET    /api/pantry/shopping                (joined shopping_list rows)
+ *     POST   /api/pantry/shopping                (manual add)
+ *     PATCH  /api/pantry/shopping/<sid>          (update fields)
+ *     DELETE /api/pantry/shopping/<sid>
+ *     GET    /api/pantry/items                   (joined inventory_items rows)
+ *     POST   /api/pantry/items                   (add — requires product_id)
+ *     PATCH  /api/pantry/items/<iid>
+ *     DELETE /api/pantry/items/<iid>
  *     POST   /api/photos                            (multipart upload)
  *
  *   Real-time sync via the SSE 'inventory' channel; PantryStore re-emits
@@ -86,7 +86,7 @@ export class PantryStore {
 
     async fetchConfig() {
         try {
-            const res = await fetch(apiUrl('/api/inventory/config'));
+            const res = await fetch(apiUrl('/api/pantry/config'));
             if (!res.ok) return null;
             this.config = await res.json();
             _save(CACHE_CONFIG, this.config);
@@ -104,7 +104,7 @@ export class PantryStore {
         if (!this.config?.categories?.length) await this.fetchConfig();
 
         try {
-            const res = await fetch(apiUrl('/api/inventory/shopping'));
+            const res = await fetch(apiUrl('/api/pantry/shopping'));
             if (!res.ok) return null;
             const rows = await res.json();
             const items = rows.map(r => this._normalizeShoppingRow(r));
@@ -121,7 +121,7 @@ export class PantryStore {
         if (!this.config?.categories?.length) await this.fetchConfig();
 
         try {
-            const res = await fetch(apiUrl('/api/inventory/items'));
+            const res = await fetch(apiUrl('/api/pantry/items'));
             if (!res.ok) return null;
             const rows = await res.json();
             const items = rows.map(r => this._normalizeInventoryRow(r));
@@ -155,7 +155,7 @@ export class PantryStore {
             added_by:    item.addedBy ?? null,
         };
         if (item.productId) body.product_id = item.productId;
-        return this._send('POST', '/api/inventory/shopping', body);
+        return this._send('POST', '/api/pantry/shopping', body);
     }
 
     /**
@@ -175,11 +175,11 @@ export class PantryStore {
         if ('status'      in patch) body.status      = patch.status;
         if ('category'    in patch) body.category_id = this._categoryIdForGroceryId(patch.category);
         if ('addedBy'     in patch) body.added_by    = patch.addedBy;
-        return this._send('PATCH', `/api/inventory/shopping/${id}`, body);
+        return this._send('PATCH', `/api/pantry/shopping/${id}`, body);
     }
 
     async deleteItem(id) {
-        return this._send('DELETE', `/api/inventory/shopping/${id}`);
+        return this._send('DELETE', `/api/pantry/shopping/${id}`);
     }
 
     /**
@@ -197,16 +197,16 @@ export class PantryStore {
     /**
      * Add a pantry item. Backend requires a product_id, so the caller must
      * either pass one (`item.productId`) or first create a product via
-     * /api/inventory/products. PR C will plumb this through the New Item
+     * /api/pantry/products. PR C will plumb this through the New Item
      * modal — for now this is a thin pass-through.
      */
     async addInventoryItem(item) {
         if (!item.productId) {
             throw new Error(
                 '[PantryStore] addInventoryItem requires productId — ' +
-                'create the product first via /api/inventory/products');
+                'create the product first via /api/pantry/products');
         }
-        return this._send('POST', '/api/inventory/items', {
+        return this._send('POST', '/api/pantry/items', {
             product_id:  item.productId,
             location_id: item.locationId ?? null,
             current_qty: item.qty ?? 1,
@@ -227,18 +227,18 @@ export class PantryStore {
         if ('isStaple' in patch) {
             const inv = (this._inventory || []).find(i => i.id === id);
             if (inv?.productId) {
-                await this._send('PATCH', `/api/inventory/products/${inv.productId}`, {
+                await this._send('PATCH', `/api/pantry/products/${inv.productId}`, {
                     is_staple: patch.isStaple ? 1 : 0,
                 });
             }
         }
 
         if (Object.keys(body).length === 0) return null;
-        return this._send('PATCH', `/api/inventory/items/${id}`, body);
+        return this._send('PATCH', `/api/pantry/items/${id}`, body);
     }
 
     async deleteInventoryItem(id) {
-        return this._send('DELETE', `/api/inventory/items/${id}`);
+        return this._send('DELETE', `/api/pantry/items/${id}`);
     }
 
     // ── Photos (unchanged from grocery-store) ────────────────────────────────
