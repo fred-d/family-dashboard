@@ -10,9 +10,7 @@ Architecture
   ├── recipes/  {slug}.json    — one file per recipe
   ├── recipe_index.json        — lightweight index (no photos)
   ├── meals/    {week}.json    — one file per ISO week (e.g. 2026-W15.json)
-  ├── grocery/
-  │   ├── list.json            — active shopping list + family requests
-  │   └── inventory.json       — pantry / staples database
+  ├── inventory.db             — SQLite: products, inventory lots, shopping list
   └── photos/   {timestamp}.jpg — uploaded item/recipe photos (actual files!)
 
 All HA communication uses $SUPERVISOR_TOKEN — frontend never needs a HA token.
@@ -43,7 +41,6 @@ STATIC   = pathlib.Path('/app/static')
 PHOTOS   = DATA / 'photos'
 RECIPES  = DATA / 'recipes'
 MEALS    = DATA / 'meals'
-GROCERY  = DATA / 'grocery'
 
 HA_BASE  = 'http://supervisor/core'
 HA_TOKEN = os.environ.get('SUPERVISOR_TOKEN', '')
@@ -492,81 +489,7 @@ def api_meals(week):
         return jsonify({'ok': True})
 
 
-# ── Grocery API ────────────────────────────────────────────────────────────────
-
-_grocery_lock = threading.Lock()
-
-LIST_FILE  = GROCERY / 'list.json'
-INV_FILE   = GROCERY / 'inventory.json'
-
-
-@app.route('/api/grocery/list', methods=['GET', 'POST'])
-def api_grocery_list():
-    if request.method == 'GET':
-        return jsonify(_read_json(LIST_FILE, {'items': [], 'requests': []}))
-    with _grocery_lock:
-        data = request.get_json() or {'items': [], 'requests': []}
-        _write_json(LIST_FILE, data)
-    _sse_push('grocery', {'type': 'list'})
-    return jsonify({'ok': True})
-
-
-@app.route('/api/grocery/inventory', methods=['GET', 'POST'])
-def api_grocery_inventory():
-    if request.method == 'GET':
-        return jsonify(_read_json(INV_FILE, []))
-    with _grocery_lock:
-        data = request.get_json() or []
-        _write_json(INV_FILE, data)
-    _sse_push('grocery', {'type': 'inventory'})
-    return jsonify({'ok': True})
-
-
-# ── UPC Lookup (Open Food Facts proxy) ────────────────────────────────────────
-
-_OFF_CAT_MAP = {
-    'en:fruits': 'produce', 'en:vegetables': 'produce', 'en:fresh-vegetables': 'produce',
-    'en:fresh-fruits': 'produce', 'en:dairy': 'dairy', 'en:cheeses': 'dairy',
-    'en:milks': 'dairy', 'en:yogurts': 'dairy', 'en:eggs': 'dairy',
-    'en:meats': 'meat', 'en:seafood': 'meat', 'en:fish': 'meat', 'en:poultry': 'meat',
-    'en:breads': 'bakery', 'en:pastries': 'bakery', 'en:biscuits-and-cakes': 'bakery',
-    'en:frozen-foods': 'frozen', 'en:ice-creams': 'frozen',
-    'en:beverages': 'beverages', 'en:sodas': 'beverages', 'en:juices': 'beverages',
-    'en:waters': 'beverages', 'en:coffees': 'beverages', 'en:teas': 'beverages',
-    'en:snacks': 'snacks', 'en:chips-and-crisps': 'snacks', 'en:candies': 'snacks',
-    'en:cereals-and-their-products': 'pantry', 'en:pastas': 'pantry',
-    'en:rices': 'pantry', 'en:sauces': 'pantry', 'en:condiments': 'pantry',
-    'en:oils-and-fats': 'pantry', 'en:canned-foods': 'pantry',
-    'en:beauty-products': 'personal', 'en:hygiene-products': 'personal',
-    'en:household-products': 'household', 'en:cleaning-products': 'household',
-}
-
-_NAME_KWORDS = {
-    'produce':   ['apple','banana','orange','lettuce','tomato','pepper','onion','potato','carrot','fruit','vegetable','berry','grape','spinach','broccoli'],
-    'dairy':     ['milk','cheese','yogurt','butter','cream','eggs','egg'],
-    'meat':      ['chicken','beef','pork','turkey','salmon','tuna','shrimp','fish','steak','bacon','sausage'],
-    'bakery':    ['bread','bagel','muffin','roll','tortilla','cake','biscuit'],
-    'frozen':    ['frozen','ice cream','popsicle'],
-    'beverages': ['juice','soda','water','coffee','tea','drink','lemonade','gatorade'],
-    'snacks':    ['chips','crackers','popcorn','candy','chocolate','pretzel'],
-    'pantry':    ['pasta','rice','beans','flour','sugar','oil','sauce','cereal','oats','soup','broth'],
-    'personal':  ['shampoo','soap','lotion','toothpaste','deodorant','razor','shaving'],
-    'household': ['paper towel','toilet paper','detergent','cleaner','bleach','sponge'],
-}
-
-def _guess_category(tags: list, name: str) -> str:
-    for tag in tags:
-        if tag in _OFF_CAT_MAP:
-            return _OFF_CAT_MAP[tag]
-    name_l = name.lower()
-    for cat, kws in _NAME_KWORDS.items():
-        if any(kw in name_l for kw in kws):
-            return cat
-    return 'other'
-
-
-# Legacy /api/upc/<barcode> was removed — the scanner now uses the richer
-# cascading /api/inventory/scan/<upc> endpoint in inventory.py.
+# UPC lookups are handled by inventory.py's /api/inventory/scan/<upc> endpoint.
 
 
 # ── Photo API ─────────────────────────────────────────────────────────────────
@@ -626,7 +549,7 @@ def api_serve_photo(filename):
 
 if __name__ == '__main__':
     # Ensure all data directories exist on startup
-    for d in (RECIPES, MEALS, GROCERY, PHOTOS):
+    for d in (RECIPES, MEALS, PHOTOS):
         d.mkdir(parents=True, exist_ok=True)
 
     # Wire up the Kitchen Inventory module (SQLite-backed replacement for
