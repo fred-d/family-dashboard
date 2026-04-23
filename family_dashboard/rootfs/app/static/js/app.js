@@ -16,8 +16,8 @@ import { MealPlanner } from './meals.js';
 import { MealStore } from './meal-store.js';
 import { RecipeApp } from './recipes.js';
 import { RecipeStore } from './recipe-store.js';
-import { InventoryApp } from './inventory.js?v=17';
-import { InventoryStore } from './inventory-store.js?v=6';
+import { PantryApp } from './pantry.js?v=1';
+import { PantryStore } from './pantry-store.js?v=1';
 import {
     openSettings, closeSettings,
     loadCalendarColors, saveDefaultView,
@@ -85,7 +85,12 @@ function switchView(view) {
         else { clearInterval(window.mealPlanner._pollTimer); window.mealPlanner._pollTimer = null; }
     }
     if (window.recipeApp  && view === 'recipes') window.recipeApp._loadAndRender();
-    if (window.inventoryApp && view === 'inventory') window.inventoryStore?.refresh('items');
+    if (window.pantryApp && view === 'inventory') {
+        // Re-fetch when the user switches to the Pantry tab so a pantry
+        // change made on another device shows up immediately.
+        window.pantryStore?.fetchList();
+        window.pantryStore?.fetchInventory();
+    }
 
     if (view === 'calendar' && window.haCalendar?.calendar) {
         requestAnimationFrame(() => window.haCalendar.calendar.updateSize());
@@ -122,18 +127,19 @@ async function init() {
     setTimeout(updateFilterCircles, 500);
 
     // Stores use backend API — no HA config needed in frontend
-    const mealStore      = new MealStore();
-    const recipeStore    = new RecipeStore();
-    const inventoryStore = new InventoryStore();
-    window.inventoryStore = inventoryStore;
+    const mealStore     = new MealStore();
+    const recipeStore   = new RecipeStore();
+    const pantryStore   = new PantryStore();
+    window.pantryStore  = pantryStore;
 
-    window.mealPlanner   = new MealPlanner(document.getElementById('view-meals'),    mealStore);
-    window.recipeApp     = new RecipeApp(document.getElementById('view-recipes'),   recipeStore);
-    window.inventoryApp  = new InventoryApp(document.getElementById('view-inventory'), inventoryStore);
+    window.mealPlanner = new MealPlanner(document.getElementById('view-meals'),    mealStore);
+    window.recipeApp   = new RecipeApp(document.getElementById('view-recipes'),    recipeStore);
+    window.pantryApp   = new PantryApp(document.getElementById('view-inventory'),  pantryStore);
 
-    // Initial fetch — inventory store hydrates from localStorage, so UI is
-    // already interactive; this just refreshes against the server.
-    inventoryStore.load();
+    // Prime category↔id lookups before the first list render so backend
+    // category UUIDs translate to the legacy grocery string ids the UI uses.
+    // PantryApp also calls this internally — fire-and-forget here is safe.
+    pantryStore.fetchConfig();
 
     // Initial route
     switchView(getActiveView());
