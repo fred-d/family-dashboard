@@ -242,7 +242,7 @@ export class InventoryApp {
                     </select>
                     <button type="button" class="inv-btn inv-btn-secondary"
                             data-action="walk-mode" title="In-store walk mode">
-                        🏪 Walk
+                        🏪 Store Mode
                     </button>
                     <button type="button" class="inv-btn inv-btn-secondary"
                             data-action="from-meal-plan">
@@ -421,6 +421,13 @@ export class InventoryApp {
             const qDecBtn  = e.target.closest('[data-shop-qdec]');
             const qIncBtn  = e.target.closest('[data-shop-qinc]');
             const flipBtn  = e.target.closest('[data-shop-flip]');
+            const editBtn  = e.target.closest('[data-shop-edit]');
+            if (editBtn) {
+                const id = editBtn.dataset.shopEdit;
+                const r  = (this.store.shopping || []).find(s => String(s.id) === String(id));
+                if (r) this._openShoppingEditModal(r);
+                return;
+            }
             if (flipBtn) {
                 this.store.updateShopping(flipBtn.dataset.shopFlip, {
                     fulfillment: flipBtn.dataset.shopFlipTo,
@@ -795,78 +802,74 @@ export class InventoryApp {
 
     _shopRowHtml(r) {
         const status = r.status === 'ordered' ? 'ordered'
-                      : r.status === 'bought' ? 'bought'
+                      : r.status === 'bought'  ? 'bought'
                       : 'needed';
         const person = r.added_by ? this.store.personById(r.added_by) : null;
-        const personChip = person ? `
-            <span class="inv-shop-chip" style="background:${_esc(person.color || '#6b7280')}"
-                  title="Requested by ${_esc(person.name || '')}">
-                ${_esc((person.name || '?').slice(0, 1))}
-            </span>` : '';
-        const storeChip = r.store_name ? `
-            <span class="inv-shop-store" style="border-color:${_esc(r.store_color || 'var(--color-border)')}">
-                ${_esc(r.store_name)}
-            </span>` : '';
-        const fulfillment = r.fulfillment || 'curbside';
+        const personAttr = person
+            ? `Requested by ${person.name || '?'}`
+            : '';
+        const qtyNum   = Math.max(1, Number(r.qty) || 1);
+        const isDone   = status === 'bought';
+        const fulfillment     = r.fulfillment || 'curbside';
         const nextFulfillment = fulfillment === 'curbside' ? 'instore' : 'curbside';
-        const fulfillmentBadge = `
-            <button type="button" class="inv-shop-fulfillment ${_esc(fulfillment)}"
-                    data-shop-flip="${_esc(r.id)}" data-shop-flip-to="${nextFulfillment}"
-                    title="Tap to switch to ${nextFulfillment === 'instore' ? 'In-Store' : 'Curbside'}">
-                ${fulfillment === 'curbside' ? '🚗' : '🏪'}
-            </button>`;
-        const sourceBadge = r.source === 'auto'
-            ? `<span class="inv-shop-source auto" title="Auto-added: stock below minimum">⟳ auto</span>`
+
+        // Sub-line: qty + notes + store + attribution
+        const subParts = [];
+        if (qtyNum > 1) subParts.push(`${qtyNum}×`);
+        if (r.notes)    subParts.push(_esc(r.notes));
+        if (r.store_name) subParts.push(_esc(r.store_name));
+        if (personAttr) subParts.push(`by ${_esc(person?.name || '?')}`);
+        if (r.source === 'auto') subParts.push('auto-added');
+        if (status === 'ordered') subParts.push('ordered');
+        const subLine = subParts.length
+            ? `<div class="inv-shop-sub">${subParts.join(' · ')}</div>`
             : '';
-        const statusBadge = status === 'ordered'
-            ? `<span class="inv-shop-source ordered" title="Marked as ordered / in cart">📋 ordered</span>`
-            : '';
-        const photo = r.product_image
-            ? `<img class="inv-shop-img" src="${_esc(r.product_image)}" alt="" loading="lazy">`
-            : `<div class="inv-shop-img placeholder">🛒</div>`;
-        const qtyNum  = Math.max(1, Number(r.qty) || 1);
-        const isDone  = status === 'bought';
+
+        // Tri-state checkbox
+        const checkLabel = status === 'needed'  ? 'Mark ordered'
+                         : status === 'ordered' ? 'Mark bought'
+                         : 'Reset to needed';
+        const checkGlyph = status === 'needed'  ? ''
+                         : status === 'ordered' ? '📋' : '✓';
+
+        // Inline qty stepper (compact, right side)
         const qtyCtrl = `
             <div class="inv-shop-qtyctrl" aria-label="Quantity">
                 <button type="button" class="inv-shop-qbtn" data-shop-qdec="${_esc(r.id)}"
                         ${qtyNum <= 1 || isDone ? 'disabled' : ''}
-                        aria-label="Decrease quantity">−</button>
+                        aria-label="Decrease">−</button>
                 <span class="inv-shop-qnum">${qtyNum}</span>
                 <button type="button" class="inv-shop-qbtn" data-shop-qinc="${_esc(r.id)}"
                         ${isDone ? 'disabled' : ''}
-                        aria-label="Increase quantity">+</button>
+                        aria-label="Increase">+</button>
             </div>`;
-        // Tri-state checkbox: empty → 📋 ordered → ✓ bought → empty…
-        const checkLabel = status === 'needed' ? 'Mark ordered'
-                         : status === 'ordered' ? 'Mark bought'
-                         : 'Reset to needed';
-        const checkGlyph = status === 'needed' ? ''
-                         : status === 'ordered' ? '📋' : '✓';
+
         const stockBtn = (status === 'ordered' || status === 'bought') && r.product_id
             ? `<button type="button" class="inv-shop-stock" data-shop-stock="${_esc(r.id)}"
-                       title="Stock to inventory" aria-label="Stock to inventory">📥</button>`
+                       title="Stock to inventory">📥</button>`
             : '';
+
         return `
             <div class="inv-shop-row status-${status}">
                 <button type="button" class="inv-shop-check tri-${status}"
                         data-shop-cycle="${_esc(r.id)}" aria-label="${checkLabel}">
                     ${checkGlyph}
                 </button>
-                ${photo}
                 <div class="inv-shop-body">
                     <div class="inv-shop-name">${_esc(r.name)}</div>
-                    <div class="inv-shop-meta">
-                        ${fulfillmentBadge}
-                        ${sourceBadge}
-                        ${statusBadge}
-                        ${storeChip}
-                        ${personChip}
-                    </div>
+                    ${subLine}
                 </div>
                 ${qtyCtrl}
                 ${stockBtn}
+                <button type="button" class="inv-shop-fulfillment ${_esc(fulfillment)}"
+                        data-shop-flip="${_esc(r.id)}" data-shop-flip-to="${nextFulfillment}"
+                        title="Tap to switch to ${nextFulfillment === 'instore' ? 'In-Store' : 'Curbside'}">
+                    ${fulfillment === 'curbside' ? '🚗' : '🏪'}
+                </button>
+                <button type="button" class="inv-shop-edit" data-shop-edit="${_esc(r.id)}"
+                        aria-label="Edit">✎</button>
                 <button type="button" class="inv-shop-del" data-shop-delete="${_esc(r.id)}"
-                        aria-label="Remove from list">×</button>
+                        aria-label="Remove">×</button>
             </div>
         `;
     }
@@ -907,6 +910,7 @@ export class InventoryApp {
                                 data-opt="instore">
                             🏪 In-Store
                         </button>
+
                     </div>
                 </div>
 
@@ -985,6 +989,126 @@ export class InventoryApp {
             } catch (err) {
                 alert(err.message || 'Add failed.');
                 if ($btn) { $btn.disabled = false; $btn.textContent = '＋ Add'; }
+            }
+        });
+
+        this.$sheet.hidden = false;
+        requestAnimationFrame(() => this.$sheet.classList.add('open'));
+        setTimeout(() => $form.querySelector('[name="name"]')?.focus(), 220);
+    }
+
+    // ── Shopping: edit modal ─────────────────────────────────────────────────
+
+    _openShoppingEditModal(r) {
+        const stores     = this.store.config.stores     || [];
+        const categories = this.store.config.categories || [];
+        const fulfillment = r.fulfillment || 'curbside';
+
+        this.$sheetCard.innerHTML = `
+            <button type="button" class="inv-sheet-close" data-sheet-close aria-label="Close">×</button>
+            <h2 class="inv-form-title">Edit Item</h2>
+
+            <form class="inv-form" data-shop-edit-form novalidate>
+                <label class="inv-field">
+                    <span class="inv-field-label">Item</span>
+                    <input type="text" class="inv-input" name="name" required autocomplete="off"
+                           value="${_esc(r.name || '')}">
+                </label>
+
+                <!-- Fulfillment toggle -->
+                <div class="inv-field">
+                    <span class="inv-field-label">How are you getting it?</span>
+                    <div class="inv-fulfillment-toggle" data-fulfillment-toggle>
+                        <input type="hidden" name="fulfillment" value="${_esc(fulfillment)}">
+                        <button type="button"
+                                class="inv-fulfillment-opt${fulfillment === 'curbside' ? ' active' : ''}"
+                                data-opt="curbside">
+                            🚗 Curbside / Delivery
+                        </button>
+                        <button type="button"
+                                class="inv-fulfillment-opt${fulfillment === 'instore' ? ' active' : ''}"
+                                data-opt="instore">
+                            🏪 In-Store
+                        </button>
+                    </div>
+                </div>
+
+                <div class="inv-form-grid">
+                    <label class="inv-field">
+                        <span class="inv-field-label">Quantity</span>
+                        <input type="number" class="inv-input" name="qty"
+                               min="1" step="1" value="${Math.max(1, Number(r.qty) || 1)}">
+                    </label>
+                    <label class="inv-field">
+                        <span class="inv-field-label">Store</span>
+                        <select class="inv-input" name="store_id">
+                            <option value="">— Any —</option>
+                            ${stores.map(s => `
+                                <option value="${_esc(s.id)}" ${String(s.id) === String(r.store_id) ? 'selected' : ''}>
+                                    ${_esc(iconToEmoji(s.icon))} ${_esc(s.name)}
+                                </option>`).join('')}
+                        </select>
+                    </label>
+                    <label class="inv-field inv-field-wide">
+                        <span class="inv-field-label">Category</span>
+                        <select class="inv-input" name="category_id">
+                            <option value="">— None —</option>
+                            ${categories.map(c => `
+                                <option value="${_esc(c.id)}" ${String(c.id) === String(r.category_id) ? 'selected' : ''}>
+                                    ${_esc(iconToEmoji(c.icon))} ${_esc(c.name)}
+                                </option>`).join('')}
+                        </select>
+                    </label>
+                    <label class="inv-field inv-field-wide">
+                        <span class="inv-field-label">Notes</span>
+                        <input type="text" class="inv-input" name="notes" autocomplete="off"
+                               value="${_esc(r.notes || '')}"
+                               placeholder="optional — brand, flavor, size…">
+                    </label>
+                </div>
+
+                <div class="inv-form-actions">
+                    <span></span>
+                    <div class="inv-form-actions-right">
+                        <button type="button" class="inv-btn inv-btn-secondary" data-sheet-close>Cancel</button>
+                        <button type="submit" class="inv-btn inv-btn-primary">Save</button>
+                    </div>
+                </div>
+            </form>
+        `;
+
+        // Wire fulfillment toggle
+        const $toggle = this.$sheetCard.querySelector('[data-fulfillment-toggle]');
+        const $hidden = $toggle.querySelector('[name="fulfillment"]');
+        $toggle.addEventListener('click', e => {
+            const opt = e.target.closest('[data-opt]');
+            if (!opt) return;
+            $hidden.value = opt.dataset.opt;
+            $toggle.querySelectorAll('[data-opt]').forEach(b =>
+                b.classList.toggle('active', b.dataset.opt === opt.dataset.opt));
+        });
+
+        const $form = this.$sheetCard.querySelector('[data-shop-edit-form]');
+        $form.addEventListener('submit', async e => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData($form));
+            const name = (data.name || '').trim();
+            if (!name) { $form.querySelector('[name="name"]')?.focus(); return; }
+            const $btn = $form.querySelector('button[type="submit"]');
+            if ($btn) { $btn.disabled = true; $btn.textContent = 'Saving…'; }
+            try {
+                await this.store.updateShopping(r.id, {
+                    name,
+                    qty:         Number(data.qty) || 1,
+                    store_id:    data.store_id    || null,
+                    category_id: data.category_id || null,
+                    notes:       data.notes       || '',
+                    fulfillment: data.fulfillment || 'curbside',
+                });
+                this._closeSheet();
+            } catch (err) {
+                alert(err.message || 'Save failed.');
+                if ($btn) { $btn.disabled = false; $btn.textContent = 'Save'; }
             }
         });
 
@@ -1816,8 +1940,9 @@ export class InventoryApp {
         }
 
         const today    = new Date();
-        const weekKey  = isoWeek(today);
         const dates    = weekDates(today);
+        // Use the Sunday that anchors this display-week — same key MealPlanner uses.
+        const weekKey  = isoWeek(dates[0]);
         // Make sure we have the latest data from HA — cached if offline
         const fresh = await mealStore.fetchFromHA(weekKey).catch(() =>
             mealStore.loadCached(weekKey));
