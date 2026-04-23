@@ -343,6 +343,25 @@ export class InventoryApp {
             this.$filters.querySelectorAll('.inv-chip').forEach(c =>
                 c.classList.toggle('active', c === chip));
             this._renderGrid();
+            this._renderStats(); // keep stat rail active-state in sync
+        });
+
+        // Stats rail — tapping a stat chip applies that filter;
+        // tapping "🛒 list" switches to the List tab.
+        this.$stats.addEventListener('click', e => {
+            const btn = e.target.closest('[data-stat-filter]');
+            if (!btn) return;
+            const sf = btn.dataset.statFilter;
+            if (sf === 'shop') {
+                this._setTab('list');
+                return;
+            }
+            this._filter = sf;
+            // Sync the filter chips below the stats rail
+            this.$filters.querySelectorAll('.inv-chip').forEach(c =>
+                c.classList.toggle('active', c.dataset.filter === sf));
+            this._renderGrid();
+            this._renderStats();
         });
 
         this.$loctabs.addEventListener('click', e => {
@@ -979,27 +998,33 @@ export class InventoryApp {
     _renderStats() {
         const s = this.store.stats || {};
         const shoppingCount = (this.store.shopping || []).length;
+        const f = this._filter;
         this.$stats.innerHTML = `
-            <div class="inv-stat" title="Total items">
+            <button type="button" class="inv-stat${f === 'all' ? ' active' : ''}"
+                    title="All items" data-stat-filter="all">
                 <span class="inv-stat-num">${s.total ?? 0}</span>
                 <span class="inv-stat-lbl">items</span>
-            </div>
-            <div class="inv-stat low" title="Low stock">
+            </button>
+            <button type="button" class="inv-stat low${f === 'low' ? ' active' : ''}"
+                    title="Low stock" data-stat-filter="low">
                 <span class="inv-stat-num">${s.low ?? 0}</span>
                 <span class="inv-stat-lbl">low</span>
-            </div>
-            <div class="inv-stat out" title="Out of stock">
+            </button>
+            <button type="button" class="inv-stat out${f === 'out' ? ' active' : ''}"
+                    title="Out of stock" data-stat-filter="out">
                 <span class="inv-stat-num">${s.out ?? 0}</span>
                 <span class="inv-stat-lbl">out</span>
-            </div>
-            <div class="inv-stat warn" title="Expiring soon">
+            </button>
+            <button type="button" class="inv-stat warn${f === 'expiring' ? ' active' : ''}"
+                    title="Expiring soon" data-stat-filter="expiring">
                 <span class="inv-stat-num">${s.expiring_soon ?? 0}</span>
                 <span class="inv-stat-lbl">expiring</span>
-            </div>
-            <div class="inv-stat shop" title="Shopping list">
+            </button>
+            <button type="button" class="inv-stat shop" title="Switch to shopping list"
+                    data-stat-filter="shop">
                 <span class="inv-stat-num">${shoppingCount}</span>
                 <span class="inv-stat-lbl">🛒 list</span>
-            </div>
+            </button>
         `;
         // Update tab badges
         const total = this.store.stats?.total ?? (this.store.items || []).length;
@@ -1197,6 +1222,17 @@ export class InventoryApp {
         const showPack = upp > 1;
         const tracksPct = Number(it.tracks_percent) === 1;
 
+        // Check if item is already on the active shopping list
+        const onList = it.product_id
+            ? (this.store.shopping || []).find(r => r.product_id === it.product_id && r.status !== 'bought')
+            : null;
+        const needLabel = onList
+            ? `✓ On list (${(onList.fulfillment || 'curbside') === 'curbside' ? '🚗' : '🏪'})`
+            : '🛒 Need this';
+        const needCls = onList
+            ? 'inv-btn inv-btn-ghost inv-btn-on-list'
+            : 'inv-btn inv-btn-primary inv-btn-need';
+
         this.$sheetCard.innerHTML = `
             <button type="button" class="inv-sheet-close" data-sheet-close aria-label="Close">×</button>
             <div class="inv-sheet-head">
@@ -1237,8 +1273,8 @@ export class InventoryApp {
                 </div>` : ''}
 
             <div class="inv-sheet-actions">
-                <button type="button" class="inv-btn inv-btn-primary inv-btn-need"
-                        data-cmd="need">🛒 Need this</button>
+                <button type="button" class="${needCls}"
+                        data-cmd="need">${needLabel}</button>
                 <button type="button" class="inv-btn inv-btn-ghost"
                         data-cmd="edit">✎ Edit</button>
                 <button type="button" class="inv-btn inv-btn-ghost inv-btn-danger-text"
@@ -1290,15 +1326,113 @@ export class InventoryApp {
         requestAnimationFrame(() => this.$sheet.classList.add('open'));
     }
 
+    /**
+     * "Need this" handler — shows a fulfillment picker (Curbside / In-Store).
+     * If the item is already on the shopping list it offers to update or remove.
+     */
     async _needThis(it) {
         if (!it?.product_id) {
             alert('This item has no linked product — open Edit and pick a product first.');
             return;
         }
-        try {
-            await this.store.needProduct(it.product_id, { qty: 1 });
-        } catch (err) {
-            alert(err.message || 'Could not add to shopping list.');
+
+        const existing = (this.store.shopping || []).find(
+            r => r.product_id === it.product_id && r.status !== 'bought'
+        );
+
+        const prevHTML = this.$sheetCard.innerHTML;
+        const wasOpen  = !this.$sheet.hidden;
+
+        const restore = () => {
+            if (wasOpen) {
+                this.$sheetCard.innerHTML = prevHTML;
+            } else {
+                this._closeSheet();
+            }
+        };
+
+        if (existing) {
+            const curLabel = (existing.fulfillment || 'curbside') === 'curbside' ? '🚗 Curbside' : '🏪 In-Store';
+            this.$sheetCard.innerHTML = `
+                <div class="inv-need-picker">
+                    <h2 class="inv-confirm-title">Already on your list</h2>
+                    <p class="inv-confirm-body">Currently: <strong>${_esc(curLabel)}</strong></p>
+                    <p class="inv-confirm-body inv-need-pick-prompt">Change fulfillment:</p>
+                    <div class="inv-need-fulfillment-btns">
+                        <button type="button" class="inv-btn ${existing.fulfillment !== 'instore' ? 'inv-btn-primary' : 'inv-btn-secondary'}"
+                                data-need-pick="curbside">🚗 Curbside</button>
+                        <button type="button" class="inv-btn ${existing.fulfillment === 'instore' ? 'inv-btn-primary' : 'inv-btn-secondary'}"
+                                data-need-pick="instore">🏪 In-Store</button>
+                    </div>
+                    <div class="inv-confirm-actions">
+                        <button type="button" class="inv-btn inv-btn-ghost inv-btn-danger-text"
+                                data-need-remove>🗑 Remove from list</button>
+                        <button type="button" class="inv-btn inv-btn-ghost"
+                                data-need-cancel>Cancel</button>
+                    </div>
+                </div>
+            `;
+
+            this.$sheetCard.querySelectorAll('[data-need-pick]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const f = btn.dataset.needPick;
+                    if (f === (existing.fulfillment || 'curbside')) { restore(); return; }
+                    btn.disabled = true;
+                    try {
+                        await this.store.updateShopping(existing.id, { fulfillment: f });
+                    } catch (err) {
+                        alert(err.message || 'Could not update.');
+                    }
+                    restore();
+                });
+            });
+
+            this.$sheetCard.querySelector('[data-need-remove]')?.addEventListener('click', async () => {
+                try {
+                    await this.store.deleteShopping(existing.id);
+                } catch (err) {
+                    alert(err.message || 'Could not remove.');
+                }
+                restore();
+            });
+
+        } else {
+            this.$sheetCard.innerHTML = `
+                <div class="inv-need-picker">
+                    <h2 class="inv-confirm-title">Add to shopping list</h2>
+                    <p class="inv-confirm-body">${_esc(it.name || 'This item')}</p>
+                    <div class="inv-need-fulfillment-btns">
+                        <button type="button" class="inv-btn inv-btn-primary"
+                                data-need-pick="curbside">🚗 Curbside</button>
+                        <button type="button" class="inv-btn inv-btn-secondary"
+                                data-need-pick="instore">🏪 In-Store</button>
+                    </div>
+                    <div class="inv-confirm-actions">
+                        <button type="button" class="inv-btn inv-btn-ghost"
+                                data-need-cancel>Cancel</button>
+                    </div>
+                </div>
+            `;
+
+            this.$sheetCard.querySelectorAll('[data-need-pick]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const f = btn.dataset.needPick;
+                    btn.disabled = true; btn.textContent = 'Adding…';
+                    try {
+                        await this.store.needProduct(it.product_id, { qty: 1, fulfillment: f });
+                    } catch (err) {
+                        alert(err.message || 'Could not add to shopping list.');
+                    }
+                    restore();
+                });
+            });
+        }
+
+        this.$sheetCard.querySelector('[data-need-cancel]')?.addEventListener('click', restore);
+
+        if (!wasOpen) {
+            this.$sheet.hidden = false;
+            requestAnimationFrame(() => this.$sheet.classList.add('open'));
         }
     }
 
