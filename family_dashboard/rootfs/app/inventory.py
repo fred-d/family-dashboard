@@ -145,6 +145,7 @@ CREATE TABLE IF NOT EXISTS products (
     tracks_percent          INTEGER DEFAULT 0,
     units_per_pack          REAL DEFAULT 1,
     count_unit              TEXT DEFAULT 'item',
+    is_staple               INTEGER NOT NULL DEFAULT 0,
     notes                   TEXT DEFAULT '',
     created_at              TEXT NOT NULL,
     updated_at              TEXT NOT NULL
@@ -313,6 +314,12 @@ def _init_db(app: Flask):
         if 'fulfillment' not in shop_cols:
             c.execute("ALTER TABLE shopping_list "
                       "ADD COLUMN fulfillment TEXT NOT NULL DEFAULT 'curbside'")
+
+        # Staples flag on products (v1.5.2) — marks "always-keep-stocked"
+        # items so the Pantry tab can filter to just the things we always
+        # want on hand (flour, sugar, paper towels, etc.).
+        if 'is_staple' not in existing_cols:
+            c.execute("ALTER TABLE products ADD COLUMN is_staple INTEGER NOT NULL DEFAULT 0")
 
         # One-time scrub: upgrade any cached http:// product images to https://
         # so the dashboard (served over HTTPS via Cloudflare Tunnel) doesn't
@@ -759,8 +766,8 @@ def api_products():
         INSERT INTO products
           (id,name,brand,category_id,image_url,default_location_id,default_store_id,
            default_unit,min_threshold,typical_shelf_life_days,tracks_percent,
-           units_per_pack,count_unit,notes,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           units_per_pack,count_unit,is_staple,notes,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (
         pid, name, body.get('brand', ''),
         body.get('category_id'), _https(body.get('image_url', '')),
@@ -771,6 +778,7 @@ def api_products():
         1 if body.get('tracks_percent') else 0,
         max(1.0, float(body.get('units_per_pack') or 1)),
         (body.get('count_unit') or 'item').strip() or 'item',
+        1 if body.get('is_staple') else 0,
         body.get('notes', ''),
         now, now,
     ))
@@ -809,11 +817,13 @@ def api_product(pid):
                   'default_location_id', 'default_store_id',
                   'default_unit', 'min_threshold',
                   'typical_shelf_life_days', 'tracks_percent',
-                  'units_per_pack', 'count_unit', 'notes'):
+                  'units_per_pack', 'count_unit', 'is_staple', 'notes'):
             if k in body:
                 fields.append(f'{k}=?')
                 v = body[k]
                 if k == 'tracks_percent':
+                    v = 1 if v else 0
+                elif k == 'is_staple':
                     v = 1 if v else 0
                 elif k == 'units_per_pack':
                     v = max(1.0, float(v or 1))
@@ -1018,6 +1028,7 @@ def _inv_with_product(c: sqlite3.Connection, where: str = '', args: tuple = ()) 
           p.tracks_percent AS product_tracks_percent,
           p.units_per_pack AS product_units_per_pack,
           p.count_unit     AS product_count_unit,
+          p.is_staple      AS product_is_staple,
           (SELECT barcode FROM barcode_catalog
            WHERE product_id = p.id
            ORDER BY cached_at DESC LIMIT 1) AS upc
