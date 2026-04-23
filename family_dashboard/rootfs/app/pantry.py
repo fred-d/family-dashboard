@@ -1,8 +1,11 @@
 """
-Kitchen Inventory Module
-========================
-A clean, relational inventory system built on SQLite. Replaces the old
-JSON-based pantry/grocery storage.
+Pantry Module
+=============
+A clean, relational pantry + shopping-list system built on SQLite. Replaces
+the old JSON-based pantry/grocery storage. (Was inventory.py before the
+v1.6.0 rename — file/blueprint renamed for clarity; URL prefix changed
+from /api/inventory/* to /api/pantry/* with the old prefix kept as an
+alias for back-compat.)
 
 Architecture
 ------------
@@ -15,8 +18,10 @@ Architecture
 - Shopping List (shopping_list)      — auto + manual items
 - History (inventory_history)        — audit log for sparklines / attribution
 
-All endpoints are exposed under /api/inventory/* via a Flask Blueprint.
-Real-time updates broadcast via the SSE push function provided at init.
+All endpoints are exposed under /api/pantry/* via a Flask Blueprint
+(`/api/inventory/*` is kept as a back-compat alias — see init() at the
+bottom of the file). Real-time updates broadcast via the SSE push
+function provided at init.
 """
 
 from __future__ import annotations
@@ -68,7 +73,7 @@ _sse_push: Callable[[str, dict], None] = lambda event, data: None
 
 # ── Blueprint ─────────────────────────────────────────────────────────────────
 
-bp = Blueprint('inventory', __name__, url_prefix='/api/inventory')
+bp = Blueprint('pantry', __name__)
 
 
 # ── SQLite connection management ──────────────────────────────────────────────
@@ -145,6 +150,7 @@ CREATE TABLE IF NOT EXISTS products (
     tracks_percent          INTEGER DEFAULT 0,
     units_per_pack          REAL DEFAULT 1,
     count_unit              TEXT DEFAULT 'item',
+    is_staple               INTEGER NOT NULL DEFAULT 0,
     notes                   TEXT DEFAULT '',
     created_at              TEXT NOT NULL,
     updated_at              TEXT NOT NULL
@@ -314,6 +320,12 @@ def _init_db(app: Flask):
             c.execute("ALTER TABLE shopping_list "
                       "ADD COLUMN fulfillment TEXT NOT NULL DEFAULT 'curbside'")
 
+        # Staples flag on products (v1.5.2) — marks "always-keep-stocked"
+        # items so the Pantry tab can filter to just the things we always
+        # want on hand (flour, sugar, paper towels, etc.).
+        if 'is_staple' not in existing_cols:
+            c.execute("ALTER TABLE products ADD COLUMN is_staple INTEGER NOT NULL DEFAULT 0")
+
         # One-time scrub: upgrade any cached http:// product images to https://
         # so the dashboard (served over HTTPS via Cloudflare Tunnel) doesn't
         # trigger mixed-content warnings.
@@ -423,7 +435,7 @@ def _avatar_proxy_url(raw: str) -> str:
         return raw
     # HA returns paths like "/api/image/serve/<hash>/512x512"
     # Route through our proxy so the browser (on dashboard.fna3.net) can fetch it.
-    return f'/api/inventory/avatar?src={requests.utils.quote(raw, safe="")}'
+    return f'/api/pantry/avatar?src={requests.utils.quote(raw, safe="")}'
 
 
 _BOT_NAME_HINTS = ('mqtt', 'bot', 'service', 'system', 'hass', 'node-red', 'esphome')
@@ -759,8 +771,8 @@ def api_products():
         INSERT INTO products
           (id,name,brand,category_id,image_url,default_location_id,default_store_id,
            default_unit,min_threshold,typical_shelf_life_days,tracks_percent,
-           units_per_pack,count_unit,notes,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           units_per_pack,count_unit,is_staple,notes,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (
         pid, name, body.get('brand', ''),
         body.get('category_id'), _https(body.get('image_url', '')),
@@ -771,6 +783,7 @@ def api_products():
         1 if body.get('tracks_percent') else 0,
         max(1.0, float(body.get('units_per_pack') or 1)),
         (body.get('count_unit') or 'item').strip() or 'item',
+        1 if body.get('is_staple') else 0,
         body.get('notes', ''),
         now, now,
     ))
@@ -809,11 +822,13 @@ def api_product(pid):
                   'default_location_id', 'default_store_id',
                   'default_unit', 'min_threshold',
                   'typical_shelf_life_days', 'tracks_percent',
-                  'units_per_pack', 'count_unit', 'notes'):
+                  'units_per_pack', 'count_unit', 'is_staple', 'notes'):
             if k in body:
                 fields.append(f'{k}=?')
                 v = body[k]
                 if k == 'tracks_percent':
+                    v = 1 if v else 0
+                elif k == 'is_staple':
                     v = 1 if v else 0
                 elif k == 'units_per_pack':
                     v = max(1.0, float(v or 1))
@@ -1018,6 +1033,7 @@ def _inv_with_product(c: sqlite3.Connection, where: str = '', args: tuple = ()) 
           p.tracks_percent AS product_tracks_percent,
           p.units_per_pack AS product_units_per_pack,
           p.count_unit     AS product_count_unit,
+          p.is_staple      AS product_is_staple,
           (SELECT barcode FROM barcode_catalog
            WHERE product_id = p.id
            ORDER BY cached_at DESC LIMIT 1) AS upc
@@ -1774,8 +1790,16 @@ def _auto_shopping_sync(c: sqlite3.Connection, pid: str):
 # ── Registration hook (called from server.py) ────────────────────────────────
 
 def init(app: Flask, sse_push: Callable[[str, dict], None]):
-    """Wire the blueprint into the main Flask app and share the SSE broadcaster."""
+    """Wire the blueprint into the main Flask app and share the SSE broadcaster.
+
+    The blueprint is registered at /api/pantry (the new canonical prefix) and
+    again at /api/inventory under a distinct name as a back-compat alias so
+    older clients (or anything still in the wild) keep working through the
+    rename.
+    """
     global _sse_push
     _sse_push = sse_push
     _init_db(app)
-    app.register_blueprint(bp)
+    app.register_blueprint(bp, url_prefix='/api/pantry')
+    app.register_blueprint(bp, url_prefix='/api/inventory',
+                           name='pantry_legacy_alias')

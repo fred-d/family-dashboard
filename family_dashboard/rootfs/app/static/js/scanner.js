@@ -238,7 +238,7 @@ export class BarcodeScanner {
 
         let product = { found: false };
         try {
-            const r = await fetch(apiUrl(`/api/inventory/scan/${encodeURIComponent(barcode)}`));
+            const r = await fetch(apiUrl(`/api/pantry/scan/${encodeURIComponent(barcode)}`));
             const data = await r.json();
             // Normalize the cascading-scan response shape to what the
             // confirm-modal expects (flat fields with camelCase imageUrl).

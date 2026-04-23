@@ -454,6 +454,33 @@
 }
 .grocery-add-fab:active { transform: translateY(0); }
 
+/* Stack the Scan + Add Item FABs along the bottom-right rail */
+.grocery-list-fabs {
+    position:        fixed;
+    bottom:          24px;
+    right:           24px;
+    display:         flex;
+    flex-direction:  column;
+    align-items:     flex-end;
+    gap:             10px;
+    z-index:         50;
+}
+.grocery-list-fabs .grocery-add-fab {
+    position: static; /* override fixed-positioning so the column lays them out */
+}
+.grocery-scan-fab {
+    background:    var(--color-card);
+    color:         var(--color-text);
+    border:        1px solid var(--color-border);
+    box-shadow:    0 4px 14px rgba(0,0,0,0.18);
+    padding:       12px 18px;
+    font-size:     14px;
+}
+:root[data-theme="dark"] .grocery-scan-fab {
+    background:    rgba(255,255,255,0.06);
+    border-color:  rgba(255,255,255,0.12);
+}
+
 /* ══════════════════════════════════════════════════════════════════
    PANTRY TAB
    ══════════════════════════════════════════════════════════════════ */
@@ -536,6 +563,21 @@
     transition:    opacity 0.15s;
 }
 .grocery-pantry-alert-btn:hover { opacity: 0.85; }
+
+/* "Add All Low" alert variant — softer yellow than the urgent "out" alert */
+.grocery-pantry-alert.grocery-pantry-alert-low {
+    background:    #fffbeb;
+    border-color:  #fef3c7;
+    color:         #b45309;
+}
+:root[data-theme="dark"] .grocery-pantry-alert.grocery-pantry-alert-low {
+    background:    rgba(234,179,8,0.06);
+    border-color:  rgba(234,179,8,0.18);
+    color:         #fde68a;
+}
+.grocery-pantry-alert.grocery-pantry-alert-low .grocery-pantry-alert-btn {
+    background: #b45309;
+}
 
 /* Pantry grid */
 .grocery-pantry-grid {

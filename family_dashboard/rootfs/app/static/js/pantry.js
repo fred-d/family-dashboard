@@ -273,12 +273,22 @@ export class PantryApp {
                 }
             </div>
 
-            <button class="grocery-add-fab" id="groceryAddFab" title="Add item">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22">
-                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                </svg>
-                Add Item
-            </button>
+            <div class="grocery-list-fabs">
+                <button class="grocery-add-fab grocery-scan-fab" id="groceryScanNeedFab" title="Scan to add to list">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22">
+                        <rect x="3" y="6" width="18" height="12" rx="2"/>
+                        <line x1="7" y1="9" x2="7" y2="15"/><line x1="11" y1="9" x2="11" y2="15"/>
+                        <line x1="15" y1="9" x2="15" y2="15"/><line x1="19" y1="9" x2="19" y2="15"/>
+                    </svg>
+                    Scan
+                </button>
+                <button class="grocery-add-fab" id="groceryAddFab" title="Add item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22">
+                        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                    Add Item
+                </button>
+            </div>
         `;
 
         body.querySelectorAll('.grocery-filter-btn').forEach(btn => {
@@ -291,6 +301,7 @@ export class PantryApp {
         body.querySelector('#groceryMealPlanBtn')?.addEventListener('click', () => this._openMealPlanImport());
         body.querySelector('#groceryStaplesBtn')?.addEventListener('click', () => this._addStaples());
         body.querySelector('#groceryAddFab')?.addEventListener('click', () => this._openItemModal());
+        body.querySelector('#groceryScanNeedFab')?.addEventListener('click', () => this._openScanner('need'));
 
         body.querySelectorAll('.grocery-item-row').forEach(row => {
             const id = row.dataset.id;
@@ -406,6 +417,12 @@ export class PantryApp {
                     <button class="grocery-pantry-alert-btn" id="groceryAddAllOut">Add All Out</button>
                 </div>` : ''}
 
+            ${lowItems.length > 0 && (filter === 'all' || filter === 'low') ? `
+                <div class="grocery-pantry-alert grocery-pantry-alert-low">
+                    🟡 <strong>${lowItems.length} item${lowItems.length > 1 ? 's' : ''} low or out</strong> — restock?
+                    <button class="grocery-pantry-alert-btn" id="groceryAddAllLow">Add All Low</button>
+                </div>` : ''}
+
             <div class="pantry-grid" id="pantryGrid">
                 ${items.length === 0
                     ? `<div class="grocery-empty" style="grid-column:1/-1">
@@ -428,6 +445,19 @@ export class PantryApp {
         body.querySelector('#groceryAddPantryItem')?.addEventListener('click', () => this._openInvModal());
         body.querySelector('#groceryAddAllOut')?.addEventListener('click', () => {
             outItems.forEach(inv => this._addFromInventory(inv));
+        });
+        body.querySelector('#groceryAddAllLow')?.addEventListener('click', () => {
+            // "Low" alert covers both low and out items so one button restocks
+            // everything that needs attention. Skip items that already have an
+            // open (non-bought) shopping-list entry to avoid duplicates.
+            const openNames = new Set(
+                this._items
+                    .filter(i => !i.checked)
+                    .map(i => (i.name || '').trim().toLowerCase())
+            );
+            lowItems
+                .filter(inv => !openNames.has((inv.name || '').trim().toLowerCase()))
+                .forEach(inv => this._addFromInventory(inv));
         });
 
         // Scan buttons
@@ -662,6 +692,17 @@ export class PantryApp {
                                placeholder="Brand, size, substitution notes…">
                     </div>
 
+                    <div class="grocery-modal-field">
+                        <label>Added By</label>
+                        <select id="groceryItemAddedBy" class="grocery-modal-input">
+                            <option value="">—</option>
+                            ${FAMILY_MEMBERS.map(m => {
+                                const sel = (item?.addedBy || this._lastAddedBy()) === m ? ' selected' : '';
+                                return `<option value="${this._esc(m)}"${sel}>${this._esc(m)}</option>`;
+                            }).join('')}
+                        </select>
+                    </div>
+
                     ${isNew ? `
                         <div class="grocery-modal-save-pantry">
                             <label class="grocery-checkbox-label">
@@ -734,6 +775,8 @@ export class PantryApp {
             const name = nameInput?.value.trim();
             if (!name) { nameInput?.focus(); return; }
             const fulfillmentActive = overlay.querySelector('.grocery-fulfillment-btn.active');
+            const addedBy = overlay.querySelector('#groceryItemAddedBy')?.value || '';
+            if (addedBy) this._rememberAddedBy(addedBy);
             const data = {
                 name,
                 amount:      overlay.querySelector('#groceryItemAmount')?.value.trim()   || '',
@@ -741,6 +784,7 @@ export class PantryApp {
                 category:    catSelect?.value || detectCategory(name),
                 fulfillment: fulfillmentActive?.dataset.ful || 'curbside',
                 notes:       overlay.querySelector('#groceryItemNotes')?.value.trim()    || '',
+                addedBy:     addedBy || null,
                 photo:       this._editItemPhoto || null,
             };
             if (this._editItem) {
@@ -1216,132 +1260,172 @@ export class PantryApp {
     }
 
     // ── LIST CRUD ─────────────────────────────────────────────────────────────
+    //
+    // All mutations go through PantryStore's per-row API. The backend pushes
+    // an SSE 'inventory' event after each change; PantryApp's subscriber in
+    // _load() re-fetches the list and triggers a re-render. So these methods
+    // do NOT mutate this._items locally — they fire the API call and let SSE
+    // close the loop.
 
-    _addItem(data) {
-        const item = {
-            id:          genId('g'),
-            name:        data.name,
-            category:    data.category || detectCategory(data.name),
-            amount:      data.amount   || '',
-            unit:        data.unit     || '',
-            notes:       data.notes    || '',
-            photo:       data.photo    || null,
-            fulfillment: data.fulfillment || 'curbside',
-            checked:     false,
-            source:      data.source   || 'manual',
-            addedBy:     data.addedBy  || null,
-            inventoryRef: data.inventoryRef || null,
-            addedAt:     new Date().toISOString(),
-        };
-        this._items.push(item);
-        this._persist();
-        this._render();
+    async _addItem(data) {
+        this._setSyncStatus('saving');
+        try {
+            // The old grocery shape kept `amount` (freeform: "2 lbs") and
+            // `unit` separately. The SQLite shopping_list has numeric `qty`
+            // + `unit`. Best-effort split: parseFloat(amount) → qty fallback 1.
+            const parsedQty = parseFloat(data.amount);
+            await this.store.addItem({
+                name:        data.name,
+                category:    data.category || detectCategory(data.name),
+                qty:         Number.isFinite(parsedQty) ? parsedQty : 1,
+                unit:        data.unit || 'count',
+                fulfillment: data.fulfillment || 'curbside',
+                notes:       data.notes || '',
+                addedBy:     data.addedBy || null,
+            });
+            this._setSyncStatus('saved', 3000);
+        } catch {
+            this._setSyncStatus('offline', 3000);
+        }
+        // Optimistic re-render is unnecessary: the SSE round-trip is fast
+        // enough that the new item lands within ~100ms via fetchList().
     }
 
-    _updateItem(id, changes) {
-        const idx = this._items.findIndex(i => i.id === id);
-        if (idx < 0) return;
-        this._items[idx] = { ...this._items[idx], ...changes };
-        this._persist();
-        this._render();
+    async _updateItem(id, changes) {
+        this._setSyncStatus('saving');
+        try {
+            // Translate freeform `amount` back into numeric qty when present.
+            const patch = { ...changes };
+            if ('amount' in patch) {
+                const q = parseFloat(patch.amount);
+                if (Number.isFinite(q)) patch.qty = q;
+                delete patch.amount;
+            }
+            await this.store.updateItem(id, patch);
+            this._setSyncStatus('saved', 3000);
+        } catch {
+            this._setSyncStatus('offline', 3000);
+        }
     }
 
-    _toggleItem(id) {
+    async _toggleItem(id) {
         const item = this._items.find(i => i.id === id);
         if (!item) return;
-        item.checked = !item.checked;
-        this._persist();
-        this._render();
+        await this._updateItem(id, { checked: !item.checked });
     }
 
-    _removeItem(id) {
-        this._items = this._items.filter(i => i.id !== id);
-        this._persist();
-        this._render();
+    async _removeItem(id) {
+        this._setSyncStatus('saving');
+        try {
+            await this.store.deleteItem(id);
+            this._setSyncStatus('saved', 3000);
+        } catch {
+            this._setSyncStatus('offline', 3000);
+        }
     }
 
-    _clearChecked() {
-        this._items = this._items.filter(i => !i.checked);
-        this._persist();
-        this._render();
+    async _clearChecked() {
+        const ids = this._items.filter(i => i.checked).map(i => i.id);
+        if (!ids.length) return;
+        this._setSyncStatus('saving');
+        try {
+            await this.store.clearChecked(ids);
+            this._setSyncStatus('saved', 3000);
+        } catch {
+            this._setSyncStatus('offline', 3000);
+        }
     }
 
-    _addStaples() {
+    async _addStaples() {
+        // Add every Pantry item flagged ⭐ Staple to the shopping list, skipping
+        // anything that's already on the open list (status != bought).
         const staples = this._inventory.filter(i => i.isStaple);
         if (staples.length === 0) {
-            alert('No staples set yet. Mark items as ⭐ Staples in the Pantry tab first.');
+            alert('No items are marked as ⭐ Staples yet. ' +
+                  'Tap the star on a Pantry card to flag it.');
             return;
         }
-        let added = 0;
-        staples.forEach(inv => {
-            const alreadyOn = this._items.some(i => !i.checked && i.name.toLowerCase() === inv.name.toLowerCase());
-            if (!alreadyOn) { this._addFromInventory(inv); added++; }
-        });
-        if (added === 0) alert('All your staples are already on the list!');
+        const openNames = new Set(
+            this._items
+                .filter(i => !i.checked)
+                .map(i => (i.name || '').trim().toLowerCase())
+        );
+        const toAdd = staples.filter(
+            inv => !openNames.has((inv.name || '').trim().toLowerCase())
+        );
+        if (toAdd.length === 0) {
+            alert('All staples are already on the shopping list.');
+            return;
+        }
+        for (const inv of toAdd) await this._addFromInventory(inv);
     }
 
     // ── INVENTORY CRUD ────────────────────────────────────────────────────────
+    //
+    // Same pattern as LIST CRUD: per-row API calls, SSE-driven re-render.
+    // The new SQLite backend stores most "default*" fields on the `products`
+    // table rather than per-inventory-row, so several legacy fields are
+    // dropped silently (defaultAmount, defaultUnit, useCount, lastAdded,
+    // autoAddToList). Adding/editing those needs the New Item modal to
+    // create or pick a product first — wired in a follow-up PR.
 
-    _addFromInventory(inv) {
+    async _addFromInventory(inv) {
         const alreadyOn = this._items.some(i => !i.checked && i.name.toLowerCase() === inv.name.toLowerCase());
         if (alreadyOn) return;
-        this._addItem({
-            name:         inv.name,
-            amount:       inv.defaultAmount || '',
-            unit:         inv.defaultUnit   || '',
-            category:     inv.category,
-            fulfillment:  inv.defaultFulfillment || 'curbside',
-            notes:        inv.notes || '',
-            photo:        inv.photo || null,
-            source:       'inventory',
-            inventoryRef: inv.id,
-        });
-        this._updateInventoryItem(inv.id, { useCount: (inv.useCount || 0) + 1, lastAdded: new Date().toISOString() }, false);
-    }
-
-    _addInventoryItem(data) {
-        const item = {
-            id:                 genId('inv'),
-            name:               data.name,
-            category:           data.category || detectCategory(data.name),
-            defaultAmount:      data.defaultAmount      || '',
-            defaultUnit:        data.defaultUnit        || '',
-            notes:              data.notes              || '',
-            photo:              data.photo              || null,
-            defaultFulfillment: data.defaultFulfillment || 'curbside',
-            isStaple:           data.isStaple           || false,
-            stockLevel:         data.stockLevel         || 'ok',
-            brand:              data.brand              || '',
-            upc:                data.upc                || '',
-            autoAddToList:      data.autoAddToList      ?? false,
-            useCount:           0,
-            lastAdded:          null,
-        };
-        this._inventory.push(item);
-        this._persistInventory();
-        this._render();
-    }
-
-    _addInventoryItemFromListData(data) {
-        const exists = this._inventory.some(i => i.name.toLowerCase() === data.name.toLowerCase());
-        if (exists) return;
-        this._addInventoryItem({
-            name:               data.name,
-            category:           data.category,
-            defaultAmount:      data.amount,
-            defaultUnit:        data.unit,
-            notes:              data.notes,
-            photo:              data.photo,
-            defaultFulfillment: data.fulfillment,
+        await this._addItem({
+            name:        inv.name,
+            category:    inv.category,
+            fulfillment: 'curbside',
+            notes:       inv.notes || '',
+            // The backend resolves the joined product image from product_id,
+            // so passing a plain name is enough to round-trip a sensible row.
         });
     }
 
-    _updateInventoryItem(id, changes, rerender = true) {
-        const idx = this._inventory.findIndex(i => i.id === id);
-        if (idx < 0) return;
-        this._inventory[idx] = { ...this._inventory[idx], ...changes };
-        this._persistInventory();
-        if (rerender) this._render();
+    async _addInventoryItem(data) {
+        // Adding a brand-new pantry item from scratch requires creating a
+        // product row first (the SQLite schema's items table is FK'd to
+        // products). That flow lands in a follow-up PR — for now, point the
+        // user at the scanner which already creates products via the cascade
+        // lookup.
+        alert('Manually adding pantry items is coming back in a follow-up PR. ' +
+              'For now, scan an item with the 📥 Scan to Restock button — the ' +
+              'backend will look it up and add the product automatically.');
+    }
+
+    async _addInventoryItemFromListData(_data) {
+        // "Save to Pantry" checkbox in the Add-to-list modal — same blocker
+        // as _addInventoryItem above. Silently skip rather than error.
+    }
+
+    async _updateInventoryItem(id, changes, _rerender = true) {
+        // qty / notes / location patch the inventory row.
+        // isStaple patches the parent product row (handled by the store).
+        // Other legacy fields (useCount, defaultAmount, …) still no-op until
+        // follow-up PRs add columns for them.
+        const patch = {};
+        if ('qty'        in changes) patch.qty        = changes.qty;
+        if ('notes'      in changes) patch.notes      = changes.notes;
+        if ('locationId' in changes) patch.locationId = changes.locationId;
+        if ('isStaple'   in changes) patch.isStaple   = changes.isStaple;
+
+        // stockLevel is a derived field — translate back into a qty so the
+        // backend's percent/threshold logic keeps working.
+        if ('stockLevel' in changes) {
+            const inv = this._inventory.find(i => i.id === id);
+            const threshold = inv?.low ?? 0;
+            patch.qty =
+                changes.stockLevel === 'out' ? 0 :
+                changes.stockLevel === 'low' ? Math.max(1, threshold) :
+                                               Math.max(threshold + 1, (inv?.qty || 0) + 1);
+        }
+
+        if (Object.keys(patch).length === 0) return;
+        try {
+            await this.store.updateInventoryItem(id, patch);
+        } catch (err) {
+            console.warn('[PantryApp] updateInventoryItem failed:', err.message);
+        }
     }
 
     // ── Scanner integration ───────────────────────────────────────────────────
@@ -1381,6 +1465,35 @@ export class PantryApp {
             } else {
                 // Not in pantry — offer to add to shopping list directly
                 this._openAddToListDirectModal(product, barcode);
+            }
+        } else if (mode === 'need') {
+            // Shopping List quick-add. If we already have a pantry record we
+            // can copy the canonical name/category; otherwise use whatever the
+            // backend cascade lookup returned, falling back to the raw barcode.
+            const existing = this._inventory.find(i => i.upc === barcode) ||
+                             (product.name ? this._inventory.find(i => i.name.toLowerCase() === product.name.toLowerCase()) : null);
+            if (existing) {
+                const onList = this._items.find(
+                    i => !i.checked && (i.inventoryRef === existing.id ||
+                                        i.name.toLowerCase() === existing.name.toLowerCase())
+                );
+                if (onList) {
+                    this._showToast(`✓ ${existing.name} is already on the list`);
+                    return;
+                }
+                this._addFromInventory(existing);
+                this._showToast(`🛒 ${existing.name} added to list`);
+            } else {
+                const name = product.name || `Item ${barcode}`;
+                this._addItem({
+                    name,
+                    category: product.category || detectCategory(name),
+                    notes:    product.brand ? `Brand: ${product.brand}` : '',
+                    photo:    product.imageUrl || null,
+                    source:   'scan',
+                    addedBy:  this._lastAddedBy() || null,
+                });
+                this._showToast(`🛒 ${name} added to list`);
             }
         }
     }
@@ -1500,23 +1613,23 @@ export class PantryApp {
         requestAnimationFrame(() => toast.classList.add('show'));
     }
 
-    _removeInventoryItem(id) {
-        this._inventory = this._inventory.filter(i => i.id !== id);
-        this._persistInventory();
-        this._render();
+    async _removeInventoryItem(id) {
+        try {
+            await this.store.deleteInventoryItem(id);
+        } catch (err) {
+            console.warn('[PantryApp] deleteInventoryItem failed:', err.message);
+        }
     }
 
-    // ── Persist ───────────────────────────────────────────────────────────────
+    // ── Persist (legacy bulk-save shims) ──────────────────────────────────────
+    //
+    // The old grocery store had bulk saveList/saveInventory endpoints. The
+    // SQLite backend doesn't — every mutation is per-row and goes via the
+    // PantryStore API directly. These helpers are kept as no-ops so any
+    // residual call sites (or future merges from old branches) don't crash.
 
-    async _persist() {
-        this._setSyncStatus('saving');
-        const result = await this.store.saveList(this._items);
-        this._setSyncStatus(result === 'saved' ? 'saved' : 'offline', 3000);
-    }
-
-    async _persistInventory() {
-        await this.store.saveInventory(this._inventory);
-    }
+    async _persist()          { /* per-row API; no bulk save */ }
+    async _persistInventory() { /* per-row API; no bulk save */ }
 
     // ── Sync badge ────────────────────────────────────────────────────────────
 
@@ -1547,6 +1660,19 @@ export class PantryApp {
     _esc(s) {
         return String(s ?? '')
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    /**
+     * Family picker: remember the last person who added something so the
+     * picker pre-selects them next time. Per-browser, so different family
+     * members on different devices get their own default.
+     */
+    _lastAddedBy() {
+        try { return localStorage.getItem('pantry.lastAddedBy') || ''; }
+        catch { return ''; }
+    }
+    _rememberAddedBy(name) {
+        try { localStorage.setItem('pantry.lastAddedBy', name); } catch {}
     }
 
     _timeAgo(isoStr) {
