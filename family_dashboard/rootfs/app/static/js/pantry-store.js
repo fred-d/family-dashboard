@@ -149,6 +149,7 @@ export class PantryStore {
             fulfillment: item.fulfillment ?? 'curbside',
             notes:       item.notes ?? '',
             store_id:    item.storeId ?? null,
+            added_by:    item.addedBy ?? null,
         };
         if (item.productId) body.product_id = item.productId;
         return this._send('POST', '/api/inventory/shopping', body);
@@ -170,6 +171,7 @@ export class PantryStore {
         if ('checked'     in patch) body.status      = patch.checked ? 'bought' : 'needed';
         if ('status'      in patch) body.status      = patch.status;
         if ('category'    in patch) body.category_id = this._categoryIdForGroceryId(patch.category);
+        if ('addedBy'     in patch) body.added_by    = patch.addedBy;
         return this._send('PATCH', `/api/inventory/shopping/${id}`, body);
     }
 
