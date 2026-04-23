@@ -77,8 +77,12 @@ function stockState(item) {
 }
 
 function _effectivePercent(item) {
-    const pct = Number(item?.percent);
-    if (Number.isFinite(pct)) return Math.max(0, Math.min(100, pct));
+    // Guard: Number(null) === 0, which is finite — that would make null-percent
+    // items (those that track qty, not %) always appear "Out". Check nullness first.
+    if (item?.percent != null) {
+        const pct = Number(item.percent);
+        if (Number.isFinite(pct)) return Math.max(0, Math.min(100, pct));
+    }
     // No percent set — derive from qty vs par_qty (target on-hand quantity).
     const qty = Number(item?.qty_on_hand);
     const par = Number(item?.par_qty || item?.low_qty_threshold) || 1;
@@ -470,9 +474,11 @@ export class InventoryApp {
             b.classList.toggle('active', b.dataset.tab === tab));
         this.$invPanel.hidden  = tab !== 'inventory';
         this.$shopPanel.hidden = tab !== 'shopping';
-        // Re-label Add button
-        const $add = this.container.querySelector('[data-action="add"]');
-        if ($add) $add.textContent = tab === 'shopping' ? '＋ Add to List' : '＋ Add';
+        // Re-label Add and Scan buttons to reflect context
+        const $add  = this.container.querySelector('[data-action="add"]');
+        const $scan = this.container.querySelector('[data-action="scan"]');
+        if ($add)  $add.textContent  = tab === 'shopping' ? '＋ Add to List' : '＋ Add';
+        if ($scan) $scan.textContent = tab === 'shopping' ? '📷 Scan to List' : '📷 Scan';
     }
 
     _toggleViewStyle() {
@@ -1206,30 +1212,72 @@ export class InventoryApp {
 
     async _openScanner() {
         if (!this._scanner) this._scanner = new BarcodeScanner();
-        this._scanner.open('restock', async (result) => {
-            if (!result?.barcode) return;
 
-            // If we already have an inventory lot for this UPC, just restock
-            // it in place. Otherwise open the Add modal pre-filled with
-            // whatever the scanner resolved so the user can pick a location.
-            const existing = (this.store.items || []).find(i => i.upc === result.barcode);
-            if (existing) {
-                // Scanning a pack home → add a whole pack worth of units.
-                await this.store.restockPacks(existing.id, 1).catch(() => {});
-                return;
-            }
-            const p = result.product || {};
-            this._openItemModal({
-                mode: 'add',
-                prefill: {
-                    upc:       result.barcode,
-                    name:      p.name  || '',
-                    brand:     p.brand || '',
+        if (this._tab === 'shopping') {
+            // ── Shopping-list scan ─────────────────────────────────────────
+            // "I'm in the kitchen, tossing something away — quick-add to list."
+            // Find the product by UPC (already-known items) or scanner result,
+            // then add to the shopping list. No inventory rows are touched.
+            this._scanner.open('need', async (result) => {
+                if (!result?.barcode) return;
+                const p = result.product || {};
+
+                // Already tracked in inventory? Use the known product_id.
+                const invItem = (this.store.items || []).find(i => i.upc === result.barcode);
+                if (invItem?.product_id) {
+                    await this.store.needProduct(invItem.product_id, { qty: 1 }).catch(() => {});
+                    this._renderShopping();
+                    return;
+                }
+
+                // Already on shopping list? Just bump its qty.
+                const shopItem = (this.store.shopping || []).find(i => i.upc === result.barcode);
+                if (shopItem) {
+                    await this.store.updateShopping(shopItem.id, {
+                        qty: (Number(shopItem.qty) || 1) + 1,
+                    }).catch(() => {});
+                    this._renderShopping();
+                    return;
+                }
+
+                // Completely unknown — add a bare shopping-list row.
+                const name = p.name || result.barcode;
+                await this.store.addShopping({
+                    name,
+                    brand:    p.brand || '',
+                    qty:      1,
+                    upc:      result.barcode,
                     image_url: p.imageUrl || '',
-                    category_id: p.category || '',
-                },
+                }).catch(() => {});
+                this._renderShopList();
             });
-        });
+        } else {
+            // ── Inventory restock scan ────────────────────────────────────
+            // "Groceries just arrived — put them away."
+            // If we already have an inventory lot for this UPC, add a full
+            // pack worth of units. Otherwise open the Add modal pre-filled
+            // with whatever the scanner resolved so the user can pick a location.
+            this._scanner.open('restock', async (result) => {
+                if (!result?.barcode) return;
+
+                const existing = (this.store.items || []).find(i => i.upc === result.barcode);
+                if (existing) {
+                    await this.store.restockPacks(existing.id, 1).catch(() => {});
+                    return;
+                }
+                const p = result.product || {};
+                this._openItemModal({
+                    mode: 'add',
+                    prefill: {
+                        upc:         result.barcode,
+                        name:        p.name     || '',
+                        brand:       p.brand    || '',
+                        image_url:   p.imageUrl || '',
+                        category_id: p.category || '',
+                    },
+                });
+            });
+        }
     }
 
     _openAddSheet(prefill = {}) {
