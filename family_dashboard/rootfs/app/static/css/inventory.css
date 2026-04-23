@@ -291,6 +291,16 @@
   line-height: 1;
   gap: 3px;
   min-width: 64px;
+  /* button reset */
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.inv-stat:hover { border-color: var(--theme-primary); background: var(--color-surface); }
+.inv-stat:active { box-shadow: 0 0 0 2px var(--theme-primary-fade, rgba(99,102,241,0.15)); }
+.inv-stat.active {
+  border-color: var(--theme-primary);
+  background: var(--theme-primary-fade, rgba(99,102,241,0.08));
 }
 .inv-stat-num { font-size: 18px; font-weight: 700; color: var(--color-text); }
 .inv-stat-lbl { font-size: 10px; font-weight: 600; color: var(--color-muted); text-transform: uppercase; letter-spacing: 0.5px; }
@@ -298,6 +308,9 @@
 .inv-stat.out  .inv-stat-num { color: var(--color-danger); }
 .inv-stat.warn .inv-stat-num { color: #eab308; }
 .inv-stat.shop .inv-stat-num { color: var(--theme-primary); }
+.inv-stat.low.active  { border-color: #f59e0b; background: rgba(245,158,11,0.08); }
+.inv-stat.out.active  { border-color: var(--color-danger); background: rgba(239,68,68,0.08); }
+.inv-stat.warn.active { border-color: #eab308; background: rgba(234,179,8,0.08); }
 
 /* ── Location tabs ───────────────────────────────────────────────────────── */
 
@@ -1731,6 +1744,39 @@ button.inv-shop-fulfillment:active { transform: scale(0.95); }
 @media (min-width: 900px) {
   .inv-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
   .inv-shop-header { flex-wrap: nowrap; }
+}
+
+/* ── "Need this" fulfillment picker ─────────────────────────────────────── */
+
+.inv-need-picker {
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.inv-need-pick-prompt {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+.inv-need-fulfillment-btns {
+  display: flex;
+  gap: var(--sp-2);
+}
+.inv-need-fulfillment-btns .inv-btn {
+  flex: 1;
+  justify-content: center;
+  font-size: 15px;
+  padding: 12px 8px;
+}
+
+/* "On list" variant of the Need-this button in the detail sheet */
+.inv-btn-on-list {
+  color: var(--theme-primary);
+  border-color: var(--theme-primary);
+}
+.inv-btn-on-list:hover {
+  background: var(--theme-primary-fade, rgba(99,102,241,0.08));
 }
 
 /* ── Dark / theme-aware tweaks ───────────────────────────────────────────── */
