@@ -307,6 +307,13 @@ def _init_db(app: Flask):
         if 'count_unit' not in existing_cols:
             c.execute("ALTER TABLE products ADD COLUMN count_unit TEXT DEFAULT 'item'")
 
+        # Add fulfillment column to shopping_list (v1.4.13).
+        # Values: 'curbside' (delivery/pickup) | 'instore' (grab it yourself).
+        shop_cols = {row[1] for row in c.execute('PRAGMA table_info(shopping_list)')}
+        if 'fulfillment' not in shop_cols:
+            c.execute("ALTER TABLE shopping_list "
+                      "ADD COLUMN fulfillment TEXT NOT NULL DEFAULT 'curbside'")
+
         # One-time scrub: upgrade any cached http:// product images to https://
         # so the dashboard (served over HTTPS via Cloudflare Tunnel) doesn't
         # trigger mixed-content warnings.
@@ -868,17 +875,20 @@ def api_product_need(pid):
         sid = existing['id']
     else:
         sid = _uid()
+        need_fulfillment = body.get('fulfillment', 'curbside')
+        if need_fulfillment not in ('curbside', 'instore'):
+            need_fulfillment = 'curbside'
         c.execute('''
             INSERT INTO shopping_list
               (id,product_id,name,qty,unit,store_id,category_id,status,source,
-               added_by,notes,created_at,updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+               added_by,notes,fulfillment,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ''', (sid, pid, p['name'], qty,
               p.get('default_unit') or 'count',
               body.get('store_id') or p.get('default_store_id'),
               p.get('category_id'),
               'needed', 'manual', _person_id(),
-              body.get('notes', ''), now, now))
+              body.get('notes', ''), need_fulfillment, now, now))
     _sse_push('inventory', {'type': 'shopping'})
     return jsonify({'ok': True, 'shopping_id': sid})
 
@@ -1591,17 +1601,20 @@ def api_shopping():
 
     sid = _uid()
     now = _now()
+    fulfillment = body.get('fulfillment', 'curbside')
+    if fulfillment not in ('curbside', 'instore'):
+        fulfillment = 'curbside'
     c.execute('''
         INSERT INTO shopping_list
           (id,product_id,name,qty,unit,store_id,category_id,status,source,
-           added_by,notes,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+           added_by,notes,fulfillment,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (
         sid, body.get('product_id'), name,
         float(body.get('qty', 1)), body.get('unit', 'count'),
         body.get('store_id'), body.get('category_id'),
         body.get('status', 'needed'), 'manual',
-        _person_id(), body.get('notes', ''), now, now,
+        _person_id(), body.get('notes', ''), fulfillment, now, now,
     ))
     _sse_push('inventory', {'type': 'shopping'})
     return jsonify(_row(c.execute('SELECT * FROM shopping_list WHERE id=?', (sid,)).fetchone()))
@@ -1615,7 +1628,7 @@ def api_shopping_item(sid):
         fields: list[str] = []
         values: list[Any] = []
         for k in ('name', 'qty', 'unit', 'store_id', 'category_id',
-                  'status', 'notes'):
+                  'status', 'notes', 'fulfillment'):
             if k in body:
                 fields.append(f'{k}=?')
                 values.append(body[k])
@@ -1746,13 +1759,13 @@ def _auto_shopping_sync(c: sqlite3.Connection, pid: str):
             c.execute('''
                 INSERT INTO shopping_list
                   (id,product_id,name,qty,unit,store_id,category_id,status,source,
-                   notes,created_at,updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                   notes,fulfillment,created_at,updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
             ''', (_uid(), pid, row['name'], needed,
                   row['default_unit'] or 'count',
                   row['default_store_id'], row['category_id'],
                   'needed', 'auto',
-                  'Auto-added: below minimum threshold', _now(), _now()))
+                  'Auto-added: below minimum threshold', 'curbside', _now(), _now()))
     else:
         if existing:
             c.execute('DELETE FROM shopping_list WHERE id=?', (existing['id'],))

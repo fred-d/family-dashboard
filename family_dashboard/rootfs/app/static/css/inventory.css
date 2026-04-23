@@ -1187,6 +1187,88 @@
 
 /* ── Shopping panel ──────────────────────────────────────────────────────── */
 
+/* Fulfillment filter bar — sits above the store/actions row */
+.inv-shop-fulfillment-bar {
+  display: flex;
+  gap: 0;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  flex-shrink: 0;
+}
+.inv-fulfillment-btn {
+  flex: 1;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.inv-fulfillment-btn:first-child { border-radius: 8px 0 0 8px; }
+.inv-fulfillment-btn:last-child  { border-radius: 0 8px 8px 0; border-left: none; }
+.inv-fulfillment-btn:not(:first-child):not(:last-child) { border-left: none; }
+.inv-fulfillment-btn:hover {
+  background: var(--color-surface-hover, color-mix(in srgb, var(--theme-primary) 8%, transparent));
+  color: var(--color-text);
+}
+.inv-fulfillment-btn.active {
+  background: var(--theme-primary);
+  color: #fff;
+  border-color: var(--theme-primary);
+}
+/* Curbside active = blue tint */
+.inv-fulfillment-btn.curbside.active { background: #0ea5e9; border-color: #0ea5e9; }
+/* In-store active = amber */
+.inv-fulfillment-btn.instore.active  { background: #f59e0b; border-color: #f59e0b; }
+
+/* Fulfillment badge on shopping rows */
+.inv-shop-fulfillment {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  gap: 2px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.inv-shop-fulfillment.curbside {
+  background: color-mix(in srgb, #0ea5e9 15%, transparent);
+  color: #0369a1;
+}
+.inv-shop-fulfillment.instore {
+  background: color-mix(in srgb, #f59e0b 15%, transparent);
+  color: #92400e;
+}
+
+/* Fulfillment toggle in Add-to-List modal */
+.inv-fulfillment-toggle {
+  display: flex;
+  gap: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  width: 100%;
+}
+.inv-fulfillment-opt {
+  flex: 1;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.inv-fulfillment-opt:first-of-type { border-radius: 8px 0 0 8px; }
+.inv-fulfillment-opt:last-of-type  { border-radius: 0 8px 8px 0; border-left: none; }
+.inv-fulfillment-opt:hover { background: var(--color-surface-hover, color-mix(in srgb, var(--theme-primary) 8%, transparent)); color: var(--color-text); }
+.inv-fulfillment-opt[data-opt="curbside"].active { background: #0ea5e9; border-color: #0ea5e9; color: #fff; }
+.inv-fulfillment-opt[data-opt="instore"].active  { background: #f59e0b; border-color: #f59e0b; color: #fff; }
+
 .inv-shop-header {
   display: flex;
   gap: 8px;

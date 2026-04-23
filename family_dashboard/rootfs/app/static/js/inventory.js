@@ -145,7 +145,8 @@ export class InventoryApp {
         this._location  = 'all';   // location id | 'all'
         this._filter    = 'all';   // 'all' | 'low' | 'expiring' | 'out'
         this._search    = '';
-        this._shopStore = 'all';  // store id | 'all'
+        this._shopStore       = 'all';  // store id | 'all'
+        this._shopFulfillment = 'all';  // 'all' | 'curbside' | 'instore'
         this._walkOpen  = false;   // walk mode overlay open
 
         // Lazy-constructed scanner
@@ -222,6 +223,19 @@ export class InventoryApp {
             <!-- ══ LIST (SHOPPING) PANEL ══ -->
             <div class="inv-panel" data-panel="list" hidden>
 
+                <!-- Fulfillment filter — the primary way to slice the list -->
+                <div class="inv-shop-fulfillment-bar" data-fulfillment-bar>
+                    <button type="button" class="inv-fulfillment-btn active" data-fulfillment="all">
+                        All
+                    </button>
+                    <button type="button" class="inv-fulfillment-btn curbside" data-fulfillment="curbside">
+                        🚗 Curbside
+                    </button>
+                    <button type="button" class="inv-fulfillment-btn instore" data-fulfillment="instore">
+                        🏪 In-Store
+                    </button>
+                </div>
+
                 <div class="inv-shop-header">
                     <select class="inv-input inv-shop-store-select" data-shop-store>
                         <option value="all">All stores</option>
@@ -293,6 +307,7 @@ export class InventoryApp {
         this.$sheetCard   = this.container.querySelector('[data-sheet-card]');
         this.$search      = this.container.querySelector('.inv-search-input');
         this.$viewToggle  = this.container.querySelector('[data-view-toggle]');
+        this.$shopFulfillmentBar = this.container.querySelector('[data-fulfillment-bar]');
         this.$shopStore   = this.container.querySelector('[data-shop-store]');
         this.$shopList    = this.container.querySelector('[data-shop-list]');
         this.$shopEmpty   = this.container.querySelector('[data-shop-empty]');
@@ -361,6 +376,16 @@ export class InventoryApp {
             ?.addEventListener('click', () => this._openWalkMode());
 
         this.$stockAll?.addEventListener('click', () => this._stockAllBought());
+
+        // Fulfillment filter bar
+        this.$shopFulfillmentBar.addEventListener('click', e => {
+            const btn = e.target.closest('[data-fulfillment]');
+            if (!btn) return;
+            this._shopFulfillment = btn.dataset.fulfillment;
+            this.$shopFulfillmentBar.querySelectorAll('[data-fulfillment]').forEach(b =>
+                b.classList.toggle('active', b.dataset.fulfillment === this._shopFulfillment));
+            this._renderShopping();
+        });
 
         this.$shopStore.addEventListener('change', () => {
             this._shopStore = this.$shopStore.value;
@@ -641,6 +666,10 @@ export class InventoryApp {
         let filtered = this._shopStore === 'all'
             ? all
             : all.filter(r => r.store_id === this._shopStore || !r.store_id);
+        if (this._shopFulfillment !== 'all') {
+            filtered = filtered.filter(r =>
+                (r.fulfillment || 'curbside') === this._shopFulfillment);
+        }
 
         // Clear previous rows but keep empty state element
         this.$shopList.querySelectorAll('.inv-shop-row, .inv-shop-group').forEach(n => n.remove());
@@ -732,6 +761,12 @@ export class InventoryApp {
             <span class="inv-shop-store" style="border-color:${_esc(r.store_color || 'var(--color-border)')}">
                 ${_esc(r.store_name)}
             </span>` : '';
+        const fulfillment = r.fulfillment || 'curbside';
+        const fulfillmentBadge = `
+            <span class="inv-shop-fulfillment ${_esc(fulfillment)}"
+                  title="${fulfillment === 'curbside' ? 'Curbside / Delivery' : 'In-Store pickup'}">
+                ${fulfillment === 'curbside' ? '🚗' : '🏪'}
+            </span>`;
         const sourceBadge = r.source === 'auto'
             ? `<span class="inv-shop-source auto" title="Auto-added: stock below minimum">⟳ auto</span>`
             : '';
@@ -773,6 +808,7 @@ export class InventoryApp {
                 <div class="inv-shop-body">
                     <div class="inv-shop-name">${_esc(r.name)}</div>
                     <div class="inv-shop-meta">
+                        ${fulfillmentBadge}
                         ${sourceBadge}
                         ${statusBadge}
                         ${storeChip}
@@ -793,9 +829,13 @@ export class InventoryApp {
         const stores = this.store.config.stores || [];
         const categories = this.store.config.categories || [];
 
+        // Default fulfillment to whatever the active filter is (or curbside)
+        const defaultFulfillment = (this._shopFulfillment !== 'all')
+            ? this._shopFulfillment : 'curbside';
+
         this.$sheetCard.innerHTML = `
             <button type="button" class="inv-sheet-close" data-sheet-close aria-label="Close">×</button>
-            <h2 class="inv-form-title">Add to Shopping List</h2>
+            <h2 class="inv-form-title">Add to List</h2>
 
             <form class="inv-form" data-shop-form novalidate>
                 <label class="inv-field">
@@ -803,6 +843,24 @@ export class InventoryApp {
                     <input type="text" class="inv-input" name="name" required autocomplete="off"
                            placeholder="e.g. Crest toothpaste (mint)">
                 </label>
+
+                <!-- Fulfillment toggle -->
+                <div class="inv-field">
+                    <span class="inv-field-label">How are you getting it?</span>
+                    <div class="inv-fulfillment-toggle" data-fulfillment-toggle>
+                        <input type="hidden" name="fulfillment" value="${defaultFulfillment}">
+                        <button type="button"
+                                class="inv-fulfillment-opt${defaultFulfillment === 'curbside' ? ' active' : ''}"
+                                data-opt="curbside">
+                            🚗 Curbside / Delivery
+                        </button>
+                        <button type="button"
+                                class="inv-fulfillment-opt${defaultFulfillment === 'instore' ? ' active' : ''}"
+                                data-opt="instore">
+                            🏪 In-Store
+                        </button>
+                    </div>
+                </div>
 
                 <div class="inv-form-grid">
                     <label class="inv-field">
@@ -833,7 +891,7 @@ export class InventoryApp {
                     <label class="inv-field inv-field-wide">
                         <span class="inv-field-label">Notes</span>
                         <input type="text" class="inv-input" name="notes" autocomplete="off"
-                               placeholder="optional — brand, flavor, who it's for…">
+                               placeholder="optional — brand, flavor, size…">
                     </label>
                 </div>
 
@@ -846,6 +904,17 @@ export class InventoryApp {
                 </div>
             </form>
         `;
+
+        // Wire fulfillment toggle buttons
+        const $toggle = this.$sheetCard.querySelector('[data-fulfillment-toggle]');
+        const $hiddenFulfillment = $toggle.querySelector('[name="fulfillment"]');
+        $toggle.addEventListener('click', e => {
+            const opt = e.target.closest('[data-opt]');
+            if (!opt) return;
+            $hiddenFulfillment.value = opt.dataset.opt;
+            $toggle.querySelectorAll('[data-opt]').forEach(b =>
+                b.classList.toggle('active', b.dataset.opt === opt.dataset.opt));
+        });
 
         const $form = this.$sheetCard.querySelector('[data-shop-form]');
         $form.addEventListener('submit', async e => {
@@ -862,6 +931,7 @@ export class InventoryApp {
                     store_id:    data.store_id || null,
                     category_id: data.category_id || null,
                     notes:       data.notes || '',
+                    fulfillment: data.fulfillment || 'curbside',
                 });
                 this._closeSheet();
             } catch (err) {
@@ -1216,8 +1286,10 @@ export class InventoryApp {
         if (this._tab === 'list') {
             // ── List-tab scan ──────────────────────────────────────────────
             // "I'm in the kitchen, tossing something away — quick-add to list."
-            // Find the product by UPC (already-known items) or scanner result,
-            // then add to the shopping list. No inventory rows are touched.
+            // Inherit the active fulfillment filter (defaults to curbside).
+            const scanFulfillment = this._shopFulfillment !== 'all'
+                ? this._shopFulfillment : 'curbside';
+
             this._scanner.open('need', async (result) => {
                 if (!result?.barcode) return;
                 const p = result.product || {};
@@ -1225,7 +1297,9 @@ export class InventoryApp {
                 // Already tracked in inventory? Use the known product_id.
                 const invItem = (this.store.items || []).find(i => i.upc === result.barcode);
                 if (invItem?.product_id) {
-                    await this.store.needProduct(invItem.product_id, { qty: 1 }).catch(() => {});
+                    await this.store.needProduct(invItem.product_id, {
+                        qty: 1, fulfillment: scanFulfillment,
+                    }).catch(() => {});
                     this._renderShopping();
                     return;
                 }
@@ -1244,12 +1318,13 @@ export class InventoryApp {
                 const name = p.name || result.barcode;
                 await this.store.addShopping({
                     name,
-                    brand:    p.brand || '',
-                    qty:      1,
-                    upc:      result.barcode,
-                    image_url: p.imageUrl || '',
+                    brand:       p.brand || '',
+                    qty:         1,
+                    upc:         result.barcode,
+                    image_url:   p.imageUrl || '',
+                    fulfillment: scanFulfillment,
                 }).catch(() => {});
-                this._renderShopList();
+                this._renderShopping();
             });
         } else {
             // ── Inventory restock scan ────────────────────────────────────
