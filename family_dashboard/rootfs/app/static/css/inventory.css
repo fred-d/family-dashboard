@@ -1269,6 +1269,44 @@
 .inv-fulfillment-opt[data-opt="curbside"].active { background: #0ea5e9; border-color: #0ea5e9; color: #fff; }
 .inv-fulfillment-opt[data-opt="instore"].active  { background: #f59e0b; border-color: #f59e0b; color: #fff; }
 
+/* Fulfillment count chips row — sits between filter bar and shop header */
+.inv-shop-counts {
+  display: flex;
+  gap: 8px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  flex-shrink: 0;
+  min-height: 32px;
+  align-items: center;
+}
+.inv-shop-count-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 12px;
+}
+.inv-shop-count-chip.curbside {
+  background: color-mix(in srgb, #0ea5e9 12%, transparent);
+  color: #0369a1;
+}
+.inv-shop-count-chip.instore {
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+  color: #92400e;
+}
+
+/* Make the row's fulfillment badge tappable */
+button.inv-shop-fulfillment {
+  border: none;
+  cursor: pointer;
+  transition: transform 0.12s, opacity 0.12s;
+}
+button.inv-shop-fulfillment:hover { opacity: 0.75; transform: scale(1.15); }
+button.inv-shop-fulfillment:active { transform: scale(0.95); }
+
 .inv-shop-header {
   display: flex;
   gap: 8px;

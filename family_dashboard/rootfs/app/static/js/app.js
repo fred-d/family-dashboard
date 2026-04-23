@@ -16,7 +16,7 @@ import { MealPlanner } from './meals.js';
 import { MealStore } from './meal-store.js';
 import { RecipeApp } from './recipes.js';
 import { RecipeStore } from './recipe-store.js';
-import { InventoryApp } from './inventory.js?v=14';
+import { InventoryApp } from './inventory.js?v=15';
 import { InventoryStore } from './inventory-store.js?v=6';
 import {
     openSettings, closeSettings,
