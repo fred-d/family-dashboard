@@ -2,8 +2,8 @@
  * app.js — Family Dashboard entry point.
  *
  * Responsibilities:
- *  - Hash-based view routing (#calendar, #meals, #recipes, #grocery)
- *  - Initialise HACalendar, MealPlanner, RecipeApp, GroceryApp
+ *  - Hash-based view routing (#calendar, #meals, #recipes, #inventory)
+ *  - Initialise HACalendar, MealPlanner, RecipeApp, InventoryApp
  *  - Wire up global UI (settings open/close, modal backdrop)
  *  - Expose module functions needed by inline HTML onclick attributes
  *
@@ -16,8 +16,6 @@ import { MealPlanner } from './meals.js';
 import { MealStore } from './meal-store.js';
 import { RecipeApp } from './recipes.js';
 import { RecipeStore } from './recipe-store.js';
-import { GroceryApp } from './grocery.js';
-import { GroceryStore } from './grocery-store.js';
 import { InventoryApp } from './inventory.js?v=13';
 import { InventoryStore } from './inventory-store.js?v=6';
 import {
@@ -48,25 +46,24 @@ Object.assign(window, {
 
 // ── View router ───────────────────────────────────────────────────────────────
 
-const VIEWS = ['calendar', 'meals', 'recipes', 'grocery', 'inventory'];
+const VIEWS = ['calendar', 'meals', 'recipes', 'inventory'];
 
 const VIEW_TITLES = {
     calendar:  'Family Dashboard',
     meals:     'Meal Planner',
     recipes:   'Recipe Book',
-    grocery:   'Shopping List',
-    inventory: 'Kitchen Inventory',
+    inventory: 'Pantry',
 };
 
 function getActiveView() {
     const hash = location.hash.replace('#', '');
-    // Sunset: #grocery is now an alias for #inventory (Shopping mode lives there)
+    // Sunset aliases: old #grocery hash → #inventory
     if (hash === 'grocery') return 'inventory';
     return VIEWS.includes(hash) ? hash : 'calendar';
 }
 
 function switchView(view) {
-    // Sunset: redirect any remaining grocery callers to inventory
+    // Sunset: redirect any legacy grocery callers to inventory
     if (view === 'grocery') view = 'inventory';
     document.querySelectorAll('.nav-link').forEach(link => {
         link.classList.toggle('active', link.dataset.section === view);
@@ -88,7 +85,6 @@ function switchView(view) {
         else { clearInterval(window.mealPlanner._pollTimer); window.mealPlanner._pollTimer = null; }
     }
     if (window.recipeApp  && view === 'recipes') window.recipeApp._loadAndRender();
-    if (window.groceryApp && view === 'grocery') window.groceryApp._load();
     if (window.inventoryApp && view === 'inventory') window.inventoryStore?.refresh('items');
 
     if (view === 'calendar' && window.haCalendar?.calendar) {
@@ -128,13 +124,11 @@ async function init() {
     // Stores use backend API — no HA config needed in frontend
     const mealStore      = new MealStore();
     const recipeStore    = new RecipeStore();
-    const groceryStore   = new GroceryStore();
     const inventoryStore = new InventoryStore();
     window.inventoryStore = inventoryStore;
 
     window.mealPlanner   = new MealPlanner(document.getElementById('view-meals'),    mealStore);
     window.recipeApp     = new RecipeApp(document.getElementById('view-recipes'),   recipeStore);
-    window.groceryApp    = new GroceryApp(document.getElementById('view-grocery'),  groceryStore);
     window.inventoryApp  = new InventoryApp(document.getElementById('view-inventory'), inventoryStore);
 
     // Initial fetch — inventory store hydrates from localStorage, so UI is

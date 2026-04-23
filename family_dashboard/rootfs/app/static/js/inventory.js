@@ -140,7 +140,7 @@ export class InventoryApp {
         this.store     = store;
 
         // View state
-        this._tab       = 'inventory'; // 'inventory' | 'shopping'
+        this._tab       = 'inventory'; // 'inventory' | 'list'
         this._viewStyle = 'list';      // 'list' | 'grid'
         this._location  = 'all';   // location id | 'all'
         this._filter    = 'all';   // 'all' | 'low' | 'expiring' | 'out'
@@ -181,8 +181,8 @@ export class InventoryApp {
                     📦 Inventory
                     <span class="inv-tab-badge" data-badge-inv>0</span>
                 </button>
-                <button type="button" class="inv-tab" data-tab="shopping">
-                    🛒 Shopping
+                <button type="button" class="inv-tab" data-tab="list">
+                    🛒 List
                     <span class="inv-tab-badge" data-badge-shop>0</span>
                 </button>
             </nav>
@@ -219,8 +219,8 @@ export class InventoryApp {
                 </div>
             </div>
 
-            <!-- ══ SHOPPING PANEL ══ -->
-            <div class="inv-panel" data-panel="shopping" hidden>
+            <!-- ══ LIST (SHOPPING) PANEL ══ -->
+            <div class="inv-panel" data-panel="list" hidden>
 
                 <div class="inv-shop-header">
                     <select class="inv-input inv-shop-store-select" data-shop-store>
@@ -283,7 +283,7 @@ export class InventoryApp {
         this.$family      = this.container.querySelector('.inv-family');
         this.$tabs        = this.container.querySelector('[data-tabs]');
         this.$invPanel    = this.container.querySelector('[data-panel="inventory"]');
-        this.$shopPanel   = this.container.querySelector('[data-panel="shopping"]');
+        this.$shopPanel   = this.container.querySelector('[data-panel="list"]');
         this.$stats       = this.container.querySelector('[data-stats-rail]');
         this.$loctabs     = this.container.querySelector('[data-loctabs]');
         this.$filters     = this.container.querySelector('[data-filters]');
@@ -348,7 +348,7 @@ export class InventoryApp {
             .addEventListener('click', () => this._openScanner());
         this.container.querySelector('[data-action="add"]')
             .addEventListener('click', () => {
-                if (this._tab === 'shopping') this._openShoppingAddModal();
+                if (this._tab === 'list') this._openShoppingAddModal();
                 else this._openAddSheet();
             });
         this.container.querySelector('[data-action="settings"]')
@@ -468,17 +468,17 @@ export class InventoryApp {
     }
 
     _setTab(tab) {
-        if (tab !== 'inventory' && tab !== 'shopping') return;
+        if (tab !== 'inventory' && tab !== 'list') return;
         this._tab = tab;
         this.$tabs.querySelectorAll('[data-tab]').forEach(b =>
             b.classList.toggle('active', b.dataset.tab === tab));
         this.$invPanel.hidden  = tab !== 'inventory';
-        this.$shopPanel.hidden = tab !== 'shopping';
+        this.$shopPanel.hidden = tab !== 'list';
         // Re-label Add and Scan buttons to reflect context
         const $add  = this.container.querySelector('[data-action="add"]');
         const $scan = this.container.querySelector('[data-action="scan"]');
-        if ($add)  $add.textContent  = tab === 'shopping' ? '＋ Add to List' : '＋ Add';
-        if ($scan) $scan.textContent = tab === 'shopping' ? '📷 Scan to List' : '📷 Scan';
+        if ($add)  $add.textContent  = tab === 'list' ? '＋ Add to List' : '＋ Add';
+        if ($scan) $scan.textContent = tab === 'list' ? '📷 Scan to List' : '📷 Scan';
     }
 
     _toggleViewStyle() {
@@ -1213,8 +1213,8 @@ export class InventoryApp {
     async _openScanner() {
         if (!this._scanner) this._scanner = new BarcodeScanner();
 
-        if (this._tab === 'shopping') {
-            // ── Shopping-list scan ─────────────────────────────────────────
+        if (this._tab === 'list') {
+            // ── List-tab scan ──────────────────────────────────────────────
             // "I'm in the kitchen, tossing something away — quick-add to list."
             // Find the product by UPC (already-known items) or scanner result,
             // then add to the shopping list. No inventory rows are touched.
