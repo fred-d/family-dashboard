@@ -126,6 +126,9 @@ export class PantryStore {
             const rows = await res.json();
             const items = rows.map(r => this._normalizeInventoryRow(r));
             _save(CACHE_INVENTORY, items);
+            // Cache for the productId lookup that updateInventoryItem(isStaple)
+            // needs — avoids round-tripping the inventory list per toggle.
+            this._inventory = items;
             return items;
         } catch (err) {
             console.warn('[PantryStore] fetchInventory failed:', err.message);
@@ -217,6 +220,20 @@ export class PantryStore {
         if ('notes'      in patch) body.notes             = patch.notes;
         if ('locationId' in patch) body.location_id       = patch.locationId;
         if ('percent'    in patch) body.percent_remaining = patch.percent;
+
+        // is_staple lives on `products`, not `inventory`. Patch it via the
+        // product endpoint when toggled. Resolve the productId from the
+        // cached row so callers can keep using the inventory-row id.
+        if ('isStaple' in patch) {
+            const inv = (this._inventory || []).find(i => i.id === id);
+            if (inv?.productId) {
+                await this._send('PATCH', `/api/inventory/products/${inv.productId}`, {
+                    is_staple: patch.isStaple ? 1 : 0,
+                });
+            }
+        }
+
+        if (Object.keys(body).length === 0) return null;
         return this._send('PATCH', `/api/inventory/items/${id}`, body);
     }
 
@@ -347,9 +364,7 @@ export class PantryStore {
             photo:       row.product_image || '',
             upc:         row.product_upc || row.upc || '',
             notes:       row.notes || '',
-            // Not yet tracked by the backend — surface defaults so the UI
-            // can render. PR C will add a small migration for is_staple.
-            isStaple:    false,
+            isStaple:    !!row.product_is_staple,
             low:         threshold,
         };
     }

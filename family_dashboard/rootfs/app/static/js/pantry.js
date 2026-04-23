@@ -1326,12 +1326,27 @@ export class PantryApp {
     }
 
     async _addStaples() {
-        // Staples (`is_staple`) is not yet tracked by the SQLite backend —
-        // PantryStore's normalizer always returns `isStaple: false`. The
-        // small backend migration + UI wiring lands in a follow-up PR; for
-        // now this button just tells the user where it stands.
-        alert('Staples is coming soon — we need to add an `is_staple` column ' +
-              'to the products table first. Tracking in a follow-up PR.');
+        // Add every Pantry item flagged ⭐ Staple to the shopping list, skipping
+        // anything that's already on the open list (status != bought).
+        const staples = this._inventory.filter(i => i.isStaple);
+        if (staples.length === 0) {
+            alert('No items are marked as ⭐ Staples yet. ' +
+                  'Tap the star on a Pantry card to flag it.');
+            return;
+        }
+        const openNames = new Set(
+            this._items
+                .filter(i => !i.checked)
+                .map(i => (i.name || '').trim().toLowerCase())
+        );
+        const toAdd = staples.filter(
+            inv => !openNames.has((inv.name || '').trim().toLowerCase())
+        );
+        if (toAdd.length === 0) {
+            alert('All staples are already on the shopping list.');
+            return;
+        }
+        for (const inv of toAdd) await this._addFromInventory(inv);
     }
 
     // ── INVENTORY CRUD ────────────────────────────────────────────────────────
@@ -1373,14 +1388,15 @@ export class PantryApp {
     }
 
     async _updateInventoryItem(id, changes, _rerender = true) {
-        // Most legacy fields (isStaple, useCount, defaultAmount, …) live on
-        // the products table — patching them here is a no-op until follow-up
-        // PRs add the wiring. We do support qty / notes / location updates
-        // via the per-row API.
+        // qty / notes / location patch the inventory row.
+        // isStaple patches the parent product row (handled by the store).
+        // Other legacy fields (useCount, defaultAmount, …) still no-op until
+        // follow-up PRs add columns for them.
         const patch = {};
         if ('qty'        in changes) patch.qty        = changes.qty;
         if ('notes'      in changes) patch.notes      = changes.notes;
         if ('locationId' in changes) patch.locationId = changes.locationId;
+        if ('isStaple'   in changes) patch.isStaple   = changes.isStaple;
 
         // stockLevel is a derived field — translate back into a qty so the
         // backend's percent/threshold logic keeps working.
