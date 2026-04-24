@@ -29,6 +29,10 @@ data/
 options.json
 flask_secret.key
 
+# Local dev environment data (dev/run-backend.py writes here)
+dev/data/
+dev/.env
+
 # OS / editor noise
 .DS_Store
 Thumbs.db
