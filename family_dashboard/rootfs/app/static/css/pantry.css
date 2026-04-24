@@ -393,6 +393,20 @@
     font-style: italic;
 }
 
+/* "Added by <Name>" pill — hidden for household/system entries */
+.grocery-item-addedby {
+    display:       inline-flex;
+    align-items:   center;
+    font-size:     10px;
+    font-weight:   600;
+    padding:       1px 6px;
+    border-radius: 8px;
+    background:    #ede9fe;
+    color:         #7c3aed;
+    border:        1px solid #c4b5fd;
+    white-space:   nowrap;
+}
+
 /* Meta row — store badge + "by person" + notes, all on one line */
 .grocery-item-meta {
     display:   flex;
@@ -1067,6 +1081,7 @@
 }
 .grocery-modal-cancel:hover { background: #f1f5f9; }
 
+/* Legacy full-width delete (kept for inv modal, not item modal) */
 .grocery-modal-delete {
     width:         100%;
     padding:       10px;
@@ -1081,6 +1096,22 @@
     margin-top:    4px;
 }
 .grocery-modal-delete:hover { background: #fef2f2; }
+
+/* Compact remove button in the modal footer row */
+.grocery-modal-delete-footer {
+    padding:       12px 14px;
+    border:        1px solid #fca5a5;
+    border-radius: 10px;
+    background:    transparent;
+    color:         #dc2626;
+    font-size:     14px;
+    font-weight:   500;
+    cursor:        pointer;
+    transition:    background 0.15s;
+    white-space:   nowrap;
+    flex-shrink:   0;
+}
+.grocery-modal-delete-footer:hover { background: #fef2f2; }
 
 /* Modal fields */
 .grocery-modal-field {
@@ -1792,3 +1823,59 @@ select.grocery-modal-input { cursor: pointer; }
     transition:      border-color 0.2s, background 0.2s;
 }
 .scanner-file-label:hover  { border-color: var(--theme-primary); background: rgba(102,126,234,0.1); color: white; }
+
+
+/* ── Photo lightbox ─────────────────────────────────────────────────────── */
+.pantry-lightbox {
+    position: fixed;
+    inset:    0;
+    z-index:  2000;
+    display:  flex;
+    align-items: center;
+    justify-content: center;
+    opacity:  0;
+    transition: opacity 0.25s ease;
+}
+.pantry-lightbox.show { opacity: 1; }
+.pantry-lightbox-backdrop {
+    position:   absolute;
+    inset:      0;
+    background: rgba(0,0,0,0.82);
+    backdrop-filter: blur(6px);
+}
+.pantry-lightbox-content {
+    position:     relative;
+    z-index:      1;
+    max-width:    min(90vw, 600px);
+    max-height:   85vh;
+    border-radius: 16px;
+    overflow:     hidden;
+    box-shadow:   0 24px 80px rgba(0,0,0,0.5);
+    transform:    scale(0.92);
+    transition:   transform 0.25s ease;
+}
+.pantry-lightbox.show .pantry-lightbox-content { transform: scale(1); }
+.pantry-lightbox-img {
+    display:    block;
+    max-width:  100%;
+    max-height: 85vh;
+    object-fit: contain;
+}
+.pantry-lightbox-close {
+    position:      absolute;
+    top:           10px;
+    right:         10px;
+    width:         32px;
+    height:        32px;
+    border:        none;
+    border-radius: 50%;
+    background:    rgba(0,0,0,0.55);
+    color:         #fff;
+    font-size:     16px;
+    cursor:        pointer;
+    display:       flex;
+    align-items:   center;
+    justify-content: center;
+    transition:    background 0.15s;
+}
+.pantry-lightbox-close:hover { background: rgba(0,0,0,0.8); }
