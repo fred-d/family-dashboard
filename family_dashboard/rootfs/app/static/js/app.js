@@ -46,25 +46,25 @@ Object.assign(window, {
 
 // ── View router ───────────────────────────────────────────────────────────────
 
-const VIEWS = ['calendar', 'meals', 'recipes', 'inventory'];
+const VIEWS = ['calendar', 'meals', 'recipes', 'pantry'];
 
 const VIEW_TITLES = {
-    calendar:  'Family Dashboard',
-    meals:     'Meal Planner',
-    recipes:   'Recipe Book',
-    inventory: 'Pantry',
+    calendar: 'Family Dashboard',
+    meals:    'Meal Planner',
+    recipes:  'Recipe Book',
+    pantry:   'Pantry',
 };
 
 function getActiveView() {
     const hash = location.hash.replace('#', '');
-    // Sunset aliases: old #grocery hash → #inventory
-    if (hash === 'grocery') return 'inventory';
+    // Sunset aliases: old #grocery / #inventory hashes → #pantry
+    if (hash === 'grocery' || hash === 'inventory') return 'pantry';
     return VIEWS.includes(hash) ? hash : 'calendar';
 }
 
 function switchView(view) {
-    // Sunset: redirect any legacy grocery callers to inventory
-    if (view === 'grocery') view = 'inventory';
+    // Sunset: redirect any legacy grocery / inventory callers to pantry
+    if (view === 'grocery' || view === 'inventory') view = 'pantry';
     document.querySelectorAll('.nav-link').forEach(link => {
         link.classList.toggle('active', link.dataset.section === view);
     });
@@ -85,7 +85,7 @@ function switchView(view) {
         else { clearInterval(window.mealPlanner._pollTimer); window.mealPlanner._pollTimer = null; }
     }
     if (window.recipeApp  && view === 'recipes') window.recipeApp._loadAndRender();
-    if (window.pantryApp && view === 'inventory') {
+    if (window.pantryApp && view === 'pantry') {
         // Re-fetch when the user switches to the Pantry tab so a pantry
         // change made on another device shows up immediately.
         window.pantryStore?.fetchList();
@@ -134,7 +134,7 @@ async function init() {
 
     window.mealPlanner = new MealPlanner(document.getElementById('view-meals'),    mealStore);
     window.recipeApp   = new RecipeApp(document.getElementById('view-recipes'),    recipeStore);
-    window.pantryApp   = new PantryApp(document.getElementById('view-inventory'),  pantryStore);
+    window.pantryApp   = new PantryApp(document.getElementById('view-pantry'),     pantryStore);
 
     // Prime category↔id lookups before the first list render so backend
     // category UUIDs translate to the legacy grocery string ids the UI uses.
