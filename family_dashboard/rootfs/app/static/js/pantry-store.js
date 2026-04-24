@@ -168,8 +168,9 @@ export class PantryStore {
             status:      item.checked ? 'bought' : 'needed',
             fulfillment: item.fulfillment ?? 'curbside',
             notes:       item.notes ?? '',
-            store_id:    item.storeId ?? null,
-            added_by:    item.addedBy ?? null,
+            store_id:    item.storeId  ?? null,
+            added_by:    item.addedBy  ?? null,
+            photo_url:   item.photo    ?? '',
         };
         if (item.productId) body.product_id = item.productId;
         return this._send('POST', '/api/pantry/shopping', body);
@@ -192,6 +193,7 @@ export class PantryStore {
         if ('status'      in patch) body.status      = patch.status;
         if ('category'    in patch) body.category_id = this._categoryIdForGroceryId(patch.category);
         if ('addedBy'     in patch) body.added_by    = patch.addedBy;
+        if ('photo'       in patch) body.photo_url   = patch.photo ?? '';
         return this._send('PATCH', `/api/pantry/shopping/${id}`, body);
     }
 
@@ -376,7 +378,8 @@ export class PantryStore {
             storeId:     row.store_id || null,
             storeName:   row.store_name || '',
             storeColor:  row.store_color || '',
-            photo:       row.product_image || '',     // shopping rows have no own photo
+            // resolved_photo = COALESCE(s.photo_url, p.image_url) from backend
+            photo:       row.resolved_photo || row.product_image || row.photo_url || '',
             createdAt:   row.created_at,
             updatedAt:   row.updated_at,
         };

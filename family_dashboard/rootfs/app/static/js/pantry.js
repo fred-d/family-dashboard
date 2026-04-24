@@ -337,6 +337,15 @@ export class PantryApp {
                 const item = this._items.find(i => i.id === id);
                 if (item) this._openItemModal(item);
             });
+            // Thumbnail click → photo lightbox
+            const thumb = row.querySelector('.grocery-item-photo-thumb');
+            if (thumb) {
+                thumb.style.cursor = 'pointer';
+                thumb.addEventListener('click', e => {
+                    e.stopPropagation();
+                    this._openPhotoLightbox(thumb.dataset.photo);
+                });
+            }
         });
     }
 
@@ -360,7 +369,8 @@ export class PantryApp {
         const fulfillIcon = item.fulfillment === 'instore'  ? '<span class="grocery-fulfillment instore" title="In-Store">🏪</span>'
                           : item.fulfillment === 'curbside' ? '<span class="grocery-fulfillment curbside" title="Curbside">🚗</span>'
                           : '';
-        const amountStr = [item.qty > 1 ? item.qty : '', item.unit && item.unit !== 'count' ? item.unit : ''].filter(Boolean).join(' ');
+        const _unit    = item.unit && item.unit !== 'count' ? item.unit : '';
+        const amountStr = _unit ? `${item.qty} ${_unit}` : (item.qty !== 1 ? `${item.qty}` : '');
         const storeName = item.storeName || this._storeNameById(item.storeId);
         const storeColor = item.storeColor || '#64748b';
         return `
@@ -371,14 +381,17 @@ export class PantryApp {
                         : ''}
                 </button>
                 ${item.photo
-                    ? `<div class="grocery-item-photo-thumb" style="background-image:url('${item.photo}')"></div>`
+                    ? `<div class="grocery-item-photo-thumb" data-photo="${this._esc(item.photo)}"
+                            style="background-image:url('${item.photo}')" title="Tap to enlarge"></div>`
                     : ''}
                 <div class="grocery-item-info">
                     <span class="grocery-item-name">${this._esc(item.name)}</span>
                     ${amountStr ? `<span class="grocery-item-amount">${this._esc(amountStr)}</span>` : ''}
                     <span class="grocery-item-meta">
                         ${storeName ? `<span class="grocery-item-store" style="--store-color:${this._esc(storeColor)}">${this._esc(storeName)}</span>` : ''}
-                        ${item.addedBy ? `<span class="grocery-item-source">by ${this._esc(item.addedBy)}</span>` : ''}
+                        ${item.addedBy && item.addedBy.toLowerCase() !== 'household'
+                            ? `<span class="grocery-item-addedby">by ${this._esc(item.addedBy)}</span>`
+                            : ''}
                         ${item.notes  ? `<span class="grocery-item-notes">${this._esc(item.notes)}</span>` : ''}
                     </span>
                 </div>
@@ -645,9 +658,10 @@ export class PantryApp {
      *                               already filled in from the barcode lookup.
      */
     _openItemModal(item = null, prefill = null) {
-        this._editItem      = item ?? null;
+        this._editItem        = item ?? null;
         this._editItemPrefill = prefill ?? null;
-        this._editItemPhoto = item?.photo ?? prefill?.photo ?? null;
+        // Use || not ?? so that empty-string photo is treated as "no photo"
+        this._editItemPhoto   = item?.photo || prefill?.photo || null;
         this._renderItemModal();
     }
 
@@ -693,8 +707,9 @@ export class PantryApp {
                     <div class="grocery-modal-row">
                         <div class="grocery-modal-field">
                             <label>Amount</label>
-                            <input type="text" id="groceryItemAmount" class="grocery-modal-input"
-                                   value="${this._esc(val('amount') || (val('qty') > 1 ? val('qty') : '') || '')}" placeholder="2">
+                            <input type="number" id="groceryItemAmount" class="grocery-modal-input"
+                                   min="0.25" step="0.25"
+                                   value="${this._esc(val('amount') || val('qty') || 1)}">
                         </div>
                         <div class="grocery-modal-field">
                             <label>Unit</label>
@@ -755,15 +770,14 @@ export class PantryApp {
                                 Also save to Inventory for quick re-adding later
                             </label>
                         </div>` : ''}
-
-                    ${!isNew ? `
-                        <button class="grocery-modal-delete" id="groceryItemDelete">🗑 Remove from list</button>` : ''}
                 </div>
                 <div class="grocery-modal-footer">
                     <button class="grocery-modal-save" id="groceryItemSave">
                         ${isNew ? 'Add to List' : 'Save Changes'}
                     </button>
                     <button class="grocery-modal-cancel" id="groceryItemCancel">Cancel</button>
+                    ${!isNew ? `
+                        <button class="grocery-modal-delete-footer" id="groceryItemDelete">🗑 Remove</button>` : ''}
                 </div>
             </div>`;
 
@@ -825,14 +839,14 @@ export class PantryApp {
             const storeId = overlay.querySelector('#groceryItemStore')?.value || null;
             const data = {
                 name,
-                amount:      overlay.querySelector('#groceryItemAmount')?.value.trim()   || '',
-                unit:        overlay.querySelector('#groceryItemUnit')?.value.trim()      || '',
+                amount:      overlay.querySelector('#groceryItemAmount')?.value || '1',
+                unit:        overlay.querySelector('#groceryItemUnit')?.value.trim()   || '',
                 category:    catSelect?.value || detectCategory(name),
                 fulfillment: fulfillmentActive?.dataset.ful || 'curbside',
-                notes:       overlay.querySelector('#groceryItemNotes')?.value.trim()    || '',
+                notes:       overlay.querySelector('#groceryItemNotes')?.value.trim() || '',
                 addedBy:     addedBy || null,
                 storeId:     storeId || null,
-                photo:       this._editItemPhoto || null,
+                photo:       this._editItemPhoto || '',
             };
             if (this._editItem) {
                 this._updateItem(this._editItem.id, data);
@@ -1368,7 +1382,7 @@ export class PantryApp {
             const patch = { ...changes };
             if ('amount' in patch) {
                 const q = parseFloat(patch.amount);
-                if (Number.isFinite(q)) patch.qty = q;
+                patch.qty = Number.isFinite(q) ? q : 1;
                 delete patch.amount;
             }
             await this.store.updateItem(id, patch);
@@ -1693,6 +1707,27 @@ export class PantryApp {
             'Add to List',
             () => this._addFromInventory(inv)
         );
+    }
+
+    _openPhotoLightbox(url) {
+        if (!url) return;
+        document.querySelectorAll('.pantry-lightbox').forEach(el => el.remove());
+        const lb = document.createElement('div');
+        lb.className = 'pantry-lightbox';
+        lb.innerHTML = `
+            <div class="pantry-lightbox-backdrop"></div>
+            <div class="pantry-lightbox-content">
+                <img src="${this._esc(url)}" class="pantry-lightbox-img" alt="Product photo">
+                <button class="pantry-lightbox-close" aria-label="Close">✕</button>
+            </div>`;
+        document.body.appendChild(lb);
+        requestAnimationFrame(() => lb.classList.add('show'));
+        const close = () => { lb.classList.remove('show'); setTimeout(() => lb.remove(), 250); };
+        lb.querySelector('.pantry-lightbox-close')?.addEventListener('click', close);
+        lb.querySelector('.pantry-lightbox-backdrop')?.addEventListener('click', close);
+        document.addEventListener('keydown', function esc(e) {
+            if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); }
+        });
     }
 
     _showToast(message, actionLabel = null, onAction = null) {

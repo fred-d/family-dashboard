@@ -320,6 +320,14 @@ def _init_db(app: Flask):
             c.execute("ALTER TABLE shopping_list "
                       "ADD COLUMN fulfillment TEXT NOT NULL DEFAULT 'curbside'")
 
+        # Add photo_url column to shopping_list (v1.6.4).
+        # Stores an item-level photo URL so manually-added shopping items can
+        # carry a product photo even when they aren't linked to a product row.
+        # The enriched SELECT uses COALESCE(s.photo_url, p.image_url) so
+        # product-linked items still pick up the product image automatically.
+        if 'photo_url' not in shop_cols:
+            c.execute("ALTER TABLE shopping_list ADD COLUMN photo_url TEXT DEFAULT ''")
+
         # Staples flag on products (v1.5.2) — marks "always-keep-stocked"
         # items so the Pantry tab can filter to just the things we always
         # want on hand (flour, sugar, paper towels, etc.).
@@ -1569,7 +1577,7 @@ def _shopping_list_enriched(c: sqlite3.Connection) -> list[dict]:
     rows = _rows(c.execute('''
         SELECT s.*,
                p.name      AS product_name,
-               p.image_url AS product_image,
+               COALESCE(NULLIF(s.photo_url,''), p.image_url, '') AS resolved_photo,
                cat.name    AS category_name,
                cat.color   AS category_color,
                cat.sort_order AS category_sort,
@@ -1591,7 +1599,9 @@ def api_shopping():
         store = request.args.get('store')
         if store and store != 'all':
             rows = _rows(c.execute('''
-                SELECT s.*, p.name AS product_name, p.image_url AS product_image,
+                SELECT s.*,
+                       p.name AS product_name,
+                       COALESCE(NULLIF(s.photo_url,''), p.image_url, '') AS resolved_photo,
                        cat.name AS category_name, cat.color AS category_color,
                        cat.sort_order AS category_sort,
                        st.name AS store_name, st.color AS store_color
@@ -1623,14 +1633,16 @@ def api_shopping():
     c.execute('''
         INSERT INTO shopping_list
           (id,product_id,name,qty,unit,store_id,category_id,status,source,
-           added_by,notes,fulfillment,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           added_by,notes,fulfillment,photo_url,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (
         sid, body.get('product_id'), name,
         float(body.get('qty', 1)), body.get('unit', 'count'),
         body.get('store_id'), body.get('category_id'),
         body.get('status', 'needed'), 'manual',
-        _person_id(), body.get('notes', ''), fulfillment, now, now,
+        body.get('added_by') or None,
+        body.get('notes', ''), fulfillment,
+        _https(body.get('photo_url', '')), now, now,
     ))
     _sse_push('inventory', {'type': 'shopping'})
     return jsonify(_row(c.execute('SELECT * FROM shopping_list WHERE id=?', (sid,)).fetchone()))
@@ -1644,10 +1656,13 @@ def api_shopping_item(sid):
         fields: list[str] = []
         values: list[Any] = []
         for k in ('name', 'qty', 'unit', 'store_id', 'category_id',
-                  'status', 'notes', 'fulfillment'):
+                  'status', 'notes', 'fulfillment', 'added_by'):
             if k in body:
                 fields.append(f'{k}=?')
                 values.append(body[k])
+        if 'photo_url' in body:
+            fields.append('photo_url=?')
+            values.append(_https(body['photo_url'] or ''))
         if not fields:
             return jsonify({'error': 'No fields to update'}), 400
         fields.append('updated_at=?')
