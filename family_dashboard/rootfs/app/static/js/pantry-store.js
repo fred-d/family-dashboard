@@ -117,6 +117,23 @@ export class PantryStore {
         }
     }
 
+    /**
+     * Fetch the full product catalog — used for item-name autocomplete in the
+     * Add Item modal. Accepts an optional search string (forwarded to ?q=).
+     * Returns a raw array of product rows (not translated to grocery shape).
+     */
+    async fetchProducts(q = '') {
+        try {
+            const url = apiUrl('/api/pantry/products') + (q ? `?q=${encodeURIComponent(q)}` : '');
+            const res = await fetch(url);
+            if (!res.ok) return null;
+            return await res.json();
+        } catch (err) {
+            console.warn('[PantryStore] fetchProducts failed:', err.message);
+            return null;
+        }
+    }
+
     async fetchInventory() {
         if (!this.config?.categories?.length) await this.fetchConfig();
 
@@ -357,6 +374,8 @@ export class PantryStore {
             source:      row.source || 'manual',
             productId:   row.product_id || null,
             storeId:     row.store_id || null,
+            storeName:   row.store_name || '',
+            storeColor:  row.store_color || '',
             photo:       row.product_image || '',     // shopping rows have no own photo
             createdAt:   row.created_at,
             updatedAt:   row.updated_at,

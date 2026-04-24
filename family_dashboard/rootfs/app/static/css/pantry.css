@@ -393,6 +393,44 @@
     font-style: italic;
 }
 
+/* Meta row — store badge + "by person" + notes, all on one line */
+.grocery-item-meta {
+    display:   flex;
+    flex-wrap: wrap;
+    gap:       4px;
+    align-items: center;
+    min-height: 0;
+}
+.grocery-item-meta:empty { display: none; }
+
+.grocery-item-store {
+    display:       inline-flex;
+    align-items:   center;
+    font-size:     10px;
+    font-weight:   600;
+    padding:       1px 6px;
+    border-radius: 8px;
+    background:    color-mix(in srgb, var(--store-color, #64748b) 15%, transparent);
+    color:         var(--store-color, #64748b);
+    border:        1px solid color-mix(in srgb, var(--store-color, #64748b) 30%, transparent);
+    white-space:   nowrap;
+}
+
+/* Suggestion dropdown */
+.grocery-sug-cat   { margin-right: 4px; }
+.grocery-sug-name  { font-weight: 600; flex: 1; }
+.grocery-sug-brand { font-size: 11px; color: var(--color-muted); margin-left: 4px; }
+.grocery-sug-badge {
+    font-size:     10px;
+    font-weight:   600;
+    padding:       1px 5px;
+    border-radius: 6px;
+    margin-left:   auto;
+    flex-shrink:   0;
+}
+.grocery-sug-badge.inv  { background: #dcfce7; color: #16a34a; }
+.grocery-sug-badge.prod { background: #e0e7ff; color: #4f46e5; }
+
 /* Fulfillment badges */
 .grocery-fulfillment {
     font-size:     13px;

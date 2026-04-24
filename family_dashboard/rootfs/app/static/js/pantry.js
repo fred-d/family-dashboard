@@ -26,12 +26,9 @@ import { BarcodeScanner } from './scanner.js?v=3';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-/**
- * Family members for the Shopping List "added by" picker.
- * (Per product direction: family attribution is scoped to the Shopping List
- * tab only — Inventory does not track who added an item.)
- */
-const FAMILY_MEMBERS = ['Amy', 'Freddy', 'Boy 1', 'Boy 2'];
+// FAMILY_MEMBERS is now loaded dynamically from HA via /api/pantry/family.
+// The constant below is kept only as a last-resort fallback (e.g. HA offline).
+const FAMILY_MEMBERS_FALLBACK = [];
 
 const CATEGORIES = [
     { id: 'produce',   label: 'Produce',        emoji: '🥦', color: '#16a34a' },
@@ -96,6 +93,12 @@ export class PantryApp {
         this._pantrySearch   = '';
         this._pantryFilter   = 'all'; // 'all' | 'staples' | 'low'
 
+        // Family (HA persons) for "Added By" picker
+        this._family = [];
+
+        // All products from DB (used for name autocomplete)
+        this._products = [];
+
         // Edit modals
         this._editItem        = null;
         this._editItemPhoto   = null;
@@ -145,10 +148,31 @@ export class PantryApp {
         if (freshList) this._items = freshList.items || [];
         const freshInv = await this.store.fetchInventory();
         if (freshInv) this._inventory = freshInv;
+
+        // Load HA family members + product catalog (for autocomplete + Added By)
+        this._loadFamily();
+        this.store.fetchProducts().then(prods => { if (prods) this._products = prods; });
+
         this._render();
     }
 
     destroy() { this._unsub?.(); }
+
+    // ── Family (HA persons) ────────────────────────────────────────────────────
+
+    async _loadFamily() {
+        try {
+            const { apiUrl } = await import('./utils.js');
+            const res = await fetch(apiUrl('/api/pantry/family'));
+            if (!res.ok) return;
+            const people = await res.json();
+            if (Array.isArray(people) && people.length > 0) {
+                this._family = people; // [{id, name, avatar, initials, color, …}]
+            }
+        } catch (err) {
+            console.warn('[PantryApp] _loadFamily failed:', err.message);
+        }
+    }
 
     // ── Master render ─────────────────────────────────────────────────────────
 
@@ -159,7 +183,6 @@ export class PantryApp {
         this.container.innerHTML = `
             <div class="grocery-page">
                 <div class="grocery-header">
-                    <div class="grocery-title">🛒 Shopping List</div>
                     <div class="grocery-header-actions">
                         ${inStore > 0 ? `
                             <button class="grocery-store-mode-btn" id="groceryStoreModeBtn">
@@ -177,7 +200,7 @@ export class PantryApp {
                         ${unchecked > 0 ? `<span class="grocery-tab-count">${unchecked}</span>` : ''}
                     </button>
                     <button class="grocery-tab${this._tab === 'inventory' ? ' active' : ''}" data-tab="inventory">
-                        📦 Inventory
+                        📦 Pantry
                         <span class="grocery-tab-count">${this._inventory.length}</span>
                     </button>
                 </div>
@@ -337,7 +360,9 @@ export class PantryApp {
         const fulfillIcon = item.fulfillment === 'instore'  ? '<span class="grocery-fulfillment instore" title="In-Store">🏪</span>'
                           : item.fulfillment === 'curbside' ? '<span class="grocery-fulfillment curbside" title="Curbside">🚗</span>'
                           : '';
-        const amountStr = [item.amount, item.unit].filter(Boolean).join(' ');
+        const amountStr = [item.qty > 1 ? item.qty : '', item.unit && item.unit !== 'count' ? item.unit : ''].filter(Boolean).join(' ');
+        const storeName = item.storeName || this._storeNameById(item.storeId);
+        const storeColor = item.storeColor || '#64748b';
         return `
             <div class="grocery-item-row${item.checked ? ' checked' : ''}" data-id="${item.id}">
                 <button class="grocery-item-check${item.checked ? ' done' : ''}" aria-label="Toggle">
@@ -351,10 +376,11 @@ export class PantryApp {
                 <div class="grocery-item-info">
                     <span class="grocery-item-name">${this._esc(item.name)}</span>
                     ${amountStr ? `<span class="grocery-item-amount">${this._esc(amountStr)}</span>` : ''}
-                    ${item.notes ? `<span class="grocery-item-notes">${this._esc(item.notes)}</span>` : ''}
-                    ${item.addedBy
-                        ? `<span class="grocery-item-source">Added by ${this._esc(item.addedBy)}</span>`
-                        : ''}
+                    <span class="grocery-item-meta">
+                        ${storeName ? `<span class="grocery-item-store" style="--store-color:${this._esc(storeColor)}">${this._esc(storeName)}</span>` : ''}
+                        ${item.addedBy ? `<span class="grocery-item-source">by ${this._esc(item.addedBy)}</span>` : ''}
+                        ${item.notes  ? `<span class="grocery-item-notes">${this._esc(item.notes)}</span>` : ''}
+                    </span>
                 </div>
                 ${fulfillIcon}
                 <button class="grocery-item-edit" aria-label="Edit" title="Edit">
@@ -611,17 +637,28 @@ export class PantryApp {
 
     // ── ITEM MODAL (add/edit) ─────────────────────────────────────────────────
 
-    _openItemModal(item = null) {
+    /**
+     * Open the Add / Edit item modal.
+     * @param {object|null} item   - Existing shopping-list item to edit, or null for new.
+     * @param {object|null} prefill - Pre-fill values for a NEW item (scan flow). When
+     *                               provided, the modal opens in "Add" mode with fields
+     *                               already filled in from the barcode lookup.
+     */
+    _openItemModal(item = null, prefill = null) {
         this._editItem      = item ?? null;
-        this._editItemPhoto = item?.photo ?? null;
+        this._editItemPrefill = prefill ?? null;
+        this._editItemPhoto = item?.photo ?? prefill?.photo ?? null;
         this._renderItemModal();
     }
 
     _renderItemModal() {
         const overlay = document.getElementById('groceryItemOverlay');
         if (!overlay) return;
-        const item  = this._editItem;
-        const isNew = !item;
+        const item    = this._editItem;
+        const prefill = this._editItemPrefill;  // scan pre-fill (new item mode)
+        const isNew   = !item;
+        // Merge: existing item takes priority; prefill is used only for new items
+        const val = (field) => item?.[field] ?? prefill?.[field] ?? null;
 
         overlay.innerHTML = `
             <div class="grocery-modal" role="dialog" aria-modal="true">
@@ -648,7 +685,7 @@ export class PantryApp {
                     <div class="grocery-modal-field">
                         <label>Item Name *</label>
                         <input type="text" id="groceryItemName" class="grocery-modal-input"
-                               value="${this._esc(item?.name || '')}"
+                               value="${this._esc(val('name') || '')}"
                                placeholder="e.g. Organic Whole Milk" autocomplete="off">
                         <div class="grocery-item-suggestions" id="groceryItemSuggestions"></div>
                     </div>
@@ -657,12 +694,12 @@ export class PantryApp {
                         <div class="grocery-modal-field">
                             <label>Amount</label>
                             <input type="text" id="groceryItemAmount" class="grocery-modal-input"
-                                   value="${this._esc(item?.amount || '')}" placeholder="2">
+                                   value="${this._esc(val('amount') || (val('qty') > 1 ? val('qty') : '') || '')}" placeholder="2">
                         </div>
                         <div class="grocery-modal-field">
                             <label>Unit</label>
                             <input type="text" id="groceryItemUnit" class="grocery-modal-input"
-                                   value="${this._esc(item?.unit || '')}" placeholder="lbs, bags, cans…">
+                                   value="${this._esc(val('unit') && val('unit') !== 'count' ? val('unit') : '')}" placeholder="lbs, bags, cans…">
                         </div>
                     </div>
 
@@ -670,7 +707,7 @@ export class PantryApp {
                         <label>Category</label>
                         <select id="groceryItemCategory" class="grocery-modal-input">
                             ${CATEGORIES.map(c =>
-                                `<option value="${c.id}" ${(item?.category || 'other') === c.id ? 'selected' : ''}>
+                                `<option value="${c.id}" ${(val('category') || 'other') === c.id ? 'selected' : ''}>
                                     ${c.emoji} ${c.label}</option>`).join('')}
                         </select>
                     </div>
@@ -678,9 +715,9 @@ export class PantryApp {
                     <div class="grocery-modal-field">
                         <label>Fulfillment</label>
                         <div class="grocery-fulfillment-toggle">
-                            <button class="grocery-fulfillment-btn${(item?.fulfillment ?? 'curbside') === 'curbside' ? ' active' : ''}"
+                            <button class="grocery-fulfillment-btn${(val('fulfillment') ?? 'curbside') === 'curbside' ? ' active' : ''}"
                                     data-ful="curbside">🚗 Curbside / Delivery</button>
-                            <button class="grocery-fulfillment-btn${item?.fulfillment === 'instore' ? ' active' : ''}"
+                            <button class="grocery-fulfillment-btn${val('fulfillment') === 'instore' ? ' active' : ''}"
                                     data-ful="instore">🏪 In-Store (I'll grab it)</button>
                         </div>
                     </div>
@@ -688,18 +725,26 @@ export class PantryApp {
                     <div class="grocery-modal-field">
                         <label>Notes / Brand Details</label>
                         <input type="text" id="groceryItemNotes" class="grocery-modal-input"
-                               value="${this._esc(item?.notes || '')}"
+                               value="${this._esc(val('notes') || '')}"
                                placeholder="Brand, size, substitution notes…">
+                    </div>
+
+                    <div class="grocery-modal-field">
+                        <label>Store</label>
+                        <select id="groceryItemStore" class="grocery-modal-input">
+                            <option value="">— Any store —</option>
+                            ${(this.store.config.stores || []).map(s => {
+                                const sel = (val('storeId') === s.id) ? ' selected' : '';
+                                return `<option value="${this._esc(s.id)}"${sel}>${this._esc(s.name)}</option>`;
+                            }).join('')}
+                        </select>
                     </div>
 
                     <div class="grocery-modal-field">
                         <label>Added By</label>
                         <select id="groceryItemAddedBy" class="grocery-modal-input">
                             <option value="">—</option>
-                            ${FAMILY_MEMBERS.map(m => {
-                                const sel = (item?.addedBy || this._lastAddedBy()) === m ? ' selected' : '';
-                                return `<option value="${this._esc(m)}"${sel}>${this._esc(m)}</option>`;
-                            }).join('')}
+                            ${this._familyOptions(val('addedBy') || this._lastAddedBy())}
                         </select>
                     </div>
 
@@ -707,7 +752,7 @@ export class PantryApp {
                         <div class="grocery-modal-save-pantry">
                             <label class="grocery-checkbox-label">
                                 <input type="checkbox" id="grocerySaveToPantry">
-                                Also save to Pantry for quick re-adding later
+                                Also save to Inventory for quick re-adding later
                             </label>
                         </div>` : ''}
 
@@ -766,7 +811,7 @@ export class PantryApp {
             this._updateItemPhotoPreview(overlay);
         });
 
-        const close = () => { overlay.classList.remove('active'); this._editItem = null; this._editItemPhoto = null; };
+        const close = () => { overlay.classList.remove('active'); this._editItem = null; this._editItemPhoto = null; this._editItemPrefill = null; };
         overlay.querySelector('#groceryItemClose')?.addEventListener('click', close);
         overlay.querySelector('#groceryItemCancel')?.addEventListener('click', close);
         overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
@@ -777,6 +822,7 @@ export class PantryApp {
             const fulfillmentActive = overlay.querySelector('.grocery-fulfillment-btn.active');
             const addedBy = overlay.querySelector('#groceryItemAddedBy')?.value || '';
             if (addedBy) this._rememberAddedBy(addedBy);
+            const storeId = overlay.querySelector('#groceryItemStore')?.value || null;
             const data = {
                 name,
                 amount:      overlay.querySelector('#groceryItemAmount')?.value.trim()   || '',
@@ -785,6 +831,7 @@ export class PantryApp {
                 fulfillment: fulfillmentActive?.dataset.ful || 'curbside',
                 notes:       overlay.querySelector('#groceryItemNotes')?.value.trim()    || '',
                 addedBy:     addedBy || null,
+                storeId:     storeId || null,
                 photo:       this._editItemPhoto || null,
             };
             if (this._editItem) {
@@ -838,28 +885,50 @@ export class PantryApp {
         if (!sug) return;
         if (!q || q.length < 2) { sug.innerHTML = ''; return; }
         const ql = q.toLowerCase();
-        const matches = this._inventory
+
+        // 1. Inventory items — best match (in pantry, has stock info)
+        const invMatches = this._inventory
             .filter(i => i.name.toLowerCase().includes(ql))
-            .slice(0, 5);
+            .map(i => ({ source: 'inv', id: i.id, name: i.name, category: i.category,
+                         notes: i.notes, photo: i.photo,
+                         defaultAmount: i.defaultAmount, defaultUnit: i.defaultUnit,
+                         defaultFulfillment: i.defaultFulfillment }));
+
+        // 2. Product catalog — items not already surfaced via inventory
+        const invNames = new Set(invMatches.map(i => i.name.toLowerCase()));
+        const prodMatches = this._products
+            .filter(p => p.name.toLowerCase().includes(ql) && !invNames.has(p.name.toLowerCase()))
+            .map(p => ({ source: 'prod', id: p.id, name: p.name,
+                         category: this._categoryGroceryId(p.category_id),
+                         notes: p.notes || '', photo: p.image_url || '',
+                         brand: p.brand || '' }));
+
+        const matches = [...invMatches, ...prodMatches].slice(0, 6);
         if (!matches.length) { sug.innerHTML = ''; return; }
-        sug.innerHTML = matches.map(i => `
-            <div class="grocery-item-suggestion" data-inv-id="${i.id}">
-                ${catOf(i.category).emoji} ${this._esc(i.name)}
-                ${i.defaultAmount ? `<span class="grocery-suggestion-amount">${i.defaultAmount} ${i.defaultUnit || ''}</span>` : ''}
+
+        sug.innerHTML = matches.map((m, idx) => `
+            <div class="grocery-item-suggestion" data-sug-idx="${idx}">
+                <span class="grocery-sug-cat">${catOf(m.category).emoji}</span>
+                <span class="grocery-sug-name">${this._esc(m.name)}</span>
+                ${m.brand ? `<span class="grocery-sug-brand">${this._esc(m.brand)}</span>` : ''}
+                ${m.source === 'inv'
+                    ? '<span class="grocery-sug-badge inv">In Pantry</span>'
+                    : '<span class="grocery-sug-badge prod">Saved</span>'}
             </div>`).join('');
+
         sug.querySelectorAll('.grocery-item-suggestion').forEach(el => {
             el.addEventListener('mousedown', e => {
                 e.preventDefault();
-                const inv = this._inventory.find(i => i.id === el.dataset.invId);
-                if (!inv) return;
-                overlay.querySelector('#groceryItemName').value     = inv.name;
-                overlay.querySelector('#groceryItemAmount').value   = inv.defaultAmount || '';
-                overlay.querySelector('#groceryItemUnit').value     = inv.defaultUnit   || '';
-                overlay.querySelector('#groceryItemCategory').value = inv.category      || 'other';
-                overlay.querySelector('#groceryItemNotes').value    = inv.notes         || '';
+                const m = matches[parseInt(el.dataset.sugIdx)];
+                if (!m) return;
+                overlay.querySelector('#groceryItemName').value     = m.name;
+                overlay.querySelector('#groceryItemAmount').value   = m.defaultAmount || '';
+                overlay.querySelector('#groceryItemUnit').value     = m.defaultUnit   || '';
+                overlay.querySelector('#groceryItemCategory').value = m.category      || 'other';
+                overlay.querySelector('#groceryItemNotes').value    = m.notes         || '';
                 const fulfBtns = overlay.querySelectorAll('.grocery-fulfillment-btn');
-                fulfBtns.forEach(b => b.classList.toggle('active', b.dataset.ful === (inv.defaultFulfillment || 'curbside')));
-                if (inv.photo) { this._editItemPhoto = inv.photo; this._updateItemPhotoPreview(overlay); }
+                fulfBtns.forEach(b => b.classList.toggle('active', b.dataset.ful === (m.defaultFulfillment || 'curbside')));
+                if (m.photo) { this._editItemPhoto = m.photo; this._updateItemPhotoPreview(overlay); }
                 sug.innerHTML = '';
             });
         });
@@ -1273,7 +1342,7 @@ export class PantryApp {
             // The old grocery shape kept `amount` (freeform: "2 lbs") and
             // `unit` separately. The SQLite shopping_list has numeric `qty`
             // + `unit`. Best-effort split: parseFloat(amount) → qty fallback 1.
-            const parsedQty = parseFloat(data.amount);
+            const parsedQty = parseFloat(data.amount ?? data.qty);
             await this.store.addItem({
                 name:        data.name,
                 category:    data.category || detectCategory(data.name),
@@ -1282,6 +1351,7 @@ export class PantryApp {
                 fulfillment: data.fulfillment || 'curbside',
                 notes:       data.notes || '',
                 addedBy:     data.addedBy || null,
+                storeId:     data.storeId  || null,
             });
             this._setSyncStatus('saved', 3000);
         } catch {
@@ -1499,33 +1569,30 @@ export class PantryApp {
                 this._openAddToListDirectModal(product, barcode);
             }
         } else if (mode === 'need') {
-            // Shopping List quick-add. If we already have a pantry record we
-            // can copy the canonical name/category; otherwise use whatever the
-            // backend cascade lookup returned, falling back to the raw barcode.
+            // Shopping List scan → always open the Add Item modal pre-filled so
+            // the user can adjust quantity, store, and fulfillment before adding.
             const existing = this._inventory.find(i => i.upc === barcode) ||
                              (product.name ? this._inventory.find(i => i.name.toLowerCase() === product.name.toLowerCase()) : null);
+
             if (existing) {
-                const onList = this._items.find(
-                    i => !i.checked && (i.inventoryRef === existing.id ||
-                                        i.name.toLowerCase() === existing.name.toLowerCase())
-                );
-                if (onList) {
-                    this._showToast(`✓ ${existing.name} is already on the list`);
-                    return;
-                }
-                this._addFromInventory(existing);
-                this._showToast(`🛒 ${existing.name} added to list`);
-            } else {
-                const name = product.name || `Item ${barcode}`;
-                this._addItem({
-                    name,
-                    category: product.category || detectCategory(name),
-                    notes:    product.brand ? `Brand: ${product.brand}` : '',
-                    photo:    product.imageUrl || null,
-                    source:   'scan',
-                    addedBy:  this._lastAddedBy() || null,
+                // Pre-fill from the known pantry record — still opens as NEW item
+                this._openItemModal(null, {
+                    name:        existing.name,
+                    category:    existing.category,
+                    fulfillment: existing.defaultFulfillment || 'curbside',
+                    notes:       existing.notes || '',
+                    photo:       existing.photo || product.imageUrl || null,
                 });
-                this._showToast(`🛒 ${name} added to list`);
+            } else {
+                // Not in pantry — open modal with barcode-lookup data as NEW item
+                const name = product.name || `Item ${barcode}`;
+                this._openItemModal(null, {
+                    name,
+                    category:    product.category || detectCategory(name),
+                    notes:       product.brand ? `Brand: ${product.brand}` : '',
+                    photo:       product.imageUrl || null,
+                    fulfillment: 'curbside',
+                });
             }
         }
     }
@@ -1692,6 +1759,42 @@ export class PantryApp {
     _esc(s) {
         return String(s ?? '')
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    /**
+     * Build <option> elements for the "Added By" picker.
+     * Uses this._family (HA persons) when available, falls back to the
+     * compile-time FAMILY_MEMBERS_FALLBACK list.
+     */
+    _familyOptions(selectedName = '') {
+        const members = this._family.length
+            ? this._family.map(p => ({ value: p.name, label: p.name }))
+            : FAMILY_MEMBERS_FALLBACK.map(n => ({ value: n, label: n }));
+        return members.map(m => {
+            const sel = selectedName === m.value ? ' selected' : '';
+            return `<option value="${this._esc(m.value)}"${sel}>${this._esc(m.label)}</option>`;
+        }).join('');
+    }
+
+    /** Resolve a store id → display name from config. */
+    _storeNameById(storeId) {
+        if (!storeId) return '';
+        const s = (this.store.config.stores || []).find(s => s.id === storeId);
+        return s?.name || '';
+    }
+
+    /** Map a backend category_id UUID → grocery string id for autocomplete. */
+    _categoryGroceryId(categoryId) {
+        if (!categoryId) return 'other';
+        const cat = (this.store.config.categories || []).find(c => c.id === categoryId);
+        if (!cat) return 'other';
+        const name = (cat.name || '').toLowerCase();
+        // Reuse the same hints from PantryStore
+        const HINTS = { produce:['produce','fruit','veg'], dairy:['dairy','egg'], meat:['meat','seafood','fish'], bakery:['bakery','bread'], frozen:['frozen'], pantry:['pantry','dry','canned','shelf'], snacks:['snack'], beverages:['beverage','drink'], personal:['personal','health','beauty'], household:['household','cleaning','paper'] };
+        for (const [gid, hints] of Object.entries(HINTS)) {
+            if (hints.some(h => name.includes(h))) return gid;
+        }
+        return 'other';
     }
 
     /**
