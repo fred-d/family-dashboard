@@ -1383,19 +1383,51 @@ export class PantryApp {
     }
 
     async _addInventoryItem(data) {
-        // Adding a brand-new pantry item from scratch requires creating a
-        // product row first (the SQLite schema's items table is FK'd to
-        // products). That flow lands in a follow-up PR — for now, point the
-        // user at the scanner which already creates products via the cascade
-        // lookup.
-        alert('Manually adding pantry items is coming back in a follow-up PR. ' +
-              'For now, scan an item with the 📥 Scan to Restock button — the ' +
-              'backend will look it up and add the product automatically.');
+        // Two-step: create product, then create the inventory row that points
+        // at it. SSE re-fetch lands the new card without needing local state
+        // mutation.
+        this._setSyncStatus('saving');
+        try {
+            const product = await this.store.addProduct({
+                name:     data.name,
+                brand:    data.brand   || '',
+                category: data.category || detectCategory(data.name),
+                photo:    data.photo   || '',
+                notes:    data.notes   || '',
+                isStaple: !!data.isStaple,
+                upc:      data.upc     || '',
+            });
+            if (!product?.id) throw new Error('product create returned no id');
+
+            // stockLevel → starting qty. Default "ok" with qty=1 when nothing
+            // is supplied — same heuristic as the stockLevel translator below.
+            const startQty =
+                data.stockLevel === 'out' ? 0 :
+                data.stockLevel === 'low' ? 1 :
+                                            1;
+
+            await this.store.addInventoryItem({
+                productId: product.id,
+                qty:       startQty,
+                notes:     data.notes || '',
+            });
+            this._setSyncStatus('saved', 3000);
+        } catch (err) {
+            console.warn('[PantryApp] _addInventoryItem failed:', err);
+            this._setSyncStatus('offline', 3000);
+            alert('Could not add the pantry item — see console for details.');
+        }
     }
 
-    async _addInventoryItemFromListData(_data) {
-        // "Save to Pantry" checkbox in the Add-to-list modal — same blocker
-        // as _addInventoryItem above. Silently skip rather than error.
+    async _addInventoryItemFromListData(data) {
+        // "Save to Pantry" checkbox on the shopping-list Add modal — same
+        // create-product-then-inventory flow, just driven by the list data.
+        return this._addInventoryItem({
+            name:     data.name,
+            category: data.category,
+            notes:    data.notes,
+            photo:    data.photo,
+        });
     }
 
     async _updateInventoryItem(id, changes, _rerender = true) {

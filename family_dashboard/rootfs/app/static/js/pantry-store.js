@@ -195,20 +195,40 @@ export class PantryStore {
     // ── Inventory mutations (per-row; replaces saveInventory(items)) ─────────
 
     /**
-     * Add a pantry item. Backend requires a product_id, so the caller must
-     * either pass one (`item.productId`) or first create a product via
-     * /api/pantry/products. PR C will plumb this through the New Item
-     * modal — for now this is a thin pass-through.
+     * Create a product row. Required before adding an inventory item from
+     * scratch (the inventory table is FK'd to products). Returns the new
+     * product row including its server-assigned id.
+     */
+    async addProduct(product) {
+        const body = {
+            name:        product.name,
+            brand:       product.brand ?? '',
+            category_id: this._categoryIdForGroceryId(product.category),
+            image_url:   product.photo ?? '',
+            notes:       product.notes ?? '',
+            is_staple:   product.isStaple ? 1 : 0,
+        };
+        if (product.upc) body.barcodes = [String(product.upc)];
+        return this._send('POST', '/api/pantry/products', body);
+    }
+
+    /**
+     * Add an inventory row. Requires a product_id (use addProduct first if
+     * adding from scratch). Defaults the location to the first configured
+     * location when one isn't supplied.
      */
     async addInventoryItem(item) {
         if (!item.productId) {
             throw new Error(
                 '[PantryStore] addInventoryItem requires productId — ' +
-                'create the product first via /api/pantry/products');
+                'create the product first via addProduct()');
         }
+        const locationId = item.locationId
+            ?? this.config?.locations?.[0]?.id
+            ?? null;
         return this._send('POST', '/api/pantry/items', {
             product_id:  item.productId,
-            location_id: item.locationId ?? null,
+            location_id: locationId,
             current_qty: item.qty ?? 1,
             notes:       item.notes ?? '',
         });
