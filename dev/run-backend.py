@@ -42,8 +42,6 @@ APP_DIR   = ROOT / 'family_dashboard' / 'rootfs' / 'app'
 DATA_DIR  = ROOT / 'dev' / 'data'
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 (DATA_DIR / 'photos').mkdir(exist_ok=True)
-(DATA_DIR / 'recipes').mkdir(exist_ok=True)
-(DATA_DIR / 'meals').mkdir(exist_ok=True)
 
 # Patch env vars the app reads at module-level
 HA_URL   = os.environ.get('HA_URL',   'https://dashboard.fna3.net').rstrip('/')
@@ -54,26 +52,9 @@ os.environ['DATA_DIR']   = str(DATA_DIR)
 os.environ['STATIC_DIR'] = str(APP_DIR / 'static')
 os.environ['HA_BASE_URL'] = HA_URL  # picked up by the monkey-patch below
 
-# ── Monkey-patch the hard-coded /data and /app/static paths ──────────────────
-# server.py uses pathlib.Path('/data') and '/app/static'. We patch those
-# at the module level before importing so the app uses local paths instead.
-import pathlib as _pathlib
-_orig_Path = _pathlib.Path
-
-class _PatchedPath(_orig_Path):
-    _flavour = _orig_Path('.')._flavour  # keep platform flavour
-    def __new__(cls, *args, **kwargs):
-        p = super().__new__(cls, *args, **kwargs)
-        s = str(p)
-        if s == '/data' or s.startswith('/data/'):
-            p = super().__new__(cls, str(DATA_DIR) + s[5:])
-        elif s == '/app/static':
-            p = super().__new__(cls, str(APP_DIR / 'static'))
-        return p
-
-# Don't patch on Windows — absolute paths differ; use env vars instead.
-# The server.py and pantry.py read DATA / STATIC from module-level variables.
-# We patch them by importing and overwriting before Flask starts.
+# On Windows the hard-coded Linux paths (/data, /app/static) in server.py
+# and pantry.py are overwritten via module-level variable assignment below,
+# so no pathlib monkey-patch is needed here.
 
 sys.path.insert(0, str(APP_DIR))
 
@@ -84,8 +65,6 @@ import pantry as pantry_mod
 server.DATA   = DATA_DIR
 server.STATIC = APP_DIR / 'static'
 server.PHOTOS = DATA_DIR / 'photos'
-server.RECIPES = DATA_DIR / 'recipes'
-server.MEALS   = DATA_DIR / 'meals'
 server.HA_BASE = HA_URL
 server.HA_TOKEN = HA_TOKEN
 
@@ -94,9 +73,26 @@ pantry_mod.DB_PATH = DATA_DIR / 'inventory.db'
 pantry_mod.HA_BASE = HA_URL
 pantry_mod.HA_TOKEN = HA_TOKEN
 
-# Re-initialise the database at the new path
-with server.app.app_context():
-    pantry_mod._init_db(server.app)
+# Fix static_folder — Flask captured STATIC at import time ('/app/static').
+# We must update the app object itself so CSS/JS are served from the local tree.
+server.app.static_folder = str(APP_DIR / 'static')
+
+# ── Dev auth bypass ───────────────────────────────────────────────────────────
+# _require_auth is already registered as a before_request hook inside server.py.
+# Insert our bypass BEFORE it so local dev skips the password check entirely.
+from flask import session as _flask_session
+
+def _dev_auth_bypass():
+    _flask_session['authenticated'] = True
+
+server.app.before_request_funcs.setdefault(None, []).insert(0, _dev_auth_bypass)
+
+# Register the Pantry blueprint and initialise the database.
+# pantry_mod.init() does both: it calls _init_db() and registers the
+# blueprint at /api/pantry (+ /api/inventory legacy alias).
+# server.py's __main__ block normally does this, but since we import
+# server rather than running it directly, we must call init() ourselves.
+pantry_mod.init(server.app, server._sse_push)
 
 PORT = int(os.environ.get('PORT', 8099))
 print(f'[backend] data dir:   {DATA_DIR}')
@@ -104,4 +100,4 @@ print(f'[backend] static dir: {APP_DIR / "static"}')
 print(f'[backend] HA base:    {HA_URL}')
 print(f'[backend] http://localhost:{PORT}')
 
-server.app.run(host='0.0.0.0', port=PORT, debug=True, threaded=True, use_reloader=False)
+server.app.run(host='0.0.0.0', port=PORT, debug=True, threaded=True, use_reloader=True)

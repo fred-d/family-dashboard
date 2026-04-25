@@ -1,11 +1,11 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   grocery.css — Family Grocery Shopping List styles
-   Companion to js/grocery.js + js/grocery-store.js
+   pantry.css — Family Pantry Shopping List styles
+   Companion to js/pantry.js + js/pantry-store.js
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ── Page layout ──────────────────────────────────────────────────────────── */
 
-.grocery-page {
+.pantry-page {
     display:         flex;
     flex-direction:  column;
     height:          100%;
@@ -13,33 +13,10 @@
     overflow:        hidden;
 }
 
-/* ── Header ───────────────────────────────────────────────────────────────── */
-
-.grocery-header {
-    display:          flex;
-    align-items:      center;
-    justify-content:  space-between;
-    padding:          16px 20px 12px;
-    flex-shrink:      0;
-    border-bottom:    1px solid var(--color-border);
-    background:       var(--color-surface);
-}
-
-.grocery-title {
-    font-size:    20px;
-    font-weight:  700;
-    color:        var(--color-text);
-    letter-spacing: -0.3px;
-}
-
-.grocery-header-actions {
-    display:      flex;
-    align-items:  center;
-    gap:          10px;
-}
+/* ── Header (removed — Store Mode button now lives in .pantry-tabs-right) ── */
 
 /* Store Mode Button */
-.grocery-store-mode-btn {
+.pantry-store-mode-btn {
     display:         flex;
     align-items:     center;
     gap:             6px;
@@ -54,11 +31,11 @@
     transition:      transform 0.15s, box-shadow 0.15s;
     box-shadow:      0 2px 8px rgba(0,0,0,0.25);
 }
-.grocery-store-mode-btn:hover {
+.pantry-store-mode-btn:hover {
     transform:    translateY(-1px);
     box-shadow:   0 4px 14px rgba(0,0,0,0.35);
 }
-.grocery-store-mode-count {
+.pantry-store-mode-count {
     background:   #ef4444;
     color:        #fff;
     font-size:    11px;
@@ -70,19 +47,20 @@
 }
 
 /* Sync badge */
-.grocery-sync-badge {
+.pantry-sync-badge {
     font-size:    12px;
     color:        var(--color-muted);
     transition:   color 0.2s;
 }
-.grocery-sync-badge[data-status="saving"] { color: var(--theme-primary); }
-.grocery-sync-badge[data-status="saved"]  { color: #22c55e; }
-.grocery-sync-badge[data-status="error"]  { color: #ef4444; }
+.pantry-sync-badge[data-status="saving"] { color: var(--theme-primary); }
+.pantry-sync-badge[data-status="saved"]  { color: #22c55e; }
+.pantry-sync-badge[data-status="error"]  { color: #ef4444; }
 
 /* ── Tabs ─────────────────────────────────────────────────────────────────── */
 
-.grocery-tabs {
+.pantry-tabs {
     display:         flex;
+    align-items:     center;
     gap:             0;
     background:      var(--color-surface);
     border-bottom:   1px solid var(--color-border);
@@ -90,7 +68,16 @@
     flex-shrink:     0;
 }
 
-.grocery-tab {
+/* Right-side slot in the tabs bar — holds sync badge + Store Mode button */
+.pantry-tabs-right {
+    margin-left:  auto;
+    display:      flex;
+    align-items:  center;
+    gap:          10px;
+    padding-left: 12px;
+}
+
+.pantry-tab {
     display:         flex;
     align-items:     center;
     gap:             6px;
@@ -105,14 +92,14 @@
     transition:      color 0.15s, border-color 0.15s;
     white-space:     nowrap;
 }
-.grocery-tab:hover  { color: var(--color-text); }
-.grocery-tab.active {
+.pantry-tab:hover  { color: var(--color-text); }
+.pantry-tab.active {
     color:           var(--theme-primary);
     border-color:    var(--theme-primary);
     font-weight:     700;
 }
 
-.grocery-tab-count {
+.pantry-tab-count {
     background:    var(--theme-hover);
     color:         var(--theme-primary);
     font-size:     11px;
@@ -122,18 +109,18 @@
     min-width:     18px;
     text-align:    center;
 }
-.grocery-tab-count.alert {
+.pantry-tab-count.alert {
     background:  #fef2f2;
     color:       #dc2626;
 }
-:root[data-theme="dark"] .grocery-tab-count.alert {
+:root[data-theme="dark"] .pantry-tab-count.alert {
     background: rgba(239,68,68,0.18);
     color:      #f87171;
 }
 
 /* ── Body ─────────────────────────────────────────────────────────────────── */
 
-.grocery-body {
+.pantry-body {
     flex:        1;
     overflow-y:  auto;
     position:    relative;
@@ -141,7 +128,7 @@
 
 /* ── Shared action buttons ───────────────────────────────────────────────── */
 
-.grocery-action-btn {
+.pantry-action-btn {
     display:         inline-flex;
     align-items:     center;
     gap:             4px;
@@ -156,19 +143,19 @@
     white-space:     nowrap;
     transition:      background 0.15s, border-color 0.15s, color 0.15s;
 }
-.grocery-action-btn:hover  { background: var(--theme-hover); border-color: var(--theme-primary); color: var(--theme-primary); }
-.grocery-action-btn.primary {
+.pantry-action-btn:hover  { background: var(--theme-hover); border-color: var(--theme-primary); color: var(--theme-primary); }
+.pantry-action-btn.primary {
     background:      var(--theme-primary);
     border-color:    var(--theme-primary);
     color:           #fff;
 }
-.grocery-action-btn.primary:hover { opacity: 0.88; }
-.grocery-action-btn.danger  { color: #ef4444; border-color: #fca5a5; }
-.grocery-action-btn.danger:hover  { background: #fef2f2; }
+.pantry-action-btn.primary:hover { opacity: 0.88; }
+.pantry-action-btn.danger  { color: #ef4444; border-color: #fca5a5; }
+.pantry-action-btn.danger:hover  { background: #fef2f2; }
 
 /* ── Filter pills ─────────────────────────────────────────────────────────── */
 
-.grocery-filter-btn {
+.pantry-filter-btn {
     padding:         6px 12px;
     border-radius:   20px;
     border:          1px solid var(--color-border);
@@ -180,8 +167,8 @@
     white-space:     nowrap;
     transition:      all 0.15s;
 }
-.grocery-filter-btn:hover  { border-color: var(--theme-primary); color: var(--theme-primary); }
-.grocery-filter-btn.active {
+.pantry-filter-btn:hover  { border-color: var(--theme-primary); color: var(--theme-primary); }
+.pantry-filter-btn.active {
     background:    var(--theme-primary);
     border-color:  var(--theme-primary);
     color:         #fff;
@@ -192,7 +179,7 @@
    ══════════════════════════════════════════════════════════════════ */
 
 /* Toolbar */
-.grocery-list-toolbar {
+.pantry-list-toolbar {
     display:          flex;
     align-items:      center;
     justify-content:  space-between;
@@ -203,20 +190,20 @@
     background:       var(--color-surface);
 }
 
-.grocery-filters {
+.pantry-filters {
     display:    flex;
     gap:        6px;
     flex-wrap:  wrap;
 }
 
-.grocery-list-actions {
+.pantry-list-actions {
     display:    flex;
     align-items: center;
     gap:        6px;
     flex-wrap:  wrap;
 }
 
-.grocery-toggle-checked {
+.pantry-toggle-checked {
     padding:       6px 10px;
     border-radius: 8px;
     border:        1px solid var(--color-border);
@@ -226,10 +213,10 @@
     cursor:        pointer;
     transition:    all 0.15s;
 }
-.grocery-toggle-checked:hover { color: var(--color-text); border-color: var(--color-muted); }
+.pantry-toggle-checked:hover { color: var(--color-text); border-color: var(--color-muted); }
 
 /* Progress */
-.grocery-progress-wrap {
+.pantry-progress-wrap {
     display:      flex;
     align-items:  center;
     gap:          10px;
@@ -237,23 +224,23 @@
     border-bottom: 1px solid var(--color-border);
 }
 
-.grocery-progress-bar {
+.pantry-progress-bar {
     flex:          1;
     height:        8px;
     border-radius: 4px;
     background:    #e2e8f0;
     overflow:      hidden;
 }
-:root[data-theme="dark"] .grocery-progress-bar { background: rgba(255,255,255,0.08); }
+:root[data-theme="dark"] .pantry-progress-bar { background: rgba(255,255,255,0.08); }
 
-.grocery-progress-fill {
+.pantry-progress-fill {
     height:          100%;
     border-radius:   4px;
     background:      linear-gradient(90deg, var(--theme-primary), #22c55e);
     transition:      width 0.4s ease;
 }
 
-.grocery-progress-label {
+.pantry-progress-label {
     font-size:    12px;
     color:        var(--color-muted);
     white-space:  nowrap;
@@ -262,15 +249,15 @@
 }
 
 /* Category groups */
-.grocery-categories {
+.pantry-categories {
     padding: 8px 0 100px; /* space for FAB */
 }
 
-.grocery-cat-group {
+.pantry-cat-group {
     margin-bottom: 2px;
 }
 
-.grocery-cat-header {
+.pantry-cat-header {
     display:      flex;
     align-items:  center;
     gap:          8px;
@@ -282,12 +269,12 @@
     border-bottom: 1px solid var(--color-border);
 }
 
-.grocery-cat-emoji {
+.pantry-cat-emoji {
     font-size:  16px;
     line-height: 1;
 }
 
-.grocery-cat-label {
+.pantry-cat-label {
     font-size:   13px;
     font-weight: 700;
     color:       var(--cat-color, var(--theme-primary));
@@ -296,7 +283,7 @@
     letter-spacing: 0.5px;
 }
 
-.grocery-cat-count {
+.pantry-cat-count {
     background:    var(--cat-color, var(--theme-primary));
     color:         #fff;
     font-size:     11px;
@@ -305,14 +292,14 @@
     padding:       2px 7px;
 }
 
-.grocery-cat-all-done {
+.pantry-cat-all-done {
     font-size:  11px;
     color:      #22c55e;
     font-weight: 600;
 }
 
 /* Item rows */
-.grocery-item-row {
+.pantry-item-row {
     display:       flex;
     align-items:   center;
     gap:           10px;
@@ -322,10 +309,10 @@
     transition:    background 0.15s;
     cursor:        default;
 }
-.grocery-item-row:hover { background: var(--theme-hover); }
-.grocery-item-row.checked { opacity: 0.55; }
+.pantry-item-row:hover { background: var(--theme-hover); }
+.pantry-item-row.checked { opacity: 0.55; }
 
-.grocery-item-check {
+.pantry-item-check {
     flex-shrink:   0;
     width:         26px;
     height:        26px;
@@ -338,13 +325,13 @@
     justify-content: center;
     transition:    all 0.15s;
 }
-.grocery-item-check:hover { border-color: var(--theme-primary); }
-.grocery-item-check.done {
+.pantry-item-check:hover { border-color: var(--theme-primary); }
+.pantry-item-check.done {
     background:    #22c55e;
     border-color:  #22c55e;
 }
 
-.grocery-item-photo-thumb {
+.pantry-item-photo-thumb {
     flex-shrink:        0;
     width:              42px;
     height:             42px;
@@ -355,7 +342,7 @@
     border:             1px solid var(--color-border);
 }
 
-.grocery-item-info {
+.pantry-item-info {
     flex:         1;
     min-width:    0;
     display:      flex;
@@ -363,7 +350,7 @@
     gap:          2px;
 }
 
-.grocery-item-name {
+.pantry-item-name {
     font-size:    15px;
     font-weight:  500;
     color:        var(--color-text);
@@ -371,15 +358,15 @@
     overflow:     hidden;
     text-overflow: ellipsis;
 }
-.grocery-item-row.checked .grocery-item-name { text-decoration: line-through; }
+.pantry-item-row.checked .pantry-item-name { text-decoration: line-through; }
 
-.grocery-item-amount {
+.pantry-item-amount {
     font-size:  12px;
     color:      var(--theme-primary);
     font-weight: 600;
 }
 
-.grocery-item-notes {
+.pantry-item-notes {
     font-size:  12px;
     color:      var(--color-muted);
     white-space: nowrap;
@@ -387,14 +374,14 @@
     text-overflow: ellipsis;
 }
 
-.grocery-item-source {
+.pantry-item-source {
     font-size:  11px;
     color:      #8b5cf6;
     font-style: italic;
 }
 
 /* "Added by <Name>" pill — hidden for household/system entries */
-.grocery-item-addedby {
+.pantry-item-addedby {
     display:       inline-flex;
     align-items:   center;
     font-size:     10px;
@@ -408,16 +395,16 @@
 }
 
 /* Meta row — store badge + "by person" + notes, all on one line */
-.grocery-item-meta {
+.pantry-item-meta {
     display:   flex;
     flex-wrap: wrap;
     gap:       4px;
     align-items: center;
     min-height: 0;
 }
-.grocery-item-meta:empty { display: none; }
+.pantry-item-meta:empty { display: none; }
 
-.grocery-item-store {
+.pantry-item-store {
     display:       inline-flex;
     align-items:   center;
     font-size:     10px;
@@ -431,10 +418,10 @@
 }
 
 /* Suggestion dropdown */
-.grocery-sug-cat   { margin-right: 4px; }
-.grocery-sug-name  { font-weight: 600; flex: 1; }
-.grocery-sug-brand { font-size: 11px; color: var(--color-muted); margin-left: 4px; }
-.grocery-sug-badge {
+.pantry-sug-cat   { margin-right: 4px; }
+.pantry-sug-name  { font-weight: 600; flex: 1; }
+.pantry-sug-brand { font-size: 11px; color: var(--color-muted); margin-left: 4px; }
+.pantry-sug-badge {
     font-size:     10px;
     font-weight:   600;
     padding:       1px 5px;
@@ -442,20 +429,20 @@
     margin-left:   auto;
     flex-shrink:   0;
 }
-.grocery-sug-badge.inv  { background: #dcfce7; color: #16a34a; }
-.grocery-sug-badge.prod { background: #e0e7ff; color: #4f46e5; }
+.pantry-sug-badge.inv  { background: #dcfce7; color: #16a34a; }
+.pantry-sug-badge.prod { background: #e0e7ff; color: #4f46e5; }
 
 /* Fulfillment badges */
-.grocery-fulfillment {
+.pantry-fulfillment {
     font-size:     13px;
     padding:       3px 7px;
     border-radius: 10px;
     flex-shrink:   0;
     background:    var(--color-surface);
 }
-.grocery-fulfillment.small { font-size: 11px; padding: 2px 5px; }
+.pantry-fulfillment.small { font-size: 11px; padding: 2px 5px; }
 
-.grocery-item-edit {
+.pantry-item-edit {
     flex-shrink:   0;
     width:         28px;
     height:        28px;
@@ -469,19 +456,19 @@
     justify-content: center;
     transition:    background 0.15s, color 0.15s;
 }
-.grocery-item-edit:hover { background: var(--theme-hover); color: var(--theme-primary); }
+.pantry-item-edit:hover { background: var(--theme-hover); color: var(--theme-primary); }
 
 /* Empty state */
-.grocery-empty {
+.pantry-empty {
     text-align:  center;
     padding:     60px 24px;
 }
-.grocery-empty-icon  { font-size: 52px; margin-bottom: 12px; }
-.grocery-empty-title { font-size: 17px; font-weight: 700; color: var(--color-text); margin-bottom: 6px; }
-.grocery-empty-text  { font-size: 14px; color: var(--color-muted); line-height: 1.5; max-width: 280px; margin: 0 auto; }
+.pantry-empty-icon  { font-size: 52px; margin-bottom: 12px; }
+.pantry-empty-title { font-size: 17px; font-weight: 700; color: var(--color-text); margin-bottom: 6px; }
+.pantry-empty-text  { font-size: 14px; color: var(--color-muted); line-height: 1.5; max-width: 280px; margin: 0 auto; }
 
 /* FAB */
-.grocery-add-fab {
+.pantry-add-fab {
     position:         fixed;
     bottom:           24px;
     right:            24px;
@@ -500,14 +487,14 @@
     transition:       transform 0.15s, box-shadow 0.15s;
     z-index:          50;
 }
-.grocery-add-fab:hover {
+.pantry-add-fab:hover {
     transform:   translateY(-2px);
     box-shadow:  0 8px 28px rgba(0,0,0,0.3);
 }
-.grocery-add-fab:active { transform: translateY(0); }
+.pantry-add-fab:active { transform: translateY(0); }
 
 /* Stack the Scan + Add Item FABs along the bottom-right rail */
-.grocery-list-fabs {
+.pantry-list-fabs {
     position:        fixed;
     bottom:          24px;
     right:           24px;
@@ -517,10 +504,10 @@
     gap:             10px;
     z-index:         50;
 }
-.grocery-list-fabs .grocery-add-fab {
+.pantry-list-fabs .pantry-add-fab {
     position: static; /* override fixed-positioning so the column lays them out */
 }
-.grocery-scan-fab {
+.pantry-scan-fab {
     background:    var(--color-card);
     color:         var(--color-text);
     border:        1px solid var(--color-border);
@@ -528,7 +515,7 @@
     padding:       12px 18px;
     font-size:     14px;
 }
-:root[data-theme="dark"] .grocery-scan-fab {
+:root[data-theme="dark"] .pantry-scan-fab {
     background:    rgba(255,255,255,0.06);
     border-color:  rgba(255,255,255,0.12);
 }
@@ -537,7 +524,7 @@
    PANTRY TAB
    ══════════════════════════════════════════════════════════════════ */
 
-.grocery-pantry-toolbar {
+.pantry-pantry-toolbar {
     display:         flex;
     align-items:     center;
     gap:             10px;
@@ -546,14 +533,14 @@
     background:      var(--color-surface);
 }
 
-.grocery-pantry-search-wrap {
+.pantry-pantry-search-wrap {
     flex:            1;
     position:        relative;
     display:         flex;
     align-items:     center;
 }
 
-.grocery-pantry-search-icon {
+.pantry-pantry-search-icon {
     position:  absolute;
     left:      10px;
     width:     16px;
@@ -562,7 +549,7 @@
     pointer-events: none;
 }
 
-.grocery-pantry-search {
+.pantry-pantry-search {
     width:         100%;
     padding:       8px 12px 8px 34px;
     border:        1px solid var(--color-border);
@@ -573,10 +560,10 @@
     outline:       none;
     transition:    border-color 0.15s;
 }
-.grocery-pantry-search:focus  { border-color: var(--theme-primary); }
-.grocery-pantry-search::placeholder { color: var(--color-muted); }
+.pantry-pantry-search:focus  { border-color: var(--theme-primary); }
+.pantry-pantry-search::placeholder { color: var(--color-muted); }
 
-.grocery-pantry-filters {
+.pantry-pantry-filters {
     display:       flex;
     gap:           6px;
     padding:       10px 16px;
@@ -585,7 +572,7 @@
 }
 
 /* Low stock alert banner */
-.grocery-pantry-alert {
+.pantry-pantry-alert {
     display:         flex;
     align-items:     center;
     justify-content: space-between;
@@ -597,13 +584,13 @@
     color:           #92400e;
     flex-wrap:       wrap;
 }
-:root[data-theme="dark"] .grocery-pantry-alert {
+:root[data-theme="dark"] .pantry-pantry-alert {
     background:  rgba(234,179,8,0.12);
     border-color: rgba(234,179,8,0.25);
     color:       #fde68a;
 }
 
-.grocery-pantry-alert-btn {
+.pantry-pantry-alert-btn {
     padding:       5px 12px;
     border-radius: 8px;
     border:        none;
@@ -614,25 +601,25 @@
     cursor:        pointer;
     transition:    opacity 0.15s;
 }
-.grocery-pantry-alert-btn:hover { opacity: 0.85; }
+.pantry-pantry-alert-btn:hover { opacity: 0.85; }
 
 /* "Add All Low" alert variant — softer yellow than the urgent "out" alert */
-.grocery-pantry-alert.grocery-pantry-alert-low {
+.pantry-pantry-alert.pantry-pantry-alert-low {
     background:    #fffbeb;
     border-color:  #fef3c7;
     color:         #b45309;
 }
-:root[data-theme="dark"] .grocery-pantry-alert.grocery-pantry-alert-low {
+:root[data-theme="dark"] .pantry-pantry-alert.pantry-pantry-alert-low {
     background:    rgba(234,179,8,0.06);
     border-color:  rgba(234,179,8,0.18);
     color:         #fde68a;
 }
-.grocery-pantry-alert.grocery-pantry-alert-low .grocery-pantry-alert-btn {
+.pantry-pantry-alert.pantry-pantry-alert-low .pantry-pantry-alert-btn {
     background: #b45309;
 }
 
 /* Pantry grid */
-.grocery-pantry-grid {
+.pantry-pantry-grid {
     display:               grid;
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     gap:                   12px;
@@ -641,7 +628,7 @@
 }
 
 /* Pantry card */
-.grocery-pantry-card {
+.pantry-pantry-card {
     border:         1px solid var(--color-border);
     border-radius:  14px;
     overflow:       hidden;
@@ -650,16 +637,16 @@
     flex-direction: column;
     transition:     box-shadow 0.15s, transform 0.15s;
 }
-.grocery-pantry-card:hover {
+.pantry-pantry-card:hover {
     box-shadow:  0 4px 18px rgba(0,0,0,0.1);
     transform:   translateY(-2px);
 }
-.grocery-pantry-card.on-list {
+.pantry-pantry-card.on-list {
     border-color: #22c55e;
     box-shadow:   0 0 0 1px #22c55e;
 }
 
-.grocery-pantry-card-top {
+.pantry-pantry-card-top {
     position:         relative;
     height:           100px;
     background:       color-mix(in srgb, var(--cat-color, #94a3b8) 15%, #f1f5f9);
@@ -669,7 +656,7 @@
     overflow:         hidden;
 }
 
-.grocery-pantry-photo {
+.pantry-pantry-photo {
     position:   absolute;
     inset:      0;
     width:      100%;
@@ -677,14 +664,14 @@
     object-fit: cover;
 }
 
-.grocery-pantry-emoji {
+.pantry-pantry-emoji {
     font-size:  36px;
     line-height: 1;
     filter:     drop-shadow(0 2px 4px rgba(0,0,0,0.15));
 }
 
-.grocery-pantry-staple-badge,
-.grocery-pantry-on-list-badge {
+.pantry-pantry-staple-badge,
+.pantry-pantry-on-list-badge {
     position:      absolute;
     top:           6px;
     right:         6px;
@@ -694,24 +681,24 @@
     padding:       2px 6px;
 }
 
-.grocery-pantry-staple-badge {
+.pantry-pantry-staple-badge {
     background: rgba(0,0,0,0.45);
     backdrop-filter: blur(4px);
 }
 
-.grocery-pantry-on-list-badge {
+.pantry-pantry-on-list-badge {
     background: rgba(34,197,94,0.9);
     color:      #fff;
     left:       6px;
     right:      auto;
 }
 
-.grocery-pantry-card-body {
+.pantry-pantry-card-body {
     padding: 10px;
     flex:    1;
 }
 
-.grocery-pantry-name {
+.pantry-pantry-name {
     font-size:    14px;
     font-weight:  600;
     color:        var(--color-text);
@@ -723,7 +710,7 @@
     -webkit-box-orient: vertical;
 }
 
-.grocery-pantry-notes {
+.pantry-pantry-notes {
     font-size:  12px;
     color:      var(--color-muted);
     overflow:   hidden;
@@ -732,20 +719,20 @@
     margin-bottom: 4px;
 }
 
-.grocery-pantry-meta {
+.pantry-pantry-meta {
     display:    flex;
     align-items: center;
     gap:        5px;
     margin-top: 4px;
 }
 
-.grocery-pantry-amount {
+.pantry-pantry-amount {
     font-size:   11px;
     color:       var(--theme-primary);
     font-weight: 600;
 }
 
-.grocery-pantry-card-footer {
+.pantry-pantry-card-footer {
     border-top:  1px solid var(--color-border);
     padding:     8px 10px;
     display:     flex;
@@ -753,7 +740,7 @@
     gap:         6px;
 }
 
-.grocery-pantry-stock {
+.pantry-pantry-stock {
     flex:          1;
     min-width:     0;
     padding:       4px 6px;
@@ -765,18 +752,18 @@
     cursor:        pointer;
     outline:       none;
 }
-.grocery-pantry-stock.stock-ok  { border-color: #22c55e; color: #16a34a; }
-.grocery-pantry-stock.stock-low { border-color: #f59e0b; color: #d97706; }
-.grocery-pantry-stock.stock-out { border-color: #ef4444; color: #dc2626; }
+.pantry-pantry-stock.stock-ok  { border-color: #22c55e; color: #16a34a; }
+.pantry-pantry-stock.stock-low { border-color: #f59e0b; color: #d97706; }
+.pantry-pantry-stock.stock-out { border-color: #ef4444; color: #dc2626; }
 
-.grocery-pantry-card-actions {
+.pantry-pantry-card-actions {
     display: flex;
     gap:     4px;
 }
 
-.grocery-pantry-staple,
-.grocery-pantry-edit-btn,
-.grocery-pantry-add-btn {
+.pantry-pantry-staple,
+.pantry-pantry-edit-btn,
+.pantry-pantry-add-btn {
     border:        none;
     cursor:        pointer;
     border-radius: 6px;
@@ -785,18 +772,18 @@
     padding:       4px 6px;
     background:    transparent;
 }
-.grocery-pantry-staple:hover   { background: var(--theme-hover); }
-.grocery-pantry-edit-btn:hover { background: var(--theme-hover); }
+.pantry-pantry-staple:hover   { background: var(--theme-hover); }
+.pantry-pantry-edit-btn:hover { background: var(--theme-hover); }
 
-.grocery-pantry-add-btn {
+.pantry-pantry-add-btn {
     background:  var(--theme-primary);
     color:       #fff;
     font-size:   11px;
     font-weight: 700;
     padding:     4px 8px;
 }
-.grocery-pantry-add-btn:hover   { opacity: 0.88; }
-.grocery-pantry-add-btn.on-list { background: #22c55e; }
+.pantry-pantry-add-btn:hover   { opacity: 0.88; }
+.pantry-pantry-add-btn.on-list { background: #22c55e; }
 
 /* ══════════════════════════════════════════════════════════════════
    SHOPPING-LIST "ADDED BY" PICKER  (family attribution; List tab only)
@@ -805,7 +792,7 @@
 /* Reusable family-member chip (was previously the Requests tab "who"
    picker). Kept here for the Shopping List tab's "added by" affordance,
    which is being wired in PR C. */
-.grocery-who-btn {
+.pantry-who-btn {
     padding:       7px 16px;
     border-radius: 20px;
     border:        2px solid var(--color-border);
@@ -816,8 +803,8 @@
     cursor:        pointer;
     transition:    all 0.15s;
 }
-.grocery-who-btn:hover { border-color: var(--theme-primary); color: var(--theme-primary); }
-.grocery-who-btn.active {
+.pantry-who-btn:hover { border-color: var(--theme-primary); color: var(--theme-primary); }
+.pantry-who-btn.active {
     border-color: var(--theme-primary);
     background:   var(--theme-primary);
     color:        #fff;
@@ -827,22 +814,22 @@
    STORE MODE OVERLAY  (full-screen, dark, touch-optimised)
    ══════════════════════════════════════════════════════════════════ */
 
-#groceryStoreModeOverlay {
+#pantryStoreModeOverlay {
     display:    none;
     position:   fixed;
     inset:      0;
     z-index:    200;
     background: #0f172a;
 }
-#groceryStoreModeOverlay.active { display: block; }
+#pantryStoreModeOverlay.active { display: block; }
 
-.grocery-store-mode {
+.pantry-store-mode {
     display:        flex;
     flex-direction: column;
     height:         100%;
 }
 
-.grocery-store-header {
+.pantry-store-header {
     display:          flex;
     align-items:      center;
     justify-content:  space-between;
@@ -852,22 +839,22 @@
     flex-shrink:      0;
 }
 
-.grocery-store-header-left {}
+.pantry-store-header-left {}
 
-.grocery-store-title {
+.pantry-store-title {
     font-size:   20px;
     font-weight: 800;
     color:       #f8fafc;
     letter-spacing: -0.3px;
 }
 
-.grocery-store-subtitle {
+.pantry-store-subtitle {
     font-size:   13px;
     color:       rgba(255,255,255,0.5);
     margin-top:  2px;
 }
 
-.grocery-store-close {
+.pantry-store-close {
     padding:       10px 18px;
     border-radius: 10px;
     border:        none;
@@ -878,26 +865,26 @@
     cursor:        pointer;
     transition:    background 0.15s;
 }
-.grocery-store-close:hover { background: rgba(255,255,255,0.18); }
+.pantry-store-close:hover { background: rgba(255,255,255,0.18); }
 
-.grocery-store-progress-bar {
+.pantry-store-progress-bar {
     height:     5px;
     background: rgba(255,255,255,0.08);
     flex-shrink: 0;
 }
-.grocery-store-progress-fill {
+.pantry-store-progress-fill {
     height:     100%;
     background: linear-gradient(90deg, #22c55e, #4ade80);
     transition: width 0.4s ease;
 }
 
-.grocery-store-items {
+.pantry-store-items {
     flex:       1;
     overflow-y: auto;
     padding:    8px 0;
 }
 
-.grocery-store-item {
+.pantry-store-item {
     display:       flex;
     align-items:   center;
     gap:           16px;
@@ -907,10 +894,10 @@
     transition:    background 0.15s;
     -webkit-tap-highlight-color: transparent;
 }
-.grocery-store-item:active     { background: rgba(255,255,255,0.06); }
-.grocery-store-item.checked    { opacity: 0.4; }
+.pantry-store-item:active     { background: rgba(255,255,255,0.06); }
+.pantry-store-item.checked    { opacity: 0.4; }
 
-.grocery-store-check {
+.pantry-store-check {
     flex-shrink:   0;
     width:         36px;
     height:        36px;
@@ -921,12 +908,12 @@
     justify-content: center;
     transition:    all 0.2s;
 }
-.grocery-store-check.done {
+.pantry-store-check.done {
     background:   #22c55e;
     border-color: #22c55e;
 }
 
-.grocery-store-photo {
+.pantry-store-photo {
     flex-shrink:          0;
     width:                56px;
     height:               56px;
@@ -937,28 +924,28 @@
     border:               1px solid rgba(255,255,255,0.1);
 }
 
-.grocery-store-item-info { flex: 1; min-width: 0; }
+.pantry-store-item-info { flex: 1; min-width: 0; }
 
-.grocery-store-item-name {
+.pantry-store-item-name {
     font-size:   18px;
     font-weight: 600;
     color:       #f1f5f9;
     line-height: 1.3;
 }
 
-.grocery-store-item-amount {
+.pantry-store-item-amount {
     font-size:   14px;
     color:       #94a3b8;
     margin-top:  3px;
 }
 
-.grocery-store-item-notes {
+.pantry-store-item-notes {
     font-size:   13px;
     color:       #64748b;
     margin-top:  2px;
 }
 
-.grocery-store-cat {
+.pantry-store-cat {
     font-size:  22px;
     flex-shrink: 0;
     line-height: 1;
@@ -968,9 +955,9 @@
    MODAL OVERLAYS (Item, Inventory, Meal Plan Import)
    ══════════════════════════════════════════════════════════════════ */
 
-#groceryItemOverlay,
-#groceryInvOverlay,
-#groceryMealPlanOverlay {
+#pantryItemOverlay,
+#pantryInvOverlay,
+#pantryMealPlanOverlay {
     display:         none;
     position:        fixed;
     inset:           0;
@@ -981,14 +968,14 @@
     justify-content: center;
     padding:         16px;
 }
-#groceryItemOverlay.active,
-#groceryInvOverlay.active,
-#groceryMealPlanOverlay.active {
+#pantryItemOverlay.active,
+#pantryInvOverlay.active,
+#pantryMealPlanOverlay.active {
     display: flex;
 }
 
 /* Modal shell */
-.grocery-modal {
+.pantry-modal {
     background:     var(--color-surface);
     border:         1px solid var(--color-border);
     border-radius:  20px;
@@ -999,15 +986,15 @@
     flex-direction: column;
     overflow:       hidden;
     box-shadow:     0 20px 60px rgba(0,0,0,0.3);
-    animation:      groceryModalIn 0.2s ease;
+    animation:      pantryModalIn 0.2s ease;
 }
 
-@keyframes groceryModalIn {
+@keyframes pantryModalIn {
     from { opacity: 0; transform: scale(0.96) translateY(8px); }
     to   { opacity: 1; transform: scale(1)    translateY(0);   }
 }
 
-.grocery-modal-header {
+.pantry-modal-header {
     display:          flex;
     align-items:      center;
     justify-content:  space-between;
@@ -1016,13 +1003,13 @@
     flex-shrink:      0;
 }
 
-.grocery-modal-title {
+.pantry-modal-title {
     font-size:   17px;
     font-weight: 700;
     color:       var(--color-text);
 }
 
-.grocery-modal-close {
+.pantry-modal-close {
     width:         32px;
     height:        32px;
     border:        none;
@@ -1036,9 +1023,9 @@
     justify-content: center;
     transition:    background 0.15s;
 }
-.grocery-modal-close:hover { background: var(--theme-hover); color: var(--color-text); }
+.pantry-modal-close:hover { background: var(--theme-hover); color: var(--color-text); }
 
-.grocery-modal-body {
+.pantry-modal-body {
     padding:    20px;
     overflow-y: auto;
     flex:       1;
@@ -1047,7 +1034,7 @@
     gap:        14px;
 }
 
-.grocery-modal-footer {
+.pantry-modal-footer {
     display:       flex;
     gap:           10px;
     padding:       14px 20px;
@@ -1055,7 +1042,7 @@
     flex-shrink:   0;
 }
 
-.grocery-modal-save {
+.pantry-modal-save {
     flex:          1;
     padding:       12px;
     border:        none;
@@ -1067,8 +1054,8 @@
     cursor:        pointer;
     transition:    opacity 0.15s;
 }
-.grocery-modal-save:hover   { opacity: 0.88; }
-.grocery-modal-cancel {
+.pantry-modal-save:hover   { opacity: 0.88; }
+.pantry-modal-cancel {
     padding:       12px 20px;
     border:        1px solid var(--color-border);
     border-radius: 10px;
@@ -1079,10 +1066,10 @@
     cursor:        pointer;
     transition:    background 0.15s;
 }
-.grocery-modal-cancel:hover { background: #f1f5f9; }
+.pantry-modal-cancel:hover { background: #f1f5f9; }
 
 /* Legacy full-width delete (kept for inv modal, not item modal) */
-.grocery-modal-delete {
+.pantry-modal-delete {
     width:         100%;
     padding:       10px;
     border:        1px solid #fca5a5;
@@ -1095,10 +1082,10 @@
     transition:    background 0.15s;
     margin-top:    4px;
 }
-.grocery-modal-delete:hover { background: #fef2f2; }
+.pantry-modal-delete:hover { background: #fef2f2; }
 
 /* Compact remove button in the modal footer row */
-.grocery-modal-delete-footer {
+.pantry-modal-delete-footer {
     padding:       12px 14px;
     border:        1px solid #fca5a5;
     border-radius: 10px;
@@ -1111,15 +1098,25 @@
     white-space:   nowrap;
     flex-shrink:   0;
 }
-.grocery-modal-delete-footer:hover { background: #fef2f2; }
+.pantry-modal-delete-footer:hover { background: #fef2f2; }
+
+/* Inline delete confirmation message in the modal footer */
+.pantry-delete-confirm-msg {
+    flex:        1;
+    font-size:   13px;
+    font-weight: 500;
+    color:       #b91c1c;
+    display:     flex;
+    align-items: center;
+}
 
 /* Modal fields */
-.grocery-modal-field {
+.pantry-modal-field {
     display:        flex;
     flex-direction: column;
     gap:            5px;
 }
-.grocery-modal-field label {
+.pantry-modal-field label {
     font-size:   12px;
     font-weight: 600;
     color:       var(--color-muted);
@@ -1127,13 +1124,13 @@
     letter-spacing: 0.4px;
 }
 
-.grocery-modal-row {
+.pantry-modal-row {
     display:  grid;
     grid-template-columns: 1fr 1fr;
     gap:      10px;
 }
 
-.grocery-modal-input {
+.pantry-modal-input {
     padding:       10px 12px;
     border:        1px solid var(--color-border);
     border-radius: 10px;
@@ -1145,12 +1142,12 @@
     width:         100%;
     box-sizing:    border-box;
 }
-.grocery-modal-input:focus { border-color: var(--theme-primary); }
-.grocery-modal-input::placeholder { color: var(--color-muted); }
-select.grocery-modal-input { cursor: pointer; }
+.pantry-modal-input:focus { border-color: var(--theme-primary); }
+.pantry-modal-input::placeholder { color: var(--color-muted); }
+select.pantry-modal-input { cursor: pointer; }
 
 /* Photo area */
-.grocery-modal-photo-area {
+.pantry-modal-photo-area {
     position:       relative;
     height:         140px;
     border-radius:  12px;
@@ -1164,9 +1161,9 @@ select.grocery-modal-input { cursor: pointer; }
     flex-shrink:    0;
     background:     #fff;
 }
-.grocery-modal-photo-area:hover { border-color: var(--theme-primary); }
+.pantry-modal-photo-area:hover { border-color: var(--theme-primary); }
 
-.grocery-modal-photo-img {
+.pantry-modal-photo-img {
     position:   absolute;
     inset:      0;
     width:      100%;
@@ -1174,7 +1171,7 @@ select.grocery-modal-input { cursor: pointer; }
     object-fit: cover;
 }
 
-.grocery-modal-photo-overlay {
+.pantry-modal-photo-overlay {
     position:    absolute;
     inset:       0;
     background:  rgba(0,0,0,0.45);
@@ -1184,9 +1181,9 @@ select.grocery-modal-input { cursor: pointer; }
     opacity:     0;
     transition:  opacity 0.15s;
 }
-.grocery-modal-photo-area:hover .grocery-modal-photo-overlay { opacity: 1; }
+.pantry-modal-photo-area:hover .pantry-modal-photo-overlay { opacity: 1; }
 
-.grocery-photo-remove-btn {
+.pantry-photo-remove-btn {
     padding:       8px 14px;
     border:        none;
     border-radius: 8px;
@@ -1197,20 +1194,20 @@ select.grocery-modal-input { cursor: pointer; }
     cursor:        pointer;
 }
 
-.grocery-modal-photo-placeholder {
+.pantry-modal-photo-placeholder {
     text-align:  center;
     pointer-events: none;
 }
 
 /* Save to pantry checkbox */
-.grocery-modal-save-pantry {
+.pantry-modal-save-pantry {
     padding:       12px;
     border:        1px solid var(--color-border);
     border-radius: 10px;
     background:    #fff;
 }
 
-.grocery-checkbox-label {
+.pantry-checkbox-label {
     display:     flex;
     align-items: flex-start;
     gap:         8px;
@@ -1219,7 +1216,7 @@ select.grocery-modal-input { cursor: pointer; }
     cursor:      pointer;
     line-height: 1.4;
 }
-.grocery-checkbox-label input[type="checkbox"] {
+.pantry-checkbox-label input[type="checkbox"] {
     flex-shrink:   0;
     margin-top:    2px;
     width:         16px;
@@ -1229,12 +1226,12 @@ select.grocery-modal-input { cursor: pointer; }
 }
 
 /* Fulfillment toggle */
-.grocery-fulfillment-toggle {
+.pantry-fulfillment-toggle {
     display:  flex;
     gap:      6px;
 }
 
-.grocery-fulfillment-btn {
+.pantry-fulfillment-btn {
     flex:          1;
     padding:       10px 8px;
     border:        2px solid var(--color-border);
@@ -1248,8 +1245,8 @@ select.grocery-modal-input { cursor: pointer; }
     transition:    all 0.15s;
     line-height:   1.3;
 }
-.grocery-fulfillment-btn:hover { border-color: var(--theme-primary); color: var(--theme-primary); }
-.grocery-fulfillment-btn.active {
+.pantry-fulfillment-btn:hover { border-color: var(--theme-primary); color: var(--theme-primary); }
+.pantry-fulfillment-btn.active {
     border-color: var(--theme-primary);
     background:   var(--theme-hover);
     color:        var(--theme-primary);
@@ -1257,7 +1254,7 @@ select.grocery-modal-input { cursor: pointer; }
 }
 
 /* Item autocomplete suggestions */
-.grocery-item-suggestions {
+.pantry-item-suggestions {
     border:        1px solid var(--color-border);
     border-radius: 10px;
     overflow:      hidden;
@@ -1265,9 +1262,9 @@ select.grocery-modal-input { cursor: pointer; }
     background:    var(--color-surface);
     box-shadow:    0 4px 16px rgba(0,0,0,0.12);
 }
-.grocery-item-suggestions:empty { display: none; }
+.pantry-item-suggestions:empty { display: none; }
 
-.grocery-item-suggestion {
+.pantry-item-suggestion {
     display:         flex;
     align-items:     center;
     gap:             8px;
@@ -1278,10 +1275,10 @@ select.grocery-modal-input { cursor: pointer; }
     border-bottom:   1px solid var(--color-border);
     transition:      background 0.1s;
 }
-.grocery-item-suggestion:last-child { border-bottom: none; }
-.grocery-item-suggestion:hover { background: var(--theme-hover); }
+.pantry-item-suggestion:last-child { border-bottom: none; }
+.pantry-item-suggestion:hover { background: var(--theme-hover); }
 
-.grocery-suggestion-amount {
+.pantry-suggestion-amount {
     margin-left: auto;
     font-size:   12px;
     color:       var(--theme-primary);
@@ -1293,19 +1290,19 @@ select.grocery-modal-input { cursor: pointer; }
    ══════════════════════════════════════════════════════════════════ */
 
 /* Info line */
-.grocery-mp-info {
+.pantry-mp-info {
     font-size:   14px;
     color:       var(--color-muted);
     line-height: 1.5;
 }
-.grocery-mp-info strong { color: var(--color-text); }
+.pantry-mp-info strong { color: var(--color-text); }
 
 /* Select all / Deselect all */
-.grocery-mp-controls {
+.pantry-mp-controls {
     display: flex;
     gap:     8px;
 }
-.grocery-mp-toggle-all {
+.pantry-mp-toggle-all {
     padding:       6px 14px;
     border-radius: 20px;
     border:        1px solid var(--color-border);
@@ -1316,17 +1313,17 @@ select.grocery-modal-input { cursor: pointer; }
     cursor:        pointer;
     transition:    all 0.15s;
 }
-.grocery-mp-toggle-all:hover { border-color: var(--theme-primary); color: var(--theme-primary); }
+.pantry-mp-toggle-all:hover { border-color: var(--theme-primary); color: var(--theme-primary); }
 
 /* List of recipe groups */
-.grocery-mp-list {
+.pantry-mp-list {
     display:        flex;
     flex-direction: column;
     gap:            12px;
 }
 
 /* Recipe group card */
-.grocery-mp-recipe-group {
+.pantry-mp-recipe-group {
     border:        1px solid var(--color-border);
     border-radius: 14px;
     overflow:      hidden;
@@ -1334,7 +1331,7 @@ select.grocery-modal-input { cursor: pointer; }
 }
 
 /* Recipe card header */
-.grocery-mp-recipe-header {
+.pantry-mp-recipe-header {
     display:       flex;
     align-items:   center;
     gap:           12px;
@@ -1343,7 +1340,7 @@ select.grocery-modal-input { cursor: pointer; }
     border-bottom: 1px solid var(--color-border);
 }
 
-.grocery-mp-recipe-photo {
+.pantry-mp-recipe-photo {
     flex-shrink:   0;
     width:         44px;
     height:        44px;
@@ -1352,7 +1349,7 @@ select.grocery-modal-input { cursor: pointer; }
     border:        1px solid var(--color-border);
 }
 
-.grocery-mp-recipe-photo-placeholder {
+.pantry-mp-recipe-photo-placeholder {
     flex-shrink:     0;
     width:           44px;
     height:          44px;
@@ -1365,8 +1362,8 @@ select.grocery-modal-input { cursor: pointer; }
     font-size:       22px;
 }
 
-.grocery-mp-recipe-meta  { flex: 1; min-width: 0; }
-.grocery-mp-recipe-name  {
+.pantry-mp-recipe-meta  { flex: 1; min-width: 0; }
+.pantry-mp-recipe-name  {
     font-size:     15px;
     font-weight:   700;
     color:         var(--color-text);
@@ -1374,14 +1371,14 @@ select.grocery-modal-input { cursor: pointer; }
     overflow:      hidden;
     text-overflow: ellipsis;
 }
-.grocery-mp-recipe-day {
+.pantry-mp-recipe-day {
     font-size:  12px;
     color:      var(--color-muted);
     margin-top: 2px;
 }
 
 /* Full-row ingredient label — clicking anywhere toggles */
-.grocery-mp-row {
+.pantry-mp-row {
     display:       flex;
     align-items:   center;
     gap:           10px;
@@ -1392,13 +1389,13 @@ select.grocery-modal-input { cursor: pointer; }
     position:      relative;
     user-select:   none;
 }
-.grocery-mp-row:last-child  { border-bottom: none; }
-.grocery-mp-row:hover       { background: var(--theme-hover); }
-.grocery-mp-row.already     { opacity: 0.45; cursor: default; }
-.grocery-mp-row.already:hover { background: transparent; }
+.pantry-mp-row:last-child  { border-bottom: none; }
+.pantry-mp-row:hover       { background: var(--theme-hover); }
+.pantry-mp-row.already     { opacity: 0.45; cursor: default; }
+.pantry-mp-row.already:hover { background: transparent; }
 
 /* Hide native checkbox — replaced by custom visual */
-.grocery-mp-row input[type="checkbox"] {
+.pantry-mp-row input[type="checkbox"] {
     position: absolute;
     opacity:  0;
     width:    0;
@@ -1406,7 +1403,7 @@ select.grocery-modal-input { cursor: pointer; }
 }
 
 /* Custom checkbox */
-.grocery-mp-row-check {
+.pantry-mp-row-check {
     flex-shrink:     0;
     width:           22px;
     height:          22px;
@@ -1418,14 +1415,14 @@ select.grocery-modal-input { cursor: pointer; }
     align-items:     center;
     justify-content: center;
 }
-.grocery-mp-row:hover .grocery-mp-row-check { border-color: var(--theme-primary); }
+.pantry-mp-row:hover .pantry-mp-row-check { border-color: var(--theme-primary); }
 
-.grocery-mp-row input:checked ~ .grocery-mp-row-check {
+.pantry-mp-row input:checked ~ .pantry-mp-row-check {
     background:   var(--theme-primary);
     border-color: var(--theme-primary);
 }
-.grocery-mp-row input:checked ~ .grocery-mp-row-check::after,
-.grocery-mp-row input:disabled ~ .grocery-mp-row-check::after {
+.pantry-mp-row input:checked ~ .pantry-mp-row-check::after,
+.pantry-mp-row input:disabled ~ .pantry-mp-row-check::after {
     content:      '';
     display:      block;
     width:        5px;
@@ -1435,13 +1432,13 @@ select.grocery-modal-input { cursor: pointer; }
     border-left:  none;
     transform:    rotate(45deg) translate(-1px, -1px);
 }
-.grocery-mp-row input:disabled ~ .grocery-mp-row-check {
+.pantry-mp-row input:disabled ~ .pantry-mp-row-check {
     background:   #22c55e;
     border-color: #22c55e;
 }
 
 /* Category emoji badge */
-.grocery-mp-row-cat {
+.pantry-mp-row-cat {
     flex-shrink:     0;
     width:           30px;
     height:          30px;
@@ -1454,7 +1451,7 @@ select.grocery-modal-input { cursor: pointer; }
 }
 
 /* Item name */
-.grocery-mp-row-name {
+.pantry-mp-row-name {
     flex:        1;
     font-size:   14px;
     font-weight: 500;
@@ -1463,13 +1460,13 @@ select.grocery-modal-input { cursor: pointer; }
 }
 
 /* Right: amount chip + already-on-list tag */
-.grocery-mp-row-right {
+.pantry-mp-row-right {
     flex-shrink: 0;
     display:     flex;
     align-items: center;
     gap:         6px;
 }
-.grocery-mp-row-amount {
+.pantry-mp-row-amount {
     font-size:     12px;
     font-weight:   700;
     color:         var(--theme-primary);
@@ -1478,7 +1475,7 @@ select.grocery-modal-input { cursor: pointer; }
     border-radius: 10px;
     white-space:   nowrap;
 }
-.grocery-mp-row-already {
+.pantry-mp-row-already {
     font-size:     11px;
     font-weight:   600;
     color:         #16a34a;
@@ -1489,31 +1486,193 @@ select.grocery-modal-input { cursor: pointer; }
 }
 
 /* ══════════════════════════════════════════════════════════════════
+   CATALOG TAB
+   ══════════════════════════════════════════════════════════════════ */
+
+.pantry-catalog-toolbar {
+    display:         flex;
+    align-items:     center;
+    gap:             10px;
+    padding:         12px 16px;
+    background:      var(--color-surface);
+    border-bottom:   1px solid var(--color-border);
+    flex-shrink:     0;
+}
+.pantry-catalog-search-wrap { flex: 1; }
+.pantry-catalog-search {
+    width:        100%;
+    padding:      8px 12px;
+    border:       1px solid var(--color-border);
+    border-radius: 8px;
+    font-size:    14px;
+    background:   var(--color-bg);
+    color:        var(--color-text);
+}
+.pantry-catalog-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+/* Product grid */
+.pantry-catalog-grid {
+    display:               grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap:                   12px;
+    padding:               16px;
+    overflow-y:            auto;
+    flex:                  1;
+}
+
+.pantry-product-card {
+    display:       flex;
+    flex-direction: column;
+    background:    var(--color-surface);
+    border:        1px solid var(--color-border);
+    border-radius: 12px;
+    overflow:      hidden;
+    cursor:        pointer;
+    transition:    box-shadow 0.15s, transform 0.15s;
+}
+.pantry-product-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.10); transform: translateY(-2px); }
+
+.pantry-product-thumb {
+    height:          100px;
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    background:      color-mix(in srgb, var(--cat-color, #94a3b8) 12%, white);
+    overflow:        hidden;
+}
+.pantry-product-img  { width: 100%; height: 100%; object-fit: contain; padding: 8px; }
+.pantry-product-emoji { font-size: 40px; }
+
+.pantry-product-info { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 3px; }
+.pantry-product-name  { font-size: 14px; font-weight: 600; color: var(--color-text); line-height: 1.3; }
+.pantry-product-brand { font-size: 12px; color: var(--color-muted); }
+.pantry-product-meta  { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+
+.pantry-product-cat-badge {
+    font-size:    11px;
+    color:        var(--color-muted);
+}
+.pantry-product-upc-badge {
+    font-size:    11px;
+    padding:      2px 7px;
+    border-radius: 10px;
+    background:   #dbeafe;
+    color:        #1d4ed8;
+    font-weight:  500;
+}
+.pantry-product-upc-badge.empty {
+    background: #f1f5f9;
+    color:      var(--color-muted);
+    font-weight: 400;
+}
+
+/* Barcode pills in product modal */
+.pantry-barcodes-section {
+    margin-top:  16px;
+    border-top:  1px solid var(--color-border);
+    padding-top: 14px;
+}
+.pantry-barcodes-header {
+    display:         flex;
+    align-items:     center;
+    justify-content: space-between;
+    margin-bottom:   10px;
+}
+.pantry-barcodes-title { font-size: 14px; font-weight: 600; color: var(--color-text); }
+.pantry-barcodes-list  { display: flex; flex-wrap: wrap; gap: 8px; min-height: 28px; }
+.pantry-barcodes-empty { font-size: 13px; color: var(--color-muted); font-style: italic; }
+
+.pantry-barcode-pill {
+    display:      flex;
+    align-items:  center;
+    gap:          6px;
+    padding:      4px 10px 4px 12px;
+    background:   #f0fdf4;
+    border:       1px solid #86efac;
+    border-radius: 20px;
+    font-size:    13px;
+    font-family:  monospace;
+}
+.pantry-barcode-value  { color: #166534; }
+.pantry-barcode-remove {
+    background:  none;
+    border:      none;
+    cursor:      pointer;
+    color:       #6b7280;
+    font-size:   14px;
+    padding:     0;
+    line-height: 1;
+}
+.pantry-barcode-remove:hover { color: #ef4444; }
+
+.pantry-barcode-add-row {
+    display:    flex;
+    gap:        8px;
+    align-items: center;
+    margin-top: 8px;
+}
+.pantry-barcode-add-row .pantry-modal-input { flex: 1; font-family: monospace; }
+
+/* UPC Raw Analysis panel (temporary) */
+.pantry-upc-lookup-panel {
+    background:   #fefce8;
+    border-bottom: 2px dashed #fbbf24;
+    padding:      12px 16px;
+    flex-shrink:  0;
+}
+.pantry-upc-lookup-header {
+    font-size:   13px;
+    font-weight: 600;
+    color:       #92400e;
+    margin-bottom: 8px;
+}
+.pantry-upc-lookup-note { font-weight: 400; font-style: italic; opacity: 0.75; }
+.pantry-upc-lookup-row  { display: flex; gap: 8px; align-items: center; }
+.pantry-upc-lookup-row .pantry-modal-input { flex: 1; font-family: monospace; }
+
+.pantry-upc-lookup-results { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; max-height: 340px; overflow-y: auto; }
+.pantry-upc-lookup-loading { color: #92400e; font-size: 13px; }
+.pantry-upc-lookup-error   { color: #dc2626; font-size: 13px; }
+.pantry-upc-lookup-barcode { font-size: 13px; color: var(--color-muted); margin-bottom: 4px; }
+
+.pantry-upc-source { border: 1px solid var(--color-border); border-radius: 8px; padding: 10px 12px; }
+.pantry-upc-source.hit    { border-color: #86efac; background: #f0fdf4; }
+.pantry-upc-source.miss   { background: #f9fafb; opacity: 0.75; }
+.pantry-upc-source-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.pantry-upc-source-label  { font-size: 13px; font-weight: 600; }
+.pantry-upc-source-msg    { font-size: 11px; color: var(--color-muted); }
+.pantry-upc-source-normalized { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
+.pantry-upc-kv            { font-size: 12px; }
+.pantry-upc-kv b          { color: var(--color-text); }
+.pantry-upc-raw-toggle    { font-size: 12px; }
+.pantry-upc-raw-toggle summary { cursor: pointer; color: #3b82f6; }
+.pantry-upc-raw           { font-size: 11px; background: #1e293b; color: #e2e8f0; padding: 8px; border-radius: 6px; overflow-x: auto; max-height: 200px; overflow-y: auto; white-space: pre; }
+
+/* ══════════════════════════════════════════════════════════════════
    RESPONSIVE
    ══════════════════════════════════════════════════════════════════ */
 
 @media (max-width: 600px) {
-    .grocery-header       { padding: 12px 14px 10px; }
-    .grocery-title        { font-size: 17px; }
-    .grocery-list-toolbar { padding: 10px 12px; }
-    .grocery-tab          { padding: 10px 10px; font-size: 13px; }
+    .pantry-title        { font-size: 17px; }
+    .pantry-list-toolbar { padding: 10px 12px; }
+    .pantry-tab          { padding: 10px 10px; font-size: 13px; }
 
-    .grocery-pantry-grid {
+    .pantry-pantry-grid {
         grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
         padding: 12px;
     }
 
-    .grocery-add-fab {
+    .pantry-add-fab {
         bottom: 16px;
         right:  16px;
         padding: 12px 18px;
         font-size: 14px;
     }
 
-    .grocery-modal { max-height: 95vh; border-radius: 16px 16px 0 0; }
-    #groceryItemOverlay,
-    #groceryInvOverlay,
-    #groceryMealPlanOverlay {
+    .pantry-modal { max-height: 95vh; border-radius: 16px 16px 0 0; }
+    #pantryItemOverlay,
+    #pantryInvOverlay,
+    #pantryMealPlanOverlay {
         align-items: flex-end;
         padding:     0;
     }
@@ -1521,11 +1680,11 @@ select.grocery-modal-input { cursor: pointer; }
 }
 
 @media (max-width: 400px) {
-    .grocery-pantry-grid {
+    .pantry-pantry-grid {
         grid-template-columns: 1fr 1fr;
     }
-    .grocery-modal-footer { flex-direction: column; }
-    .grocery-modal-save, .grocery-modal-cancel { width: 100%; }
+    .pantry-modal-footer { flex-direction: column; }
+    .pantry-modal-save, .pantry-modal-cancel { width: 100%; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

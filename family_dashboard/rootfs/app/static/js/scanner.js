@@ -236,26 +236,40 @@ export class BarcodeScanner {
                 <div class="scanner-lookup-text">Looking up <code>${barcode}</code>…</div>
             </div>`);
 
+        // "need" mode uses ?preview=1 so the backend does NOT auto-save the
+        // product to the catalog — the user reviews it in the Add Item modal first.
+        const isNeed  = this._mode === 'need';
+        const scanUrl = apiUrl(`/api/pantry/scan/${encodeURIComponent(barcode)}${isNeed ? '?preview=1' : ''}`);
+
         let product = { found: false };
         try {
-            const r = await fetch(apiUrl(`/api/pantry/scan/${encodeURIComponent(barcode)}`));
+            const r    = await fetch(scanUrl);
             const data = await r.json();
-            // Normalize the cascading-scan response shape to what the
-            // confirm-modal expects (flat fields with camelCase imageUrl).
-            const p = data.product || {};
+            const p    = data.product || {};
             product = {
                 found:    !!data.found,
-                source:   data.source,        // 'local' | 'off' | 'obf' | 'opff' | 'opf' | 'upcitemdb'
-                tried:    data.tried,         // populated when no tier matched
-                name:     p.name  || '',
-                brand:    p.brand || '',
-                imageUrl: p.image_url || '',
+                source:   data.source,   // 'local' | 'off' | 'obf' | … | 'upcitemdb'
+                preview:  !!data.preview, // true when backend skipped auto-save
+                tried:    data.tried,
+                name:     p.name        || '',
+                brand:    p.brand       || '',
+                imageUrl: p.image_url   || '',
                 category: p.category_id || '',
+                productId: p.id         || null,
             };
         } catch (err) {
             console.warn('[Scanner] Lookup failed:', err);
         }
         product.upc = barcode;
+
+        // "need" mode: if NOT in the local catalog, skip the scanner confirm
+        // step entirely and hand straight off to the Add Item modal, which is
+        // the real review / edit step for the user.
+        if (isNeed && product.source !== 'local') {
+            this._onResult?.({ mode: this._mode, barcode, product });
+            this.close();
+            return;
+        }
 
         this._showProductConfirm(product);
     }

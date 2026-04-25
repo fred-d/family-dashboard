@@ -2,7 +2,7 @@
  * pantry-store.js — SQLite-backed Pantry data store.
  *
  * Thin translation layer over the SQLite-backed Pantry backend. Exposes
- * data in the old "grocery" shape that PantryApp was originally written
+ * data in the old "pantry" shape that PantryApp was originally written
  * against, so the rest of the UI keeps working unchanged.
  *
  *   Backend routes used (renamed from /api/inventory/* in v1.6.0;
@@ -22,7 +22,7 @@
  *   the event as the legacy {type: 'list' | 'inventory'} signal that
  *   PantryApp's subscriber already understands.
  *
- * Shape translation (backend → grocery):
+ * Shape translation (backend → pantry):
  *   shopping_list row → {id, name, qty, unit, category, checked, fulfillment,
  *                        notes, addedBy, source, productId, storeId, status}
  *   inventory_items row → {id, name, brand, category, stockLevel, qty,
@@ -47,7 +47,7 @@ const CACHE_INVENTORY = 'fc_pantry_inventory';
 const CACHE_CONFIG    = 'fc_pantry_config';
 
 /**
- * Map old grocery `category` string ids → keyword/name fragments that should
+ * Map old pantry `category` string ids → keyword/name fragments that should
  * match the user's backend category names. Used to translate IDs in both
  * directions when the user-facing category names follow the obvious labels.
  * If no backend category matches, items fall back to the 'other' bucket.
@@ -99,7 +99,7 @@ export class PantryStore {
     }
 
     async fetchList() {
-        // Config powers category-name → grocery-id mapping, so make sure it's
+        // Config powers category-name → pantry-id mapping, so make sure it's
         // primed at least once before the first translation.
         if (!this.config?.categories?.length) await this.fetchConfig();
 
@@ -119,8 +119,8 @@ export class PantryStore {
 
     /**
      * Fetch the full product catalog — used for item-name autocomplete in the
-     * Add Item modal. Accepts an optional search string (forwarded to ?q=).
-     * Returns a raw array of product rows (not translated to grocery shape).
+     * Add Item modal and for the Catalog tab. Accepts an optional search string.
+     * Returns raw product rows including barcode_count.
      */
     async fetchProducts(q = '') {
         try {
@@ -130,6 +130,59 @@ export class PantryStore {
             return await res.json();
         } catch (err) {
             console.warn('[PantryStore] fetchProducts failed:', err.message);
+            return null;
+        }
+    }
+
+    /** Fetch a single product with its full barcodes array. */
+    async fetchProduct(pid) {
+        try {
+            const res = await fetch(apiUrl(`/api/pantry/products/${pid}`));
+            if (!res.ok) return null;
+            return await res.json();
+        } catch (err) {
+            console.warn('[PantryStore] fetchProduct failed:', err.message);
+            return null;
+        }
+    }
+
+    /** Create a new product in the catalog. */
+    async createProduct(data) {
+        return this._send('POST', '/api/pantry/products', data);
+    }
+
+    /** Update an existing product. */
+    async updateProduct(pid, data) {
+        return this._send('PATCH', `/api/pantry/products/${pid}`, data);
+    }
+
+    /** Delete a product and all its barcode links. */
+    async deleteProduct(pid) {
+        return this._send('DELETE', `/api/pantry/products/${pid}`);
+    }
+
+    /** Add a single barcode to a product. */
+    async addBarcode(pid, barcode) {
+        return this._send('POST', `/api/pantry/products/${pid}/barcodes`, { barcode });
+    }
+
+    /** Remove a single barcode from a product. */
+    async removeBarcode(pid, barcode) {
+        return this._send('DELETE', `/api/pantry/products/${pid}/barcodes/${barcode}`);
+    }
+
+    /**
+     * TEMPORARY — raw UPC analysis from all external sources.
+     * Returns full payloads from Open Food Facts + UPCitemdb without saving.
+     * This endpoint will be removed once the catalog is mature.
+     */
+    async upcRawLookup(barcode) {
+        try {
+            const res = await fetch(apiUrl(`/api/pantry/upc-raw/${encodeURIComponent(barcode)}`));
+            if (!res.ok) return null;
+            return await res.json();
+        } catch (err) {
+            console.warn('[PantryStore] upcRawLookup failed:', err.message);
             return null;
         }
     }
@@ -156,7 +209,7 @@ export class PantryStore {
     // ── Shopping-list mutations (per-row; replaces saveList(items)) ──────────
 
     /**
-     * Add a new shopping-list item. Accepts the old grocery shape; translates
+     * Add a new shopping-list item. Accepts the old pantry shape; translates
      * to the backend payload (resolves category_id from string id when known).
      */
     async addItem(item) {
@@ -164,7 +217,7 @@ export class PantryStore {
             name:        item.name,
             qty:         item.qty ?? 1,
             unit:        item.unit ?? 'count',
-            category_id: this._categoryIdForGroceryId(item.category),
+            category_id: this._categoryIdForPantryId(item.category),
             status:      item.checked ? 'bought' : 'needed',
             fulfillment: item.fulfillment ?? 'curbside',
             notes:       item.notes ?? '',
@@ -177,7 +230,7 @@ export class PantryStore {
     }
 
     /**
-     * Update an existing shopping-list item. Accepts grocery-shape patch
+     * Update an existing shopping-list item. Accepts pantry-shape patch
      * fields and translates them. Pass `null` for fields that should be
      * cleared on the backend.
      */
@@ -191,7 +244,7 @@ export class PantryStore {
         if ('storeId'     in patch) body.store_id    = patch.storeId;
         if ('checked'     in patch) body.status      = patch.checked ? 'bought' : 'needed';
         if ('status'      in patch) body.status      = patch.status;
-        if ('category'    in patch) body.category_id = this._categoryIdForGroceryId(patch.category);
+        if ('category'    in patch) body.category_id = this._categoryIdForPantryId(patch.category);
         if ('addedBy'     in patch) body.added_by    = patch.addedBy;
         if ('photo'       in patch) body.photo_url   = patch.photo ?? '';
         return this._send('PATCH', `/api/pantry/shopping/${id}`, body);
@@ -222,7 +275,7 @@ export class PantryStore {
         const body = {
             name:        product.name,
             brand:       product.brand ?? '',
-            category_id: this._categoryIdForGroceryId(product.category),
+            category_id: this._categoryIdForPantryId(product.category),
             image_url:   product.photo ?? '',
             notes:       product.notes ?? '',
             is_staple:   product.isStaple ? 1 : 0,
@@ -280,7 +333,7 @@ export class PantryStore {
         return this._send('DELETE', `/api/pantry/items/${id}`);
     }
 
-    // ── Photos (unchanged from grocery-store) ────────────────────────────────
+    // ── Photos (unchanged from pantry-store) ────────────────────────────────
 
     async uploadPhoto(file, maxPx = 400, quality = 0.82) {
         const blob = await _compressToBlob(file, maxPx, quality);
@@ -295,7 +348,7 @@ export class PantryStore {
 
     /**
      * Subscribe to live data changes. Callback receives `{type, data}` with
-     * `type` in the legacy grocery vocabulary ('list' | 'inventory') so
+     * `type` in the legacy pantry vocabulary ('list' | 'inventory') so
      * PantryApp's existing dispatcher continues to work unchanged.
      */
     subscribe(callback) {
@@ -317,7 +370,7 @@ export class PantryStore {
 
     _onServerEvent(evt) {
         const t = evt?.type;
-        // Map backend channel events → grocery vocabulary
+        // Map backend channel events → pantry vocabulary
         if (!t || t === 'shopping')                this._emit('list');
         if (!t || t === 'items' || t === 'products' || t === 'catalog')
             this._emit('inventory');
@@ -358,7 +411,7 @@ export class PantryStore {
         }
     }
 
-    // ── Shape translation: backend rows → old grocery shape ──────────────────
+    // ── Shape translation: backend rows → old pantry shape ──────────────────
 
     _normalizeShoppingRow(row) {
         if (!row) return row;
@@ -367,7 +420,7 @@ export class PantryStore {
             name:        row.name || row.product_name || '',
             qty:         Number(row.qty ?? 1),
             unit:        row.unit || 'count',
-            category:    this._groceryIdForCategoryId(row.category_id, row.category_name),
+            category:    this._pantryIdForCategoryId(row.category_id, row.category_name),
             checked:     row.status === 'bought',
             status:      row.status,                   // raw, in case the UI wants tri-state
             fulfillment: row.fulfillment || 'curbside',
@@ -399,7 +452,7 @@ export class PantryStore {
             locationId:  row.location_id || null,
             name:        row.product_name || row.name || '',
             brand:       row.product_brand || '',
-            category:    this._groceryIdForCategoryId(row.product_category_id),
+            category:    this._pantryIdForCategoryId(row.product_category_id),
             stockLevel,
             qty,
             unit:        row.product_count_unit || 'item',
@@ -414,28 +467,28 @@ export class PantryStore {
     // ── Category id translation ──────────────────────────────────────────────
 
     /**
-     * Map a backend category row (UUID id) back to the old grocery string id
+     * Map a backend category row (UUID id) back to the old pantry string id
      * by inspecting its name. Falls back to 'other' when no match.
      */
-    _groceryIdForCategoryId(categoryId, hintName = null) {
+    _pantryIdForCategoryId(categoryId, hintName = null) {
         if (!categoryId) return 'other';
         const cat  = this.config.categories.find(c => c.id === categoryId);
         const name = (cat?.name || hintName || '').toLowerCase();
         if (!name) return 'other';
-        for (const [groceryId, hints] of Object.entries(CATEGORY_NAME_HINTS)) {
-            if (hints.some(h => name.includes(h))) return groceryId;
+        for (const [pantryId, hints] of Object.entries(CATEGORY_NAME_HINTS)) {
+            if (hints.some(h => name.includes(h))) return pantryId;
         }
         return 'other';
     }
 
     /**
-     * Map an old grocery string id ('produce', 'dairy', …) to a backend
+     * Map an old pantry string id ('produce', 'dairy', …) to a backend
      * category UUID by name match. Returns null when no backend category
      * matches — the row will be saved without a category_id.
      */
-    _categoryIdForGroceryId(groceryId) {
-        if (!groceryId) return null;
-        const hints = CATEGORY_NAME_HINTS[groceryId] || [groceryId];
+    _categoryIdForPantryId(pantryId) {
+        if (!pantryId) return null;
+        const hints = CATEGORY_NAME_HINTS[pantryId] || [pantryId];
         const cat = this.config.categories.find(c => {
             const name = (c.name || '').toLowerCase();
             return hints.some(h => name.includes(h));
@@ -459,7 +512,7 @@ function _save(key, value) {
     try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* quota */ }
 }
 
-// ── Canvas compression helper (unchanged from grocery-store.js) ──────────────
+// ── Canvas compression helper (unchanged from pantry-store.js) ──────────────
 
 function _compressToBlob(file, maxPx, quality) {
     return new Promise((resolve, reject) => {

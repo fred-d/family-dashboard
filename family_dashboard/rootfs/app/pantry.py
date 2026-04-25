@@ -216,6 +216,34 @@ CREATE TABLE IF NOT EXISTS inventory_history (
 );
 CREATE INDEX IF NOT EXISTS idx_history_product ON inventory_history(product_id);
 CREATE INDEX IF NOT EXISTS idx_history_created ON inventory_history(created_at);
+
+CREATE TABLE IF NOT EXISTS recipes (
+    slug         TEXT PRIMARY KEY,
+    id           TEXT NOT NULL DEFAULT '',
+    name         TEXT NOT NULL DEFAULT '',
+    category     TEXT NOT NULL DEFAULT '',
+    tags         TEXT NOT NULL DEFAULT '[]',
+    prep_time    INTEGER NOT NULL DEFAULT 0,
+    cook_time    INTEGER NOT NULL DEFAULT 0,
+    servings     INTEGER NOT NULL DEFAULT 0,
+    photo        TEXT NOT NULL DEFAULT '',
+    ingredients  TEXT NOT NULL DEFAULT '[]',
+    instructions TEXT NOT NULL DEFAULT '',
+    notes        TEXT NOT NULL DEFAULT '',
+    created_at   TEXT NOT NULL DEFAULT '',
+    updated_at   TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_recipes_name     ON recipes(name);
+CREATE INDEX IF NOT EXISTS idx_recipes_category ON recipes(category);
+
+CREATE TABLE IF NOT EXISTS meal_plans (
+    week       TEXT NOT NULL,
+    day        TEXT NOT NULL,
+    meal_type  TEXT NOT NULL,
+    data       TEXT NOT NULL DEFAULT '{}',
+    PRIMARY KEY (week, day, meal_type)
+);
+CREATE INDEX IF NOT EXISTS idx_meal_plans_week ON meal_plans(week);
 """
 
 
@@ -753,18 +781,23 @@ def api_products():
     if request.method == 'GET':
         q = (request.args.get('q') or '').strip()
         cat = request.args.get('category')
-        sql = 'SELECT * FROM products'
+        sql = '''
+            SELECT p.*,
+                   COUNT(b.barcode) AS barcode_count
+            FROM products p
+            LEFT JOIN barcode_catalog b ON b.product_id = p.id
+        '''
         where = []
         args: list[Any] = []
         if q:
-            where.append('(name LIKE ? OR brand LIKE ?)')
+            where.append('(p.name LIKE ? OR p.brand LIKE ?)')
             args.extend([f'%{q}%', f'%{q}%'])
         if cat:
-            where.append('category_id = ?')
+            where.append('p.category_id = ?')
             args.append(cat)
         if where:
             sql += ' WHERE ' + ' AND '.join(where)
-        sql += ' ORDER BY name'
+        sql += ' GROUP BY p.id ORDER BY p.name'
         return jsonify(_rows(c.execute(sql, args)))
 
     # POST — create
@@ -866,6 +899,46 @@ def api_product(pid):
     # DELETE — cascades to inventory & barcode_catalog
     c.execute('DELETE FROM products WHERE id=?', (pid,))
     _sse_push('inventory', {'type': 'products'})
+    return jsonify({'ok': True})
+
+
+@bp.route('/products/<pid>/barcodes', methods=['GET', 'POST'])
+def api_product_barcodes(pid):
+    """List or add barcodes for a specific product."""
+    c = _conn()
+    if not _product_row(c, pid):
+        return jsonify({'error': 'Product not found'}), 404
+
+    if request.method == 'GET':
+        rows = _rows(c.execute(
+            'SELECT barcode, source, cached_at FROM barcode_catalog WHERE product_id=? ORDER BY cached_at',
+            (pid,)
+        ))
+        return jsonify(rows)
+
+    # POST — add a single barcode to this product
+    body = request.get_json() or {}
+    bc = re.sub(r'\D', '', str(body.get('barcode', '')))
+    if not _valid_barcode(bc):
+        return jsonify({'error': 'Invalid barcode'}), 400
+    # Check if already linked to a different product
+    existing = c.execute('SELECT product_id FROM barcode_catalog WHERE barcode=?', (bc,)).fetchone()
+    if existing and existing['product_id'] != pid:
+        return jsonify({'error': f'Barcode already linked to another product'}), 409
+    c.execute(
+        'INSERT OR REPLACE INTO barcode_catalog (barcode,product_id,source,raw_data,cached_at) VALUES (?,?,?,?,?)',
+        (bc, pid, 'manual', None, _now())
+    )
+    _sse_push('inventory', {'type': 'catalog'})
+    return jsonify({'ok': True, 'barcode': bc})
+
+
+@bp.route('/products/<pid>/barcodes/<barcode>', methods=['DELETE'])
+def api_product_barcode_delete(pid, barcode):
+    """Remove a single barcode link from a product."""
+    c = _conn()
+    c.execute('DELETE FROM barcode_catalog WHERE barcode=? AND product_id=?', (barcode, pid))
+    _sse_push('inventory', {'type': 'catalog'})
     return jsonify({'ok': True})
 
 
@@ -1470,10 +1543,12 @@ def api_scan(barcode):
       3. UPCitemDB free tier (catch-all)
       4. {found:false, tried:[…]} if every tier missed
 
-    Pass ?debug=1 to include each tier's raw response in the result for
-    troubleshooting.
+    Pass ?debug=1 to include each tier's raw response in the result.
+    Pass ?preview=1 to skip auto-saving to the local catalog — used when the
+    caller wants to review the data before committing (e.g. "need" scan mode).
     """
-    debug = request.args.get('debug') == '1'
+    debug   = request.args.get('debug')   == '1'
+    preview = request.args.get('preview') == '1'
 
     if not _valid_barcode(barcode):
         return jsonify({'found': False, 'error': 'Invalid barcode'}), 400
@@ -1481,7 +1556,7 @@ def api_scan(barcode):
     c = _conn()
     tried: list[dict] = []
 
-    # ── Tier 1: local catalog ────────────────────────────────────────────────
+    # ── Tier 1: local catalog — always checked, always returned immediately ──
     hit = c.execute('''
         SELECT p.*, b.source AS _source
         FROM barcode_catalog b
@@ -1503,12 +1578,16 @@ def api_scan(barcode):
         normalized, msg = _lookup_off_db(host, barcode)
         tried.append({'tier': short, 'host': host, 'label': label, 'result': msg})
         if normalized and normalized['name']:
+            if preview:
+                return _preview_return(barcode, short, normalized, tried, debug)
             return _cache_and_return(c, barcode, short, normalized, tried, debug)
 
     # ── Tier 3: UPCitemDB free tier ──────────────────────────────────────────
     normalized, msg = _lookup_upcitemdb(barcode)
     tried.append({'tier': 'upcitemdb', 'host': 'api.upcitemdb.com', 'result': msg})
     if normalized and normalized['name']:
+        if preview:
+            return _preview_return(barcode, 'upcitemdb', normalized, tried, debug)
         return _cache_and_return(c, barcode, 'upcitemdb', normalized, tried, debug)
 
     # ── All tiers missed ─────────────────────────────────────────────────────
@@ -1516,6 +1595,82 @@ def api_scan(barcode):
     if debug:
         body['debug'] = tried
     return jsonify(body)
+
+
+def _preview_return(barcode: str, source: str, n: dict, tried: list, debug: bool):
+    """Return lookup data without persisting to the local catalog."""
+    cat = _guess_category(n.get('tags', []), n.get('name', ''))
+    body = {
+        'found':   True,
+        'source':  source,
+        'preview': True,      # caller knows this was NOT saved
+        'barcode': barcode,
+        'product': {
+            'name':        n.get('name', ''),
+            'brand':       n.get('brand', ''),
+            'category_id': cat,
+            'image_url':   _https(n.get('image', '')),
+        },
+    }
+    if debug:
+        body['debug'] = tried
+    return jsonify(body)
+
+
+@bp.route('/upc-raw/<barcode>')
+def api_upc_raw(barcode):
+    """
+    TEMPORARY — full raw analysis from all external sources.
+    Hits every OFF database + UPCitemdb and returns complete raw payloads
+    for manual inspection. Never writes to the local catalog.
+    Remove this endpoint once the catalog is mature.
+    """
+    if not _valid_barcode(barcode):
+        return jsonify({'error': 'Invalid barcode'}), 400
+
+    results = {}
+
+    # Check local cache first
+    c = _conn()
+    local = c.execute(
+        'SELECT b.source, b.raw_data, b.cached_at, p.name, p.brand '
+        'FROM barcode_catalog b JOIN products p ON p.id=b.product_id '
+        'WHERE b.barcode=?', (barcode,)
+    ).fetchone()
+    if local:
+        results['local'] = {
+            'hit': True,
+            'product_name': local['name'],
+            'brand':        local['brand'],
+            'source':       local['source'],
+            'cached_at':    local['cached_at'],
+            'raw':          json.loads(local['raw_data'] or '{}'),
+        }
+
+    # Hit all OFF databases
+    for short, host, label in OFF_DBS:
+        normalized, msg = _lookup_off_db(host, barcode)
+        results[short] = {
+            'host':       host,
+            'label':      label,
+            'hit':        normalized is not None,
+            'msg':        msg,
+            'normalized': {k: v for k, v in (normalized or {}).items() if k != 'raw'},
+            'raw':        (normalized or {}).get('raw', {}),
+        }
+
+    # Hit UPCitemdb
+    normalized, msg = _lookup_upcitemdb(barcode)
+    results['upcitemdb'] = {
+        'host':       'api.upcitemdb.com',
+        'label':      'UPCitemDB',
+        'hit':        normalized is not None,
+        'msg':        msg,
+        'normalized': {k: v for k, v in (normalized or {}).items() if k != 'raw'},
+        'raw':        (normalized or {}).get('raw', {}),
+    }
+
+    return jsonify({'barcode': barcode, 'sources': results})
 
 
 def _cache_and_return(c, barcode: str, source: str, n: dict,
