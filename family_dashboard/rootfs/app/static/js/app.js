@@ -16,8 +16,8 @@ import { MealPlanner } from './meals.js';
 import { MealStore } from './meal-store.js';
 import { RecipeApp } from './recipes.js';
 import { RecipeStore } from './recipe-store.js';
-import { PantryApp } from './pantry.js?v=5';
-import { PantryStore } from './pantry-store.js?v=5';
+import { PantryApp } from './pantry.js?v=13';
+import { PantryStore } from './pantry-store.js?v=13';
 import {
     openSettings, closeSettings,
     loadCalendarColors, saveDefaultView,
@@ -57,14 +57,14 @@ const VIEW_TITLES = {
 
 function getActiveView() {
     const hash = location.hash.replace('#', '');
-    // Sunset aliases: old #grocery / #inventory hashes → #pantry
-    if (hash === 'grocery' || hash === 'inventory') return 'pantry';
+    // Sunset aliases: old #pantry / #inventory hashes → #pantry
+    if (hash === 'pantry' || hash === 'inventory') return 'pantry';
     return VIEWS.includes(hash) ? hash : 'calendar';
 }
 
 function switchView(view) {
-    // Sunset: redirect any legacy grocery / inventory callers to pantry
-    if (view === 'grocery' || view === 'inventory') view = 'pantry';
+    // Sunset: redirect any legacy pantry / inventory callers to pantry
+    if (view === 'pantry' || view === 'inventory') view = 'pantry';
     document.querySelectorAll('.nav-link').forEach(link => {
         link.classList.toggle('active', link.dataset.section === view);
     });
@@ -137,7 +137,7 @@ async function init() {
     window.pantryApp   = new PantryApp(document.getElementById('view-pantry'),     pantryStore);
 
     // Prime category↔id lookups before the first list render so backend
-    // category UUIDs translate to the legacy grocery string ids the UI uses.
+    // category UUIDs translate to the legacy pantry string ids the UI uses.
     // PantryApp also calls this internally — fire-and-forget here is safe.
     pantryStore.fetchConfig();
 

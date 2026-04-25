@@ -7,10 +7,7 @@ Architecture
 ------------
 - Static files:  /app/static/  → served at ./
 - Data storage:  /data/        → persistent across HA restarts (addon volume)
-  ├── recipes/  {slug}.json    — one file per recipe
-  ├── recipe_index.json        — lightweight index (no photos)
-  ├── meals/    {week}.json    — one file per ISO week (e.g. 2026-W15.json)
-  ├── inventory.db             — SQLite: products, inventory lots, shopping list
+  ├── inventory.db             — SQLite: pantry, inventory, shopping, recipes, meals
   └── photos/   {timestamp}.jpg — uploaded item/recipe photos (actual files!)
 
 All HA communication uses $SUPERVISOR_TOKEN — frontend never needs a HA token.
@@ -40,8 +37,6 @@ import pantry as pantry_module  # SQLite-backed Pantry module
 DATA     = pathlib.Path('/data')
 STATIC   = pathlib.Path('/app/static')
 PHOTOS   = DATA / 'photos'
-RECIPES  = DATA / 'recipes'
-MEALS    = DATA / 'meals'
 
 HA_BASE  = 'http://supervisor/core'
 HA_TOKEN = os.environ.get('SUPERVISOR_TOKEN', '')
@@ -381,24 +376,49 @@ def api_calendar_events(entity_id):
         return jsonify([])
 
 
-# ── Recipe API ────────────────────────────────────────────────────────────────
+# ── Recipe API (SQLite) ───────────────────────────────────────────────────────
 
-_recipe_lock = threading.Lock()
-
-INDEX_FILE = DATA / 'recipe_index.json'
-
-
-def _read_index() -> list:
-    return _read_json(INDEX_FILE, [])
+def _rconn():
+    """Reuse the pantry module's per-request WAL-mode connection."""
+    return pantry_module._conn()
 
 
-def _write_index(index: list):
-    _write_json(INDEX_FILE, index)
+def _recipe_to_row(row) -> dict:
+    return {
+        'slug':         row['slug'],
+        'id':           row['id'],
+        'name':         row['name'],
+        'category':     row['category'],
+        'tags':         json.loads(row['tags'] or '[]'),
+        'prepTime':     row['prep_time'],
+        'cookTime':     row['cook_time'],
+        'servings':     row['servings'],
+        'photo':        row['photo'],
+        'ingredients':  json.loads(row['ingredients'] or '[]'),
+        'instructions': row['instructions'],
+        'notes':        row['notes'],
+        'hasPhoto':     bool(row['photo']),
+    }
 
 
 @app.route('/api/recipes', methods=['GET'])
 def api_recipes():
-    return jsonify(_read_index())
+    rows = _rconn().execute(
+        'SELECT slug, id, name, category, tags, prep_time, cook_time, servings, '
+        '(CASE WHEN photo != "" THEN 1 ELSE 0 END) AS has_photo '
+        'FROM recipes ORDER BY name'
+    ).fetchall()
+    return jsonify([{
+        'slug':     r['slug'],
+        'id':       r['id'],
+        'name':     r['name'],
+        'category': r['category'],
+        'tags':     json.loads(r['tags'] or '[]'),
+        'prepTime': r['prep_time'],
+        'cookTime': r['cook_time'],
+        'servings': r['servings'],
+        'hasPhoto': bool(r['has_photo']),
+    } for r in rows])
 
 
 @app.route('/api/recipes/<slug>', methods=['GET', 'POST', 'DELETE'])
@@ -406,66 +426,75 @@ def api_recipe(slug):
     if not _valid_slug(slug):
         return jsonify({'error': 'Invalid slug'}), 400
 
-    fp = RECIPES / f'{slug}.json'
+    c = _rconn()
 
     if request.method == 'GET':
-        if not fp.exists():
+        row = c.execute('SELECT * FROM recipes WHERE slug = ?', (slug,)).fetchone()
+        if not row:
             return jsonify(None), 404
-        return jsonify(_read_json(fp, None))
+        return jsonify(_recipe_to_row(row))
 
     elif request.method == 'POST':
         recipe = request.get_json()
         if not recipe:
             return jsonify({'error': 'No data'}), 400
-        with _recipe_lock:
-            _write_json(fp, recipe)
-            # Update index (lightweight metadata only, no photo data)
-            index = _read_index()
-            meta = {
-                'id':       recipe.get('id', slug),
-                'name':     recipe.get('name', ''),
-                'slug':     slug,
-                'category': recipe.get('category', ''),
-                'tags':     recipe.get('tags', []),
-                'prepTime': recipe.get('prepTime', 0),
-                'cookTime': recipe.get('cookTime', 0),
-                'servings': recipe.get('servings', 0),
-                'hasPhoto': bool(recipe.get('photo')),
-            }
-            pos = next((i for i, r in enumerate(index)
-                        if r.get('slug') == slug or r.get('id') == meta['id']), -1)
-            if pos >= 0:
-                index[pos] = meta
-            else:
-                index.append(meta)
-            _write_index(index)
+        now = pantry_module._now()
+        existing = c.execute('SELECT created_at FROM recipes WHERE slug = ?', (slug,)).fetchone()
+        c.execute('''
+            INSERT INTO recipes
+              (slug, id, name, category, tags, prep_time, cook_time, servings,
+               photo, ingredients, instructions, notes, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(slug) DO UPDATE SET
+              id=excluded.id, name=excluded.name, category=excluded.category,
+              tags=excluded.tags, prep_time=excluded.prep_time,
+              cook_time=excluded.cook_time, servings=excluded.servings,
+              photo=excluded.photo, ingredients=excluded.ingredients,
+              instructions=excluded.instructions, notes=excluded.notes,
+              updated_at=excluded.updated_at
+        ''', (
+            slug,
+            recipe.get('id', slug),
+            recipe.get('name', ''),
+            recipe.get('category', ''),
+            json.dumps(recipe.get('tags', [])),
+            int(recipe.get('prepTime', 0)),
+            int(recipe.get('cookTime', 0)),
+            int(recipe.get('servings', 0)),
+            recipe.get('photo', ''),
+            json.dumps(recipe.get('ingredients', [])),
+            recipe.get('instructions', ''),
+            recipe.get('notes', ''),
+            existing['created_at'] if existing else now,
+            now,
+        ))
         _sse_push('recipe', {'slug': slug, 'action': 'saved'})
         return jsonify({'ok': True})
 
     elif request.method == 'DELETE':
-        with _recipe_lock:
-            if fp.exists():
-                fp.unlink()
-            index = [r for r in _read_index() if r.get('slug') != slug]
-            _write_index(index)
+        c.execute('DELETE FROM recipes WHERE slug = ?', (slug,))
         _sse_push('recipe', {'slug': slug, 'action': 'deleted'})
         return jsonify({'ok': True})
 
 
-# ── Meal Plan API ──────────────────────────────────────────────────────────────
-
-_meals_lock = threading.Lock()
-
+# ── Meal Plan API (SQLite) ────────────────────────────────────────────────────
 
 @app.route('/api/meals/<week>', methods=['GET', 'PATCH'])
 def api_meals(week):
     if not _valid_week(week):
         return jsonify({'error': 'Invalid week format. Use YYYY-Www'}), 400
 
-    fp = MEALS / f'{week}.json'
+    c = _rconn()
 
     if request.method == 'GET':
-        return jsonify(_read_json(fp, {}))
+        rows = c.execute(
+            'SELECT day, meal_type, data FROM meal_plans WHERE week = ?', (week,)
+        ).fetchall()
+        result = {}
+        for row in rows:
+            day, mt, data = row['day'], row['meal_type'], row['data']
+            result.setdefault(day, {})[mt] = json.loads(data)
+        return jsonify(result)
 
     elif request.method == 'PATCH':
         body      = request.get_json() or {}
@@ -473,18 +502,17 @@ def api_meals(week):
         meal_type = body.get('mealType', '')
         meal_data = body.get('data')   # None / falsy → clear the slot
 
-        with _meals_lock:
-            current = _read_json(fp, {})
-            if meal_data:
-                if day not in current:
-                    current[day] = {}
-                current[day][meal_type] = meal_data
-            else:
-                if day in current and meal_type in current[day]:
-                    del current[day][meal_type]
-                    if not current[day]:
-                        del current[day]
-            _write_json(fp, current)
+        if meal_data:
+            c.execute('''
+                INSERT INTO meal_plans (week, day, meal_type, data)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(week, day, meal_type) DO UPDATE SET data=excluded.data
+            ''', (week, day, meal_type, json.dumps(meal_data)))
+        else:
+            c.execute(
+                'DELETE FROM meal_plans WHERE week=? AND day=? AND meal_type=?',
+                (week, day, meal_type)
+            )
 
         _sse_push('meals', {'week': week})
         return jsonify({'ok': True})
@@ -549,9 +577,7 @@ def api_serve_photo(filename):
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    # Ensure all data directories exist on startup
-    for d in (RECIPES, MEALS, PHOTOS):
-        d.mkdir(parents=True, exist_ok=True)
+    PHOTOS.mkdir(parents=True, exist_ok=True)
 
     # Wire up the Pantry module (SQLite-backed replacement for the old JSON
     # pantry/grocery data). Shares our SSE broadcaster so pantry changes fan

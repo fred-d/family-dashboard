@@ -348,12 +348,12 @@ html, body {
   .event-modal         { border-radius: var(--r-lg) var(--r-lg) 0 0; max-width: 100%; max-height: 85dvh; }
 
   /* Grocery: bigger touch targets */
-  .grocery-item-check  { width: 32px; height: 32px; }
-  .grocery-store-item  { min-height: 64px; }
-  .grocery-store-check { width: 44px; height: 44px; min-width: 44px; }
+  .pantry-item-check  { width: 32px; height: 32px; }
+  .pantry-store-item  { min-height: 64px; }
+  .pantry-store-check { width: 44px; height: 44px; min-width: 44px; }
 
   /* Grocery add FAB — ensure it's visible above mobile nav */
-  .grocery-add-fab { bottom: calc(var(--mobile-nav-h) + 16px); }
+  .pantry-add-fab { bottom: calc(var(--mobile-nav-h) + 16px); }
 }
 
 /* Desktop: hide mobile nav */
