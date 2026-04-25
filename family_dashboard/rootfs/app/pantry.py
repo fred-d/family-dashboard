@@ -349,12 +349,13 @@ def _init_db(app: Flask):
                       "ADD COLUMN fulfillment TEXT NOT NULL DEFAULT 'curbside'")
 
         # Add photo_url column to shopping_list (v1.6.4).
-        # Stores an item-level photo URL so manually-added shopping items can
-        # carry a product photo even when they aren't linked to a product row.
-        # The enriched SELECT uses COALESCE(s.photo_url, p.image_url) so
-        # product-linked items still pick up the product image automatically.
         if 'photo_url' not in shop_cols:
             c.execute("ALTER TABLE shopping_list ADD COLUMN photo_url TEXT DEFAULT ''")
+
+        # Add order_status to shopping_list (v1.8.0) — curbside order lifecycle.
+        # Values: NULL (not ordered) | 'ordered' | 'out_of_stock'
+        if 'order_status' not in shop_cols:
+            c.execute("ALTER TABLE shopping_list ADD COLUMN order_status TEXT")
 
         # Staples flag on products (v1.5.2) — marks "always-keep-stocked"
         # items so the Pantry tab can filter to just the things we always
@@ -971,9 +972,9 @@ def api_product_need(pid):
         sid = existing['id']
     else:
         sid = _uid()
-        need_fulfillment = body.get('fulfillment', 'curbside')
-        if need_fulfillment not in ('curbside', 'instore'):
-            need_fulfillment = 'curbside'
+        need_fulfillment = body.get('fulfillment', 'unplanned')
+        if need_fulfillment not in ('curbside', 'instore', 'unplanned'):
+            need_fulfillment = 'unplanned'
         c.execute('''
             INSERT INTO shopping_list
               (id,product_id,name,qty,unit,store_id,category_id,status,source,
@@ -1782,9 +1783,9 @@ def api_shopping():
 
     sid = _uid()
     now = _now()
-    fulfillment = body.get('fulfillment', 'curbside')
-    if fulfillment not in ('curbside', 'instore'):
-        fulfillment = 'curbside'
+    fulfillment = body.get('fulfillment', 'unplanned')
+    if fulfillment not in ('curbside', 'instore', 'unplanned'):
+        fulfillment = 'unplanned'
     c.execute('''
         INSERT INTO shopping_list
           (id,product_id,name,qty,unit,store_id,category_id,status,source,
@@ -1811,7 +1812,7 @@ def api_shopping_item(sid):
         fields: list[str] = []
         values: list[Any] = []
         for k in ('name', 'qty', 'unit', 'store_id', 'category_id',
-                  'status', 'notes', 'fulfillment', 'added_by'):
+                  'status', 'notes', 'fulfillment', 'added_by', 'order_status'):
             if k in body:
                 fields.append(f'{k}=?')
                 values.append(body[k])
@@ -1831,6 +1832,111 @@ def api_shopping_item(sid):
     c.execute('DELETE FROM shopping_list WHERE id=?', (sid,))
     _sse_push('inventory', {'type': 'shopping'})
     return jsonify({'ok': True})
+
+
+@bp.route('/shopping/put-away', methods=['POST'])
+def api_shopping_put_away():
+    """
+    Bulk put-away: push purchased (checked) shopping-list items into inventory.
+
+    Body: { items: [{ id, location_id?, received_qty?,
+                      update_pack_size?, pack_size?, pack_unit? }] }
+
+    For each item:
+    - If update_pack_size is true, saves pack_size/pack_unit to the product.
+    - received_qty is in purchase units; multiplied by units_per_pack.
+    - Items without a product_id skip inventory creation but are still deleted.
+    """
+    body  = request.get_json() or {}
+    items = body.get('items', [])
+    if not items:
+        return jsonify({'error': 'items list required'}), 400
+
+    c = _conn()
+    results = []
+    stocked, skipped = 0, 0
+
+    for item_data in items:
+        sid = item_data.get('id')
+        if not sid:
+            continue
+        row = c.execute('SELECT * FROM shopping_list WHERE id=?', (sid,)).fetchone()
+        if not row:
+            results.append({'id': sid, 'ok': False, 'error': 'Not found'})
+            skipped += 1
+            continue
+
+        pid = row['product_id']
+
+        # Persist pack size/unit to product when the user corrects it in the modal
+        if pid and item_data.get('update_pack_size'):
+            pack_size = max(1.0, float(item_data.get('pack_size') or 1))
+            pack_unit = (str(item_data.get('pack_unit') or 'item').strip() or 'item')
+            c.execute(
+                'UPDATE products SET units_per_pack=?, count_unit=?, updated_at=? WHERE id=?',
+                (pack_size, pack_unit, _now(), pid),
+            )
+
+        # Resolve location: explicit → product default → first location
+        loc = item_data.get('location_id')
+        if not loc and pid:
+            prod = _product_row(c, pid) or {}
+            loc  = prod.get('default_location_id')
+        if not loc:
+            first = c.execute('SELECT id FROM locations ORDER BY sort_order LIMIT 1').fetchone()
+            loc   = first['id'] if first else None
+        if not loc:
+            results.append({'id': sid, 'ok': False, 'error': 'No location'})
+            skipped += 1
+            continue
+
+        # No product link — delete from list but skip inventory
+        if not pid:
+            c.execute('DELETE FROM shopping_list WHERE id=?', (sid,))
+            results.append({'id': sid, 'ok': True, 'inventory_id': None, 'note': 'no_product'})
+            stocked += 1
+            continue
+
+        # Quantity: received packs × units_per_pack
+        prod    = _product_row(c, pid) or {}
+        upp     = max(1.0, float(prod.get('units_per_pack') or 1))
+        raw_qty = float(item_data.get('received_qty', row['qty'] or 1))
+        inv_qty = raw_qty * upp
+        now     = _now()
+
+        existing = c.execute(
+            'SELECT * FROM inventory WHERE product_id=? AND location_id=?',
+            (pid, loc),
+        ).fetchone()
+        if existing:
+            new_q = float(existing['current_qty']) + inv_qty
+            c.execute(
+                'UPDATE inventory SET current_qty=?, last_scanned_at=?, updated_at=? WHERE id=?',
+                (new_q, now, now, existing['id']),
+            )
+            iid = existing['id']
+            _log_history(c, iid, pid, 'stock', inv_qty, new_q, _person_id(), 'Put Away')
+        else:
+            iid = _uid()
+            c.execute('''
+                INSERT INTO inventory
+                  (id,product_id,location_id,current_qty,unit,percent_remaining,
+                   purchased_at,expires_at,added_by,last_scanned_at,notes,
+                   created_at,updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ''', (iid, pid, loc, inv_qty,
+                  row['unit'] or 'count', None,
+                  now, None, _person_id(), now, 'Put Away', now, now))
+            _log_history(c, iid, pid, 'stock', inv_qty, inv_qty, _person_id(), 'Put Away')
+
+        c.execute('DELETE FROM shopping_list WHERE id=?', (sid,))
+        _auto_shopping_sync(c, pid)
+        results.append({'id': sid, 'ok': True, 'inventory_id': iid})
+        stocked += 1
+
+    _sse_push('inventory', {'type': 'items'})
+    _sse_push('inventory', {'type': 'shopping'})
+    return jsonify({'stocked': stocked, 'skipped': skipped, 'results': results})
 
 
 @bp.route('/shopping/<sid>/stock', methods=['POST'])
@@ -1951,7 +2057,7 @@ def _auto_shopping_sync(c: sqlite3.Connection, pid: str):
                   row['default_unit'] or 'count',
                   row['default_store_id'], row['category_id'],
                   'needed', 'auto',
-                  'Auto-added: below minimum threshold', 'curbside', _now(), _now()))
+                  'Auto-added: below minimum threshold', 'unplanned', _now(), _now()))
     else:
         if existing:
             c.execute('DELETE FROM shopping_list WHERE id=?', (existing['id'],))

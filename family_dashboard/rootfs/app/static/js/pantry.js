@@ -84,8 +84,7 @@ export class PantryApp {
         this._tab = 'list'; // 'list' | 'inventory' | 'catalog'
 
         // List state
-        this._items    = [];
-        this._filter   = 'all'; // 'all' | 'curbside' | 'instore'
+        this._items       = [];
         this._showChecked = true;
 
         // Pantry state
@@ -259,51 +258,37 @@ export class PantryApp {
     // ── LIST TAB ──────────────────────────────────────────────────────────────
 
     _renderListTab(body) {
-        const total     = this._items.length;
-        const checked   = this._items.filter(i => i.checked).length;
-        const pct       = total > 0 ? (checked / total) * 100 : 0;
+        const total   = this._items.length;
+        const checked = this._items.filter(i => i.checked).length;
+        const pct     = total > 0 ? (checked / total) * 100 : 0;
 
-        let items = [...this._items];
-        if (this._filter !== 'all') {
-            items = items.filter(i => i.fulfillment === this._filter);
-        }
-        if (!this._showChecked) {
-            items = items.filter(i => !i.checked);
-        }
-
-        // Group by category, sorted A→Z within each group.
-        // Checked state never changes sort order — items stay in place when ticked.
-        const grouped = {};
-        items.forEach(item => {
-            const cat = item.category || 'other';
-            if (!grouped[cat]) grouped[cat] = [];
-            grouped[cat].push(item);
-        });
-        Object.keys(grouped).forEach(cat => {
-            grouped[cat].sort((a, b) => a.name.localeCompare(b.name));
-        });
-
-        const catOrder = CATEGORIES.map(c => c.id).filter(id => grouped[id]);
+        const visible = (ful) => this._items.filter(i =>
+            (this._showChecked || !i.checked) && (i.fulfillment === ful)
+        );
+        const unplanned = this._items.filter(i =>
+            (this._showChecked || !i.checked) &&
+            (!i.fulfillment || i.fulfillment === 'unplanned')
+        );
+        const curbside = visible('curbside');
+        const instore  = visible('instore');
 
         body.innerHTML = `
             <div class="pantry-list-toolbar">
-                <div class="pantry-filters">
-                    <button class="pantry-filter-btn${this._filter === 'all'      ? ' active' : ''}" data-filter="all">All</button>
-                    <button class="pantry-filter-btn${this._filter === 'curbside' ? ' active' : ''}" data-filter="curbside">🚗 Curbside</button>
-                    <button class="pantry-filter-btn${this._filter === 'instore'  ? ' active' : ''}" data-filter="instore">🏪 In-Store</button>
-                </div>
                 <div class="pantry-list-actions">
-                    <button class="pantry-action-btn" id="pantryMealPlanBtn" title="Import from this week's meal plan">
+                    ${checked > 0 ? `
+                        <button class="pantry-put-away-btn" id="pantryPutAway">
+                            📦 Put Away (${checked})
+                        </button>
+                        <button class="pantry-action-btn danger" id="pantryClearChecked">
+                            🗑 Clear ${checked}
+                        </button>` : ''}
+                    <button class="pantry-action-btn" id="pantryMealPlanBtn" title="Import from meal plan">
                         📅 From Meals
                     </button>
-                    <button class="pantry-action-btn" id="pantryStaplesBtn" title="Add your weekly staples">
+                    <button class="pantry-action-btn" id="pantryStaplesBtn" title="Add weekly staples">
                         ⭐ Staples
                     </button>
-                    ${checked > 0 ? `
-                        <button class="pantry-action-btn danger" id="pantryClearChecked">
-                            🗑 Clear ${checked} done
-                        </button>` : ''}
-                    <button class="pantry-toggle-checked" id="pantryToggleChecked" title="${this._showChecked ? 'Hide' : 'Show'} checked items">
+                    <button class="pantry-toggle-checked" id="pantryToggleChecked">
                         ${this._showChecked ? '👁 Hide done' : '👁 Show done'}
                     </button>
                 </div>
@@ -317,14 +302,18 @@ export class PantryApp {
                     <span class="pantry-progress-label">${checked} of ${total} items</span>
                 </div>` : ''}
 
-            <div class="pantry-categories" id="pantryCategories">
-                ${catOrder.length === 0
+            <div class="pantry-swimlanes" id="pantrySwimLanes">
+                ${total === 0
                     ? `<div class="pantry-empty">
                            <div class="pantry-empty-icon">🛒</div>
                            <div class="pantry-empty-title">Your list is empty</div>
                            <div class="pantry-empty-text">Add items below, import from your meal plan, or add your weekly staples.</div>
                        </div>`
-                    : catOrder.map(catId => this._categoryGroupHTML(catId, grouped[catId])).join('')
+                    : [
+                        unplanned.length ? this._swimlaneHTML('unplanned', unplanned) : '',
+                        curbside.length  ? this._swimlaneHTML('curbside',  curbside)  : '',
+                        instore.length   ? this._swimlaneHTML('instore',   instore)   : '',
+                      ].join('')
                 }
             </div>
 
@@ -346,9 +335,6 @@ export class PantryApp {
             </div>
         `;
 
-        body.querySelectorAll('.pantry-filter-btn').forEach(btn => {
-            btn.addEventListener('click', () => { this._filter = btn.dataset.filter; this._render(); });
-        });
         body.querySelector('#pantryToggleChecked')?.addEventListener('click', () => {
             this._showChecked = !this._showChecked; this._render();
         });
@@ -357,6 +343,7 @@ export class PantryApp {
         body.querySelector('#pantryStaplesBtn')?.addEventListener('click', () => this._addStaples());
         body.querySelector('#pantryAddFab')?.addEventListener('click', () => this._openItemModal());
         body.querySelector('#pantryScanNeedFab')?.addEventListener('click', () => this._openScanner('need'));
+        body.querySelector('#pantryPutAway')?.addEventListener('click', () => this._openPutAwayModal());
 
         body.querySelectorAll('.pantry-item-row').forEach(row => {
             const id = row.dataset.id;
@@ -369,7 +356,14 @@ export class PantryApp {
                 const item = this._items.find(i => i.id === id);
                 if (item) this._openItemModal(item);
             });
-            // Thumbnail click → photo lightbox
+            row.querySelector('.pantry-fulfill-pill')?.addEventListener('click', e => {
+                e.stopPropagation();
+                this._cycleItemFulfillment(id);
+            });
+            row.querySelector('.pantry-order-oos-btn')?.addEventListener('click', e => {
+                e.stopPropagation();
+                this._markOutOfStock(id);
+            });
             const thumb = row.querySelector('.pantry-item-photo-thumb');
             if (thumb) {
                 thumb.style.cursor = 'pointer';
@@ -381,30 +375,48 @@ export class PantryApp {
         });
     }
 
-    _categoryGroupHTML(catId, items) {
-        const cat       = catOf(catId);
+    _swimlaneHTML(laneId, items) {
+        const LANES = {
+            unplanned: { label: 'Not Yet Planned', icon: '—',  color: '#94a3b8',
+                         hint: 'Tap + on each item to assign Curbside or In-Store' },
+            curbside:  { label: 'Curbside / Delivery', icon: '🛻', color: '#7c3aed', hint: '' },
+            instore:   { label: 'In-Store',             icon: '🏪', color: '#0891b2', hint: '' },
+        };
+        const lane      = LANES[laneId] || LANES.unplanned;
+        const sorted    = [...items].sort((a, b) => a.name.localeCompare(b.name));
         const unchecked = items.filter(i => !i.checked).length;
         return `
-            <div class="pantry-cat-group">
-                <div class="pantry-cat-header" style="--cat-color:${cat.color}">
-                    <span class="pantry-cat-emoji">${cat.emoji}</span>
-                    <span class="pantry-cat-label">${cat.label}</span>
-                    ${unchecked > 0
-                        ? `<span class="pantry-cat-count">${unchecked}</span>`
-                        : `<span class="pantry-cat-all-done">✓ all done</span>`}
+            <div class="pantry-swimlane" data-lane="${laneId}">
+                <div class="pantry-swimlane-header" style="--lane-color:${lane.color}">
+                    <span class="pantry-swimlane-icon">${lane.icon}</span>
+                    <span class="pantry-swimlane-label">${lane.label}</span>
+                    ${lane.hint ? `<span class="pantry-swimlane-hint">${lane.hint}</span>` : ''}
+                    <span class="pantry-swimlane-count${unchecked === 0 ? ' done' : ''}">
+                        ${unchecked > 0 ? unchecked : '✓ all done'}
+                    </span>
                 </div>
-                ${items.map(item => this._itemRowHTML(item)).join('')}
+                ${sorted.map(item => this._itemRowHTML(item)).join('')}
             </div>`;
     }
 
     _itemRowHTML(item) {
-        const fulfillIcon = item.fulfillment === 'instore'  ? '<span class="pantry-fulfillment instore" title="In-Store">🏪</span>'
-                          : item.fulfillment === 'curbside' ? '<span class="pantry-fulfillment curbside" title="Curbside">🚗</span>'
-                          : '';
-        const _unit    = item.unit && item.unit !== 'count' ? item.unit : '';
-        const amountStr = _unit ? `${item.qty} ${_unit}` : (item.qty !== 1 ? `${item.qty}` : '');
-        const storeName = item.storeName || this._storeNameById(item.storeId);
+        const ful  = item.fulfillment || 'unplanned';
+        const PILL = {
+            unplanned: { label: '+ Plan', cls: 'unplanned' },
+            curbside:  { label: '🛻',     cls: 'curbside'  },
+            instore:   { label: '🏪',     cls: 'instore'   },
+        };
+        const pill       = PILL[ful] || PILL.unplanned;
+        const cat        = catOf(item.category);
+        const _unit      = item.unit && item.unit !== 'count' ? item.unit : '';
+        const amountStr  = _unit ? `${item.qty} ${_unit}` : (item.qty !== 1 ? `${item.qty}` : '');
+        const storeName  = item.storeName || this._storeNameById(item.storeId);
         const storeColor = item.storeColor || '#64748b';
+        const orderedRow = (!item.checked && item.orderStatus === 'ordered') ? `
+            <span class="pantry-order-row">
+                <span class="pantry-order-badge">🟡 Ordered</span>
+                <button class="pantry-order-oos-btn" data-id="${item.id}">Out of stock →</button>
+            </span>` : '';
         return `
             <div class="pantry-item-row${item.checked ? ' checked' : ''}" data-id="${item.id}">
                 <button class="pantry-item-check${item.checked ? ' done' : ''}" aria-label="Toggle">
@@ -417,7 +429,10 @@ export class PantryApp {
                             style="background-image:url('${item.photo}')" title="Tap to enlarge"></div>`
                     : ''}
                 <div class="pantry-item-info">
-                    <span class="pantry-item-name">${this._esc(item.name)}</span>
+                    <span class="pantry-item-name">
+                        <span class="pantry-item-cat-dot" style="color:${cat.color}" title="${cat.label}">${cat.emoji}</span>
+                        ${this._esc(item.name)}
+                    </span>
                     ${amountStr ? `<span class="pantry-item-amount">${this._esc(amountStr)}</span>` : ''}
                     <span class="pantry-item-meta">
                         ${storeName ? `<span class="pantry-item-store" style="--store-color:${this._esc(storeColor)}">${this._esc(storeName)}</span>` : ''}
@@ -426,8 +441,11 @@ export class PantryApp {
                             : ''}
                         ${item.notes  ? `<span class="pantry-item-notes">${this._esc(item.notes)}</span>` : ''}
                     </span>
+                    ${orderedRow}
                 </div>
-                ${fulfillIcon}
+                <button class="pantry-fulfill-pill ${pill.cls}" data-id="${item.id}" title="Tap to change fulfillment">
+                    ${pill.label}
+                </button>
                 <button class="pantry-item-edit" aria-label="Edit" title="Edit">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
                         <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
@@ -1152,15 +1170,33 @@ export class PantryApp {
                         </select>
                     </div>
 
+                    ${!isNew ? `
                     <div class="pantry-modal-field">
                         <label>Fulfillment</label>
                         <div class="pantry-fulfillment-toggle">
-                            <button class="pantry-fulfillment-btn${(val('fulfillment') ?? 'curbside') === 'curbside' ? ' active' : ''}"
-                                    data-ful="curbside">🚗 Curbside / Delivery</button>
+                            <button class="pantry-fulfillment-btn${(val('fulfillment') || 'unplanned') === 'unplanned' ? ' active' : ''}"
+                                    data-ful="unplanned">— Not Planned</button>
+                            <button class="pantry-fulfillment-btn${val('fulfillment') === 'curbside' ? ' active' : ''}"
+                                    data-ful="curbside">🛻 Curbside</button>
                             <button class="pantry-fulfillment-btn${val('fulfillment') === 'instore' ? ' active' : ''}"
-                                    data-ful="instore">🏪 In-Store (I'll grab it)</button>
+                                    data-ful="instore">🏪 In-Store</button>
                         </div>
-                    </div>
+                    </div>` : ''}
+
+                    ${!isNew && val('fulfillment') === 'curbside' ? `
+                    <div class="pantry-modal-field">
+                        <label>Order Status</label>
+                        <div class="pantry-order-status-btns">
+                            <button class="pantry-order-status-btn${val('orderStatus') === 'ordered' ? ' active' : ''}"
+                                    id="pantryToggleOrdered">
+                                🟡 ${val('orderStatus') === 'ordered' ? 'Ordered ✓' : 'Mark as Ordered'}
+                            </button>
+                            ${val('orderStatus') === 'ordered' ? `
+                            <button class="pantry-order-status-btn danger" id="pantryMarkOOS">
+                                🔴 Out of Stock → In-Store
+                            </button>` : ''}
+                        </div>
+                    </div>` : ''}
 
                     <div class="pantry-modal-field">
                         <label>Notes / Brand Details</label>
@@ -1188,13 +1224,6 @@ export class PantryApp {
                         </select>
                     </div>
 
-                    ${isNew ? `
-                        <div class="pantry-modal-save-pantry">
-                            <label class="pantry-checkbox-label">
-                                <input type="checkbox" id="pantrySaveToPantry">
-                                Also save to Inventory for quick re-adding later
-                            </label>
-                        </div>` : ''}
                 </div>
                 <div class="pantry-modal-footer">
                     <button class="pantry-modal-save" id="pantryItemSave">
@@ -1255,6 +1284,18 @@ export class PantryApp {
         overlay.querySelector('#pantryItemCancel')?.addEventListener('click', close);
         overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
 
+        overlay.querySelector('#pantryToggleOrdered')?.addEventListener('click', () => {
+            if (!this._editItem) return;
+            const next = this._editItem.orderStatus === 'ordered' ? null : 'ordered';
+            this._updateItem(this._editItem.id, { orderStatus: next });
+            close();
+        });
+        overlay.querySelector('#pantryMarkOOS')?.addEventListener('click', () => {
+            if (!this._editItem) return;
+            this._updateItem(this._editItem.id, { fulfillment: 'instore', orderStatus: null });
+            close();
+        });
+
         overlay.querySelector('#pantryItemSave')?.addEventListener('click', () => {
             const name = nameInput?.value.trim();
             if (!name) { nameInput?.focus(); return; }
@@ -1264,22 +1305,20 @@ export class PantryApp {
             const storeId = overlay.querySelector('#pantryItemStore')?.value || null;
             const data = {
                 name,
-                amount:      overlay.querySelector('#pantryItemAmount')?.value || '1',
-                unit:        overlay.querySelector('#pantryItemUnit')?.value.trim()   || '',
-                category:    catSelect?.value || detectCategory(name),
-                fulfillment: fulfillmentActive?.dataset.ful || 'curbside',
-                notes:       overlay.querySelector('#pantryItemNotes')?.value.trim() || '',
-                addedBy:     addedBy || null,
-                storeId:     storeId || null,
-                photo:       this._editItemPhoto || '',
+                amount:   overlay.querySelector('#pantryItemAmount')?.value || '1',
+                unit:     overlay.querySelector('#pantryItemUnit')?.value.trim() || '',
+                category: catSelect?.value || detectCategory(name),
+                notes:    overlay.querySelector('#pantryItemNotes')?.value.trim() || '',
+                addedBy:  addedBy || null,
+                storeId:  storeId || null,
+                photo:    this._editItemPhoto || '',
             };
+            // Only include fulfillment when editing an existing item (assigned inline for new items)
+            if (fulfillmentActive) data.fulfillment = fulfillmentActive.dataset.ful;
             if (this._editItem) {
                 this._updateItem(this._editItem.id, data);
             } else {
                 this._addItem(data);
-                if (overlay.querySelector('#pantrySaveToPantry')?.checked) {
-                    this._addInventoryItemFromListData(data);
-                }
             }
             close();
         });
@@ -1757,7 +1796,7 @@ export class PantryApp {
                     amount:      ing.amount,
                     unit:        ing.unit,
                     category:    ing.category,
-                    fulfillment: 'curbside',
+                    fulfillment: 'unplanned',
                     notes:       '',
                     photo:       null,
                     source:      'mealplan',
@@ -1787,7 +1826,7 @@ export class PantryApp {
                 category:    data.category || detectCategory(data.name),
                 qty:         Number.isFinite(parsedQty) ? parsedQty : 1,
                 unit:        data.unit || 'count',
-                fulfillment: data.fulfillment || 'curbside',
+                fulfillment: data.fulfillment || 'unplanned',
                 notes:       data.notes || '',
                 addedBy:     data.addedBy || null,
                 storeId:     data.storeId  || null,
@@ -1875,6 +1914,110 @@ export class PantryApp {
         }
     }
 
+    // ── Fulfillment cycling & order status ───────────────────────────────────
+
+    async _cycleItemFulfillment(id) {
+        const item = this._items.find(i => i.id === id);
+        if (!item || item.checked) return;
+        const CYCLE = { unplanned: 'curbside', curbside: 'instore', instore: 'unplanned' };
+        const next  = CYCLE[item.fulfillment || 'unplanned'] || 'curbside';
+        await this._updateItem(id, { fulfillment: next });
+    }
+
+    async _markOutOfStock(id) {
+        await this._updateItem(id, { fulfillment: 'instore', orderStatus: null });
+    }
+
+    // ── Put Away modal ────────────────────────────────────────────────────────
+
+    _openPutAwayModal() {
+        const purchased = this._items.filter(i => i.checked);
+        if (!purchased.length) return;
+
+        const overlay = document.getElementById('pantryItemOverlay');
+        if (!overlay) return;
+
+        // Enrich each item with current inventory qty for context
+        const rows = purchased.map(item => {
+            const invItem = this._inventory.find(inv =>
+                (item.productId && inv.productId === item.productId) ||
+                inv.name.toLowerCase() === item.name.toLowerCase()
+            );
+            const unit = (item.unit && item.unit !== 'count') ? item.unit : 'unit';
+            return { item, invItem, unit };
+        });
+
+        overlay.innerHTML = `
+            <div class="pantry-modal pantry-putaway-modal" role="dialog" aria-modal="true">
+                <div class="pantry-modal-header">
+                    <div class="pantry-modal-title">📦 Put Away Items</div>
+                    <button class="pantry-modal-close" id="pantryPutAwayClose">×</button>
+                </div>
+                <p class="pantry-putaway-desc">
+                    Confirm what you received — quantities are added to Inventory.
+                </p>
+                <div class="pantry-modal-body pantry-putaway-body">
+                    ${rows.map((r, idx) => {
+                        const cat = catOf(r.item.category);
+                        return `
+                        <div class="pantry-putaway-row">
+                            ${r.item.photo
+                                ? `<div class="pantry-putaway-thumb" style="background-image:url('${r.item.photo}')"></div>`
+                                : `<div class="pantry-putaway-thumb no-photo">${cat.emoji}</div>`}
+                            <div class="pantry-putaway-info">
+                                <div class="pantry-putaway-name">${this._esc(r.item.name)}</div>
+                                ${r.invItem
+                                    ? `<div class="pantry-putaway-inv">In inventory: ${r.invItem.qty} ${r.invItem.unit}</div>`
+                                    : `<div class="pantry-putaway-inv new">New to inventory</div>`}
+                            </div>
+                            <div class="pantry-putaway-qty">
+                                <label>Got</label>
+                                <input type="number" class="pantry-putaway-qty-input"
+                                       data-idx="${idx}" min="0" step="0.25"
+                                       value="${r.item.qty}">
+                                <span class="pantry-putaway-unit">${this._esc(r.unit)}</span>
+                            </div>
+                        </div>`;
+                    }).join('')}
+                </div>
+                <div class="pantry-modal-footer">
+                    <button class="pantry-modal-save" id="pantryPutAwayConfirm">
+                        ✓ Put Away ${purchased.length} Item${purchased.length !== 1 ? 's' : ''}
+                    </button>
+                    <button class="pantry-modal-cancel" id="pantryPutAwayCancel">Not now</button>
+                </div>
+            </div>`;
+
+        overlay.classList.add('active');
+
+        const close = () => overlay.classList.remove('active');
+        overlay.querySelector('#pantryPutAwayClose')?.addEventListener('click', close);
+        overlay.querySelector('#pantryPutAwayCancel')?.addEventListener('click', close);
+        overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+        overlay.querySelector('#pantryPutAwayConfirm')?.addEventListener('click', () => {
+            const items = rows.map((r, idx) => {
+                const qtyInput = overlay.querySelector(`.pantry-putaway-qty-input[data-idx="${idx}"]`);
+                return {
+                    id:           r.item.id,
+                    received_qty: parseFloat(qtyInput?.value ?? r.item.qty),
+                };
+            });
+            this._confirmPutAway(items);
+            close();
+        });
+    }
+
+    async _confirmPutAway(items) {
+        this._setSyncStatus('saving');
+        try {
+            await this.store.putAway(items);
+            this._setSyncStatus('saved', 3000);
+        } catch {
+            this._setSyncStatus('offline', 3000);
+        }
+    }
+
     async _addStaples() {
         // Add every Pantry item flagged ⭐ Staple to the shopping list, skipping
         // anything that's already on the open list (status != bought).
@@ -1914,7 +2057,7 @@ export class PantryApp {
         await this._addItem({
             name:        inv.name,
             category:    inv.category,
-            fulfillment: 'curbside',
+            fulfillment: 'unplanned',
             notes:       inv.notes || '',
             // The backend resolves the joined product image from product_id,
             // so passing a plain name is enough to round-trip a sensible row.
@@ -2048,7 +2191,7 @@ export class PantryApp {
                 this._openItemModal(null, {
                     name:        existing.name,
                     category:    existing.category,
-                    fulfillment: existing.defaultFulfillment || 'curbside',
+                    fulfillment: 'unplanned',
                     notes:       existing.notes || '',
                     photo:       existing.photo || product.imageUrl || null,
                 });
@@ -2060,7 +2203,7 @@ export class PantryApp {
                     category:    product.category || detectCategory(name),
                     notes:       product.brand ? `Brand: ${product.brand}` : '',
                     photo:       product.imageUrl || null,
-                    fulfillment: 'curbside',
+                    fulfillment: 'unplanned',
                 });
             }
         }
