@@ -219,7 +219,7 @@ export class PantryStore {
             unit:        item.unit ?? 'count',
             category_id: this._categoryIdForPantryId(item.category),
             status:      item.checked ? 'bought' : 'needed',
-            fulfillment: item.fulfillment ?? 'curbside',
+            fulfillment: item.fulfillment ?? 'unplanned',
             notes:       item.notes ?? '',
             store_id:    item.storeId  ?? null,
             added_by:    item.addedBy  ?? null,
@@ -247,11 +247,16 @@ export class PantryStore {
         if ('category'    in patch) body.category_id = this._categoryIdForPantryId(patch.category);
         if ('addedBy'     in patch) body.added_by    = patch.addedBy;
         if ('photo'       in patch) body.photo_url   = patch.photo ?? '';
+        if ('orderStatus' in patch) body.order_status = patch.orderStatus ?? null;
         return this._send('PATCH', `/api/pantry/shopping/${id}`, body);
     }
 
     async deleteItem(id) {
         return this._send('DELETE', `/api/pantry/shopping/${id}`);
+    }
+
+    async putAway(items) {
+        return this._send('POST', '/api/pantry/shopping/put-away', { items });
     }
 
     /**
@@ -423,7 +428,8 @@ export class PantryStore {
             category:    this._pantryIdForCategoryId(row.category_id, row.category_name),
             checked:     row.status === 'bought',
             status:      row.status,                   // raw, in case the UI wants tri-state
-            fulfillment: row.fulfillment || 'curbside',
+            fulfillment: row.fulfillment || 'unplanned',
+            orderStatus: row.order_status || null,
             notes:       row.notes || '',
             addedBy:     row.added_by || '',
             source:      row.source || 'manual',
