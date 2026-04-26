@@ -166,6 +166,36 @@ export class PantryStore {
         return this._send('POST', `/api/pantry/products/${pid}/barcodes`, { barcode });
     }
 
+    /**
+     * Link a scanned barcode to an existing product. Same effect as addBarcode
+     * but goes through the dedicated /scan/link endpoint, which is the
+     * canonical entry point for the resolver flow.
+     */
+    async linkBarcode(barcode, productId) {
+        return this._send('POST', '/api/pantry/scan/link', {
+            barcode,
+            product_id: productId,
+        });
+    }
+
+    /**
+     * Create a catalog product from raw fields (third-party hint or hand-typed)
+     * and link a barcode to it in the same call. Returns the new product row.
+     *
+     * Translates the pantry-shape input → backend payload, mirroring addItem().
+     */
+    async createProductWithBarcode({ name, brand, category, photo, barcode, notes }) {
+        const body = {
+            name,
+            brand:       brand || '',
+            category_id: this._categoryIdForPantryId(category),
+            image_url:   photo || '',
+            notes:       notes || '',
+        };
+        if (barcode) body.barcodes = [String(barcode)];
+        return this._send('POST', '/api/pantry/products', body);
+    }
+
     /** Remove a single barcode from a product. */
     async removeBarcode(pid, barcode) {
         return this._send('DELETE', `/api/pantry/products/${pid}/barcodes/${barcode}`);
@@ -430,6 +460,7 @@ export class PantryStore {
             status:      row.status,                   // raw, in case the UI wants tri-state
             fulfillment: row.fulfillment || 'unplanned',
             orderStatus: row.order_status || null,
+            brand:       row.product_brand || '',
             notes:       row.notes || '',
             addedBy:     row.added_by || '',
             source:      row.source || 'manual',

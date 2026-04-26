@@ -236,10 +236,9 @@ export class BarcodeScanner {
                 <div class="scanner-lookup-text">Looking up <code>${barcode}</code>…</div>
             </div>`);
 
-        // "need" mode uses ?preview=1 so the backend does NOT auto-save the
-        // product to the catalog — the user reviews it in the Add Item modal first.
-        const isNeed  = this._mode === 'need';
-        const scanUrl = apiUrl(`/api/pantry/scan/${encodeURIComponent(barcode)}${isNeed ? '?preview=1' : ''}`);
+        // Always save to catalog on scan — the product_id is threaded to the
+        // shopping list so Put Away can find the full product data later.
+        const scanUrl = apiUrl(`/api/pantry/scan/${encodeURIComponent(barcode)}`);
 
         let product = { found: false };
         try {
@@ -262,10 +261,9 @@ export class BarcodeScanner {
         }
         product.upc = barcode;
 
-        // "need" mode: if NOT in the local catalog, skip the scanner confirm
-        // step entirely and hand straight off to the Add Item modal, which is
-        // the real review / edit step for the user.
-        if (isNeed && product.source !== 'local') {
+        // "need" mode: skip the scanner confirm step and hand straight off to
+        // the Add Item modal, which is the real review / edit step for the user.
+        if (this._mode === 'need' && product.source !== 'local') {
             this._onResult?.({ mode: this._mode, barcode, product });
             this.close();
             return;
