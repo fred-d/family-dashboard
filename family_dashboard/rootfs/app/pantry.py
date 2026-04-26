@@ -1537,19 +1537,22 @@ def _lookup_upcitemdb(barcode: str) -> tuple[dict | None, str]:
 @bp.route('/scan/<barcode>')
 def api_scan(barcode):
     """
-    Cascading UPC lookup:
+    Cascading UPC lookup. Lookup-only — never writes to the catalog.
+
       1. Local barcode_catalog (instant cache)
-      2. Open Food Facts databases in order:
-         food → beauty → pet food → general products
+         → returns the canonical product (source: 'local')
+      2. Open Food Facts databases (food → beauty → pet food → general)
       3. UPCitemDB free tier (catch-all)
-      4. {found:false, tried:[…]} if every tier missed
+         → tiers 2/3 return as preview; the user must confirm via the
+            resolver modal before any catalog row is created.
+
+    The catalog is curated, not crowdsourced — products only land in it
+    when a person says "yes, that's the same item" or "create new". This
+    endpoint surfaces options; it never decides.
 
     Pass ?debug=1 to include each tier's raw response in the result.
-    Pass ?preview=1 to skip auto-saving to the local catalog — used when the
-    caller wants to review the data before committing (e.g. "need" scan mode).
     """
-    debug   = request.args.get('debug')   == '1'
-    preview = request.args.get('preview') == '1'
+    debug = request.args.get('debug') == '1'
 
     if not _valid_barcode(barcode):
         return jsonify({'found': False, 'error': 'Invalid barcode'}), 400
@@ -1557,7 +1560,7 @@ def api_scan(barcode):
     c = _conn()
     tried: list[dict] = []
 
-    # ── Tier 1: local catalog — always checked, always returned immediately ──
+    # ── Tier 1: local catalog — instant, canonical, no third-party fetch ─────
     hit = c.execute('''
         SELECT p.*, b.source AS _source
         FROM barcode_catalog b
@@ -1565,12 +1568,11 @@ def api_scan(barcode):
         WHERE b.barcode = ?
     ''', (barcode,)).fetchone()
     if hit:
-        p = dict(hit)
         return jsonify({
             'found':   True,
             'source':  'local',
             'barcode': barcode,
-            'product': p,
+            'product': dict(hit),
         })
     tried.append({'tier': 'local', 'result': 'miss'})
 
@@ -1579,17 +1581,13 @@ def api_scan(barcode):
         normalized, msg = _lookup_off_db(host, barcode)
         tried.append({'tier': short, 'host': host, 'label': label, 'result': msg})
         if normalized and normalized['name']:
-            if preview:
-                return _preview_return(barcode, short, normalized, tried, debug)
-            return _cache_and_return(c, barcode, short, normalized, tried, debug)
+            return _preview_return(barcode, short, normalized, tried, debug)
 
     # ── Tier 3: UPCitemDB free tier ──────────────────────────────────────────
     normalized, msg = _lookup_upcitemdb(barcode)
     tried.append({'tier': 'upcitemdb', 'host': 'api.upcitemdb.com', 'result': msg})
     if normalized and normalized['name']:
-        if preview:
-            return _preview_return(barcode, 'upcitemdb', normalized, tried, debug)
-        return _cache_and_return(c, barcode, 'upcitemdb', normalized, tried, debug)
+        return _preview_return(barcode, 'upcitemdb', normalized, tried, debug)
 
     # ── All tiers missed ─────────────────────────────────────────────────────
     body = {'found': False, 'barcode': barcode, 'tried': [t['tier'] for t in tried]}
@@ -1674,38 +1672,6 @@ def api_upc_raw(barcode):
     return jsonify({'barcode': barcode, 'sources': results})
 
 
-def _cache_and_return(c, barcode: str, source: str, n: dict,
-                      tried: list, debug: bool):
-    """Persist a freshly-fetched product to local catalog and return the
-    standard scan response shape."""
-    cat = _guess_category(n.get('tags', []), n.get('name', ''))
-    pid = _uid()
-    now = _now()
-    c.execute('''
-        INSERT INTO products
-          (id,name,brand,category_id,image_url,default_unit,
-           min_threshold,tracks_percent,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?)
-    ''', (pid, n['name'] or f'Item {barcode}', n.get('brand', ''), cat,
-          _https(n.get('image', '')), 'count', 1, 0, now, now))
-    c.execute('''
-        INSERT OR REPLACE INTO barcode_catalog
-          (barcode,product_id,source,raw_data,cached_at) VALUES (?,?,?,?,?)
-    ''', (barcode, pid, source,
-          json.dumps(n.get('raw', {}))[:50000], now))
-    c.commit()
-
-    body = {
-        'found':   True,
-        'source':  source,
-        'barcode': barcode,
-        'product': _product_row(c, pid),
-    }
-    if debug:
-        body['debug'] = tried
-    return jsonify(body)
-
-
 @bp.route('/scan/link', methods=['POST'])
 def api_scan_link():
     """Manually link a barcode to an existing product (for unknown-item flow)."""
@@ -1733,6 +1699,7 @@ def _shopping_list_enriched(c: sqlite3.Connection) -> list[dict]:
     rows = _rows(c.execute('''
         SELECT s.*,
                p.name      AS product_name,
+               p.brand     AS product_brand,
                COALESCE(NULLIF(s.photo_url,''), p.image_url, '') AS resolved_photo,
                cat.name    AS category_name,
                cat.color   AS category_color,
@@ -1756,7 +1723,8 @@ def api_shopping():
         if store and store != 'all':
             rows = _rows(c.execute('''
                 SELECT s.*,
-                       p.name AS product_name,
+                       p.name  AS product_name,
+                       p.brand AS product_brand,
                        COALESCE(NULLIF(s.photo_url,''), p.image_url, '') AS resolved_photo,
                        cat.name AS category_name, cat.color AS category_color,
                        cat.sort_order AS category_sort,
@@ -1890,12 +1858,20 @@ def api_shopping_put_away():
             skipped += 1
             continue
 
-        # No product link — delete from list but skip inventory
+        # No product link — fallback for legacy rows (the resolver flow now
+        # always assigns a product_id at scan time). Create a minimal product
+        # so Put Away still lands in catalog + inventory. Non-staple → no
+        # auto-replenishment, so default min_threshold=1 is safe again.
         if not pid:
-            c.execute('DELETE FROM shopping_list WHERE id=?', (sid,))
-            results.append({'id': sid, 'ok': True, 'inventory_id': None, 'note': 'no_product'})
-            stocked += 1
-            continue
+            pid = _uid()
+            now_p = _now()
+            c.execute('''
+                INSERT INTO products
+                  (id, name, category_id, default_unit, min_threshold,
+                   units_per_pack, count_unit, is_staple, notes, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 1, 1, 'item', 0, '', ?, ?)
+            ''', (pid, row['name'], row['category_id'], row['unit'] or 'count', now_p, now_p))
+            c.execute('UPDATE shopping_list SET product_id=? WHERE id=?', (pid, sid))
 
         # Quantity: received packs × units_per_pack
         prod    = _product_row(c, pid) or {}
@@ -1926,7 +1902,7 @@ def api_shopping_put_away():
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
             ''', (iid, pid, loc, inv_qty,
                   row['unit'] or 'count', None,
-                  now, None, _person_id(), now, 'Put Away', now, now))
+                  now, None, _person_id(), now, '', now, now))
             _log_history(c, iid, pid, 'stock', inv_qty, inv_qty, _person_id(), 'Put Away')
 
         c.execute('DELETE FROM shopping_list WHERE id=?', (sid,))
@@ -2015,14 +1991,17 @@ def api_shopping_stock(sid):
 
 def _auto_shopping_sync(c: sqlite3.Connection, pid: str):
     """
-    After any inventory change, recalculate auto shopping state for this product.
+    Auto-replenishment for *staples only*. Non-staples are ad-hoc and never
+    auto-add to the list — the user puts them on the list when they want them.
+
+    For staples:
       - total qty < min_threshold  → ensure an auto entry exists w/ correct qty
       - total qty ≥ min_threshold  → remove any auto entry
-    Manual entries are never touched.
+    Manual entries are never touched, regardless of staple status.
     """
     row = c.execute('''
         SELECT p.id, p.name, p.min_threshold, p.default_store_id, p.category_id,
-               p.default_unit, p.image_url, p.units_per_pack,
+               p.default_unit, p.image_url, p.units_per_pack, p.is_staple,
                COALESCE(SUM(i.current_qty), 0) AS total_qty
         FROM products p
         LEFT JOIN inventory i ON i.product_id = p.id
@@ -2032,12 +2011,19 @@ def _auto_shopping_sync(c: sqlite3.Connection, pid: str):
     if not row:
         return
 
+    existing = c.execute(
+        'SELECT * FROM shopping_list WHERE product_id=? AND source=?',
+        (pid, 'auto')).fetchone()
+
+    # Non-staple: never auto-add. Clear any stray auto entry.
+    if not row['is_staple']:
+        if existing:
+            c.execute('DELETE FROM shopping_list WHERE id=?', (existing['id'],))
+        return
+
     total     = float(row['total_qty'] or 0)
     threshold = float(row['min_threshold'] or 0)
     upp       = max(1.0, float(row['units_per_pack'] or 1))
-    existing  = c.execute(
-        'SELECT * FROM shopping_list WHERE product_id=? AND source=?',
-        (pid, 'auto')).fetchone()
 
     if total < threshold:
         # Express the qty to buy in *packs* (you buy a box, not a packet),

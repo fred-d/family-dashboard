@@ -196,6 +196,30 @@
     flex-wrap:  wrap;
 }
 
+.pantry-fulfill-filters {
+    display:    flex;
+    gap:        6px;
+    flex-wrap:  wrap;
+}
+
+.pantry-filter-count {
+    display:       inline-flex;
+    align-items:   center;
+    justify-content: center;
+    background:    rgba(255,255,255,0.35);
+    border-radius: 10px;
+    font-size:     11px;
+    font-weight:   700;
+    min-width:     18px;
+    height:        18px;
+    padding:       0 4px;
+    margin-left:   2px;
+}
+.pantry-filter-btn:not(.active) .pantry-filter-count {
+    background:  var(--color-border);
+    color:       var(--color-muted);
+}
+
 .pantry-list-actions {
     display:    flex;
     align-items: center;
@@ -330,6 +354,12 @@
     background:    #22c55e;
     border-color:  #22c55e;
 }
+.pantry-item-check.ordered {
+    background:    #7c3aed;
+    border-color:  #7c3aed;
+}
+.pantry-item-row.ordered .pantry-item-name { opacity: 0.7; }
+.pantry-item-row.ordered { background: color-mix(in srgb, #7c3aed 4%, var(--color-surface)); }
 
 .pantry-item-photo-thumb {
     flex-shrink:        0;
@@ -378,6 +408,16 @@
     font-size:  11px;
     color:      #8b5cf6;
     font-style: italic;
+}
+
+/* Brand · notes line under amount */
+.pantry-item-brand-notes {
+    font-size:  11px;
+    color:      var(--color-muted);
+    width:      100%;
+    white-space: nowrap;
+    overflow:   hidden;
+    text-overflow: ellipsis;
 }
 
 /* "Added by <Name>" pill — hidden for household/system entries */
@@ -957,7 +997,8 @@
 
 #pantryItemOverlay,
 #pantryInvOverlay,
-#pantryMealPlanOverlay {
+#pantryMealPlanOverlay,
+#pantryResolverOverlay {
     display:         none;
     position:        fixed;
     inset:           0;
@@ -970,7 +1011,8 @@
 }
 #pantryItemOverlay.active,
 #pantryInvOverlay.active,
-#pantryMealPlanOverlay.active {
+#pantryMealPlanOverlay.active,
+#pantryResolverOverlay.active {
     display: flex;
 }
 
@@ -1086,6 +1128,7 @@
 
 /* Compact remove button in the modal footer row */
 .pantry-modal-delete-footer {
+    width:         auto;
     padding:       12px 14px;
     border:        1px solid #fca5a5;
     border-radius: 10px;
@@ -1097,6 +1140,7 @@
     transition:    background 0.15s;
     white-space:   nowrap;
     flex-shrink:   0;
+    margin-top:    0;
 }
 .pantry-modal-delete-footer:hover { background: #fef2f2; }
 
@@ -1128,6 +1172,28 @@
     display:  grid;
     grid-template-columns: 1fr 1fr;
     gap:      10px;
+}
+.pantry-modal-textarea {
+    resize:      vertical;
+    min-height:  60px;
+    font-family: inherit;
+}
+.pantry-modal-field-inline {
+    display:     flex;
+    align-items: center;
+}
+.pantry-modal-toggle-label {
+    display:     flex;
+    align-items: center;
+    gap:         8px;
+    font-size:   0.88rem;
+    cursor:      pointer;
+    color:       var(--color-text);
+}
+.pantry-modal-toggle-label input[type="checkbox"] {
+    width:  16px;
+    height: 16px;
+    cursor: pointer;
 }
 
 .pantry-modal-input {
@@ -1672,7 +1738,8 @@ select.pantry-modal-input { cursor: pointer; }
     .pantry-modal { max-height: 95vh; border-radius: 16px 16px 0 0; }
     #pantryItemOverlay,
     #pantryInvOverlay,
-    #pantryMealPlanOverlay {
+    #pantryMealPlanOverlay,
+    #pantryResolverOverlay {
         align-items: flex-end;
         padding:     0;
     }
@@ -2131,6 +2198,37 @@ select.pantry-modal-input { cursor: pointer; }
     pointer-events: none;
 }
 
+/* ── Fulfillment picker dropdown ───────────────────────────────── */
+
+.pantry-fulfill-picker {
+    position:      fixed;
+    z-index:       9999;
+    background:    var(--color-surface);
+    border:        1px solid var(--color-border);
+    border-radius: 10px;
+    box-shadow:    0 4px 16px rgba(0,0,0,0.18);
+    display:       flex;
+    flex-direction: column;
+    overflow:      hidden;
+    min-width:     140px;
+}
+.pantry-fulfill-picker-opt {
+    all:           unset;
+    padding:       9px 14px;
+    font-size:     0.82rem;
+    cursor:        pointer;
+    white-space:   nowrap;
+    color:         var(--color-text);
+    transition:    background 0.12s;
+}
+.pantry-fulfill-picker-opt:hover {
+    background:    var(--color-surface-alt, rgba(0,0,0,0.06));
+}
+.pantry-fulfill-picker-opt.active {
+    font-weight:   600;
+    color:         var(--theme-primary);
+}
+
 /* ── Category dot in item name ─────────────────────────────────── */
 
 .pantry-item-cat-dot {
@@ -2309,3 +2407,170 @@ select.pantry-modal-input { cursor: pointer; }
 
 .pantry-putaway-unit { font-size: 11px; color: var(--color-muted); }
 .pantry-lightbox-close:hover { background: rgba(0,0,0,0.8); }
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * UPC Resolver Modal
+ *
+ * Opens after a barcode scan when the UPC is not already in the local
+ * catalog. Lets the user link the new UPC to an existing catalog product
+ * or create a fresh one. Keeps the catalog curated.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+.pantry-resolver-modal { max-width: 480px; }
+
+.pantry-resolver-hint {
+    display:        flex;
+    gap:            14px;
+    align-items:    center;
+    padding:        14px;
+    background:     var(--theme-hover);
+    border-radius:  12px;
+    margin-bottom:  18px;
+}
+.pantry-resolver-hint-media {
+    width:           64px;
+    height:          64px;
+    flex-shrink:     0;
+    border-radius:   10px;
+    background:      var(--color-bg);
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    overflow:        hidden;
+}
+.pantry-resolver-hint-media img {
+    width:      100%;
+    height:     100%;
+    object-fit: contain;
+}
+.pantry-resolver-hint-placeholder { font-size: 32px; }
+
+.pantry-resolver-hint-info { flex: 1; min-width: 0; }
+.pantry-resolver-hint-barcode {
+    font-size:     11px;
+    font-family:   monospace;
+    color:         var(--color-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.pantry-resolver-hint-name {
+    font-size:    15px;
+    font-weight:  600;
+    color:        var(--color-text);
+    margin-top:   2px;
+    overflow:     hidden;
+    text-overflow: ellipsis;
+    white-space:  nowrap;
+}
+.pantry-resolver-hint-name.pantry-resolver-hint-unknown { color: var(--color-muted); }
+.pantry-resolver-hint-brand {
+    font-size:  13px;
+    color:      var(--color-muted);
+    margin-top: 2px;
+}
+
+.pantry-resolver-section + .pantry-resolver-section { margin-top: 4px; }
+.pantry-resolver-section-label {
+    font-size:      12px;
+    font-weight:    600;
+    color:          var(--color-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom:  8px;
+}
+
+.pantry-resolver-matches {
+    display:        flex;
+    flex-direction: column;
+    gap:            6px;
+    margin-top:     8px;
+    max-height:     220px;
+    overflow-y:     auto;
+}
+.pantry-resolver-match {
+    display:       flex;
+    align-items:   center;
+    gap:           10px;
+    padding:       8px 10px;
+    border:        1px solid var(--color-border);
+    border-radius: 10px;
+    background:    var(--color-bg);
+    cursor:        pointer;
+    text-align:    left;
+    transition:    border-color .15s, background .15s;
+}
+.pantry-resolver-match:hover {
+    border-color: var(--theme-primary);
+    background:   var(--theme-hover);
+}
+.pantry-resolver-match img,
+.pantry-resolver-match .pantry-resolver-match-emoji {
+    width:           36px;
+    height:          36px;
+    flex-shrink:     0;
+    border-radius:   8px;
+    object-fit:      contain;
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    background:      var(--theme-hover);
+    font-size:       20px;
+}
+.pantry-resolver-match-info {
+    flex:           1;
+    min-width:      0;
+    display:        flex;
+    flex-direction: column;
+    gap:            2px;
+}
+.pantry-resolver-match-name {
+    font-size:    14px;
+    font-weight:  600;
+    color:        var(--color-text);
+    overflow:     hidden;
+    text-overflow: ellipsis;
+    white-space:  nowrap;
+}
+.pantry-resolver-match-brand {
+    font-size: 12px;
+    color:     var(--color-muted);
+}
+.pantry-resolver-match-action {
+    font-size:    12px;
+    font-weight:  600;
+    color:        var(--theme-primary);
+    flex-shrink:  0;
+}
+.pantry-resolver-no-match {
+    padding:       10px 12px;
+    font-size:     13px;
+    color:         var(--color-muted);
+    text-align:    center;
+    background:    var(--theme-hover);
+    border-radius: 8px;
+}
+
+.pantry-resolver-divider {
+    display:     flex;
+    align-items: center;
+    gap:         10px;
+    margin:      18px 0;
+    color:       var(--color-muted);
+    font-size:   12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.pantry-resolver-divider::before,
+.pantry-resolver-divider::after {
+    content: '';
+    flex:    1;
+    height:  1px;
+    background: var(--color-border);
+}
+
+.pantry-resolver-create-hint {
+    margin-top: 8px;
+    font-size:  12px;
+    color:      var(--color-muted);
+    text-align: center;
+}
