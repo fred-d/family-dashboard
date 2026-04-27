@@ -477,21 +477,35 @@ export class PantryStore {
 
     _normalizeInventoryRow(row) {
         if (!row) return row;
-        const qty         = Number(row.current_qty ?? 0);
-        const threshold   = Number(row.product_min_threshold ?? row.low_qty_threshold ?? 0);
-        const unitsPer    = Math.max(1, Number(row.product_units_per_pack ?? 1));
+        const qty           = Number(row.current_qty ?? 0);
+        const threshold     = Number(row.product_min_threshold ?? row.low_qty_threshold ?? 0);
+        const unitsPer      = Math.max(1, Number(row.product_units_per_pack ?? 1));
         const tracksPercent = !!row.product_tracks_percent;
-        const percent     = row.percent_remaining != null ? Number(row.percent_remaining) : null;
-        // Derive stock level: percent-tracked items compare percent vs threshold;
-        // all others compare qty vs threshold.
+        const percent       = row.percent_remaining != null ? Number(row.percent_remaining) : null;
+        const countUnit     = row.product_count_unit || 'item';
+
+        // Derive canonical tracking type from product flags / sentinel unit name.
+        // 'status'    → count_unit sentinel 'status'; qty 0/1/2 maps to out/low/ok
+        // 'percent'   → tracks_percent=true; percent_remaining drives stockLevel
+        // 'multipack' → units_per_pack > 1; qty = individual units, stepped by 1
+        // 'count'     → default
+        const trackType = countUnit === 'status' ? 'status'
+                        : tracksPercent           ? 'percent'
+                        : unitsPer > 1            ? 'multipack'
+                        :                           'count';
+
+        // Derive stock level
         const stockLevel =
-            tracksPercent
+            trackType === 'status'
+                ? (qty <= 0 ? 'out' : qty === 1 ? 'low' : 'ok')
+            : trackType === 'percent'
                 ? (percent === null || percent <= 0           ? 'out'
                    : (threshold > 0 && percent <= threshold)  ? 'low'
                    :                                            'ok')
-                : (qty <= 0                           ? 'out'
-                   : (threshold > 0 && qty <= threshold)  ? 'low'
-                   :                                        'ok');
+            : (qty <= 0                              ? 'out'
+               : (threshold > 0 && qty <= threshold) ? 'low'
+               :                                       'ok');
+
         return {
             id:           row.id,
             productId:    row.product_id || null,
@@ -501,10 +515,11 @@ export class PantryStore {
             category:     this._pantryIdForCategoryId(row.product_category_id),
             stockLevel,
             qty,
-            unit:         row.product_count_unit || 'item',
+            unit:         countUnit,
             unitsPer,
             tracksPercent,
             percent,
+            trackType,
             photo:        row.product_image || '',
             upc:          row.product_upc || row.upc || '',
             notes:        row.notes || '',

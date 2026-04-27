@@ -641,8 +641,12 @@ export class PantryApp {
 
     /** Derive the tracking type from product data. */
     _invTrackType(inv) {
-        if (inv.tracksPercent) return 'percent';
-        if (inv.unitsPer > 1)  return 'multipack';
+        // trackType is set by the store normalizer; fall back to flag-based detection
+        // for any cached rows that predate the trackType field.
+        if (inv.trackType) return inv.trackType;
+        if (inv.unit === 'status') return 'status';
+        if (inv.tracksPercent)     return 'percent';
+        if (inv.unitsPer > 1)      return 'multipack';
         return 'count';
     }
 
@@ -681,20 +685,35 @@ export class PantryApp {
     /** Tracking control HTML — differs by type. */
     _invCtrlHTML(inv) {
         const type = this._invTrackType(inv);
+
+        // ── Status: 3-button toggle (REORDER / LOW / GOOD) ──────────────────
+        if (type === 'status') {
+            const s = inv.stockLevel || 'ok';
+            return `
+                <div class="inv-ctrl inv-ctrl-status" data-id="${inv.id}">
+                    <div class="inv-status-toggle">
+                        <button class="inv-status-btn inv-sb-out${s === 'out' ? ' active' : ''}"
+                                data-action="set-status" data-id="${inv.id}" data-qty="0">REORDER</button>
+                        <button class="inv-status-btn inv-sb-low${s === 'low' ? ' active' : ''}"
+                                data-action="set-status" data-id="${inv.id}" data-qty="1">LOW</button>
+                        <button class="inv-status-btn inv-sb-ok${s === 'ok' ? ' active' : ''}"
+                                data-action="set-status" data-id="${inv.id}" data-qty="2">GOOD</button>
+                    </div>
+                </div>`;
+        }
+
+        // ── Multipack: dot-grid + step by 1 individual unit ──────────────────
         if (type === 'multipack') {
-            const packs = inv.unitsPer > 0 ? Math.floor(inv.qty / inv.unitsPer) : inv.qty;
             return `
                 <div class="inv-ctrl inv-ctrl-mp" data-id="${inv.id}" data-units-per="${inv.unitsPer}">
                     ${this._invDotGridHTML(inv)}
                     <div class="inv-mp-row">
-                        <button class="inv-step-btn" data-action="dec-pack" data-id="${inv.id}">−</button>
-                        <div class="inv-mp-counts">
-                            <span class="inv-mp-packs">${packs} box${packs !== 1 ? 'es' : ''}</span>
-                            <span class="inv-mp-total">${inv.qty} ${inv.unit}s total</span>
-                        </div>
-                        <button class="inv-step-btn" data-action="inc-pack" data-id="${inv.id}">+</button>
+                        <button class="inv-step-btn" data-action="dec" data-id="${inv.id}">−</button>
+                        <span class="inv-count-val">${inv.qty}</span>
+                        <span class="inv-count-unit">${inv.unit}${inv.qty !== 1 ? 's' : ''}</span>
+                        <button class="inv-step-btn" data-action="inc" data-id="${inv.id}">+</button>
                     </div>
-                    <div class="inv-threshold-hint">Reorder threshold: ${inv.low} ${inv.unit}s</div>
+                    ${inv.low > 0 ? `<div class="inv-threshold-hint">Reorder at: ${inv.low} ${inv.unit}s</div>` : ''}
                 </div>`;
         }
         if (type === 'percent') {
@@ -789,11 +808,10 @@ export class PantryApp {
                     const delta = action === 'inc' ? 1 : -1;
                     const newQty = Math.max(0, inv.qty + delta);
                     this._updateInventoryItem(id, { qty: newQty });
-                } else if (action === 'inc-pack' || action === 'dec-pack') {
-                    const up    = inv.unitsPer || 1;
-                    const delta = action === 'inc-pack' ? up : -up;
-                    const newQty = Math.max(0, inv.qty + delta);
-                    this._updateInventoryItem(id, { qty: newQty });
+                } else if (action === 'set-status') {
+                    // Status-type items: qty 0=out, 1=low, 2=ok
+                    const qty = Math.max(0, Math.min(2, Number(btn.dataset.qty)));
+                    this._updateInventoryItem(id, { qty });
                 } else if (action === 'inc-pct' || action === 'dec-pct') {
                     const step    = Number(btn.dataset.step || 10);
                     const delta   = action === 'inc-pct' ? step : -step;
@@ -1010,6 +1028,15 @@ export class PantryApp {
         const locOpts   = `<option value="">— None —</option>` +
             locs.map(l => `<option value="${l.id}" ${p?.default_location_id === l.id ? 'selected' : ''}>${this._esc(l.name || l.id)}</option>`).join('');
 
+        // Derive current tracking type from product fields
+        const pCU  = p?.count_unit || 'item';
+        const initTT = pCU === 'status'        ? 'status'
+                     : p?.tracks_percent        ? 'percent'
+                     : (p?.units_per_pack ?? 1) > 1 ? 'multipack'
+                     :                           'count';
+        const initCU = (pCU === 'status' || pCU === '%') ? 'item' : pCU;
+        const sel = (v) => initTT === v ? 'selected' : '';
+
         overlay.innerHTML = `
             <div class="pantry-modal" role="dialog" aria-label="${isNew ? 'Add Product' : 'Edit Product'}">
                 <div class="pantry-modal-header">
@@ -1048,26 +1075,47 @@ export class PantryApp {
                         </div>
                     </div>
 
-                    <!-- Pack size -->
-                    <div class="pantry-modal-row">
+                    <!-- Tracking type selector -->
+                    <div class="pantry-modal-field">
+                        <label class="pantry-modal-label">How to track stock</label>
+                        <select class="pantry-modal-input" id="prodTrackType">
+                            <option value="count"     ${sel('count')}>Count — individual units (cans, bags…)</option>
+                            <option value="multipack" ${sel('multipack')}>Multipack — box / pack containing N units</option>
+                            <option value="percent"   ${sel('percent')}>Percent — % remaining (liquids, bulk)</option>
+                            <option value="status"    ${sel('status')}>Status — Good / Low / Out (fresh items, whole items)</option>
+                        </select>
+                    </div>
+
+                    <!-- Multipack: pack size + unit name -->
+                    <div class="pantry-modal-row pantry-track-mp-fields" ${initTT !== 'multipack' ? 'style="display:none"' : ''}>
                         <div class="pantry-modal-field">
-                            <label class="pantry-modal-label">Pack size (items per box/pack)</label>
-                            <input class="pantry-modal-input" id="prodUnitsPer" type="number" min="1" step="0.1"
-                                   placeholder="1" value="${p?.units_per_pack ?? 1}">
+                            <label class="pantry-modal-label">Units per box / pack</label>
+                            <input class="pantry-modal-input" id="prodUnitsPer" type="number" min="2" step="1"
+                                   value="${Math.max(2, p?.units_per_pack ?? 2)}">
                         </div>
                         <div class="pantry-modal-field">
-                            <label class="pantry-modal-label">Individual unit (e.g. packet, can, oz)</label>
+                            <label class="pantry-modal-label">Individual unit (e.g. packet, can)</label>
                             <input class="pantry-modal-input" id="prodCountUnit" type="text"
-                                   placeholder="item" value="${this._esc(p?.count_unit || 'item')}">
+                                   placeholder="item" value="${this._esc(initCU)}">
                         </div>
                     </div>
 
-                    <!-- Thresholds & defaults -->
-                    <div class="pantry-modal-row">
+                    <!-- Count: unit name only -->
+                    <div class="pantry-modal-field pantry-track-count-fields" ${initTT !== 'count' ? 'style="display:none"' : ''}>
+                        <label class="pantry-modal-label">Unit name (e.g. item, can, bag)</label>
+                        <input class="pantry-modal-input" id="prodCountUnitSimple" type="text"
+                               placeholder="item" value="${this._esc(initTT === 'count' ? initCU : 'item')}">
+                    </div>
+
+                    <!-- Threshold (hidden for status; label changes for percent) -->
+                    <div class="pantry-modal-row pantry-track-thresh-row" ${initTT === 'status' ? 'style="display:none"' : ''}>
                         <div class="pantry-modal-field">
-                            <label class="pantry-modal-label">Min on hand (threshold)</label>
-                            <input class="pantry-modal-input" id="prodMinThresh" type="number" min="0" step="0.5"
-                                   placeholder="1" value="${p?.min_threshold ?? 1}">
+                            <label class="pantry-modal-label" id="prodMinThreshLabel">
+                                ${initTT === 'percent' ? 'Reorder at (% remaining)' : 'Reorder threshold'}
+                            </label>
+                            <input class="pantry-modal-input" id="prodMinThresh" type="number" min="0"
+                                   step="${initTT === 'percent' ? '5' : '0.5'}"
+                                   value="${p?.min_threshold ?? (initTT === 'percent' ? 25 : 1)}">
                         </div>
                         <div class="pantry-modal-field">
                             <label class="pantry-modal-label">Default unit</label>
@@ -1134,6 +1182,23 @@ export class PantryApp {
         overlay.querySelector('#prodModalClose')?.addEventListener('click', close);
         overlay.querySelector('#prodCancel')?.addEventListener('click', close);
         overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+        // Tracking type dropdown — show/hide conditional fields on change
+        const trackTypeSel   = overlay.querySelector('#prodTrackType');
+        const mpFields       = overlay.querySelector('.pantry-track-mp-fields');
+        const countFields    = overlay.querySelector('.pantry-track-count-fields');
+        const threshRow      = overlay.querySelector('.pantry-track-thresh-row');
+        const threshLabel    = overlay.querySelector('#prodMinThreshLabel');
+        const threshInput    = overlay.querySelector('#prodMinThresh');
+        const applyTrackType = () => {
+            const tt = trackTypeSel?.value || 'count';
+            if (mpFields)    mpFields.style.display    = tt === 'multipack' ? '' : 'none';
+            if (countFields) countFields.style.display = tt === 'count'     ? '' : 'none';
+            if (threshRow)   threshRow.style.display   = tt === 'status'    ? 'none' : '';
+            if (threshLabel) threshLabel.textContent   = tt === 'percent' ? 'Reorder at (% remaining)' : 'Reorder threshold';
+            if (threshInput) threshInput.step          = tt === 'percent' ? '5' : '0.5';
+        };
+        trackTypeSel?.addEventListener('change', applyTrackType);
 
         // Photo upload
         const photoArea  = overlay.querySelector('#prodPhotoArea');
@@ -1220,16 +1285,35 @@ export class PantryApp {
         overlay.querySelector('#prodSave')?.addEventListener('click', async () => {
             const name = overlay.querySelector('#prodName')?.value.trim();
             if (!name) { overlay.querySelector('#prodName')?.focus(); return; }
-            const unitsPer = parseFloat(overlay.querySelector('#prodUnitsPer')?.value) || 1;
+
+            // Resolve tracking-type-specific fields
+            const tt = overlay.querySelector('#prodTrackType')?.value || 'count';
+            let units_per_pack = 1;
+            let count_unit     = 'item';
+            let tracks_percent = false;
+            if (tt === 'multipack') {
+                units_per_pack = Math.max(2, parseFloat(overlay.querySelector('#prodUnitsPer')?.value) || 2);
+                count_unit     = overlay.querySelector('#prodCountUnit')?.value.trim() || 'item';
+            } else if (tt === 'percent') {
+                tracks_percent = true;
+                count_unit     = '%';
+            } else if (tt === 'status') {
+                count_unit     = 'status';
+            } else {
+                // count
+                count_unit = overlay.querySelector('#prodCountUnitSimple')?.value.trim() || 'item';
+            }
+
             const payload = {
                 name,
                 brand:               overlay.querySelector('#prodBrand')?.value.trim() || '',
                 category_id:         overlay.querySelector('#prodCategory')?.value || 'other',
                 image_url:           this._editProductPhoto || '',
                 barcodes:            this._editProductBarcodes.map(b => b.barcode),
-                units_per_pack:      Math.max(1, unitsPer),
-                count_unit:          overlay.querySelector('#prodCountUnit')?.value.trim() || 'item',
-                min_threshold:       parseFloat(overlay.querySelector('#prodMinThresh')?.value) || 1,
+                tracks_percent,
+                units_per_pack,
+                count_unit,
+                min_threshold:       parseFloat(overlay.querySelector('#prodMinThresh')?.value) || 0,
                 default_unit:        overlay.querySelector('#prodDefaultUnit')?.value.trim() || 'count',
                 default_store_id:    overlay.querySelector('#prodDefaultStore')?.value || null,
                 default_location_id: overlay.querySelector('#prodDefaultLocation')?.value || null,
