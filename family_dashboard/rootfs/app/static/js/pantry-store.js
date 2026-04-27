@@ -477,27 +477,39 @@ export class PantryStore {
 
     _normalizeInventoryRow(row) {
         if (!row) return row;
-        const qty       = Number(row.current_qty ?? 0);
-        const threshold = Number(row.product_min_threshold ?? row.low_qty_threshold ?? 0);
+        const qty         = Number(row.current_qty ?? 0);
+        const threshold   = Number(row.product_min_threshold ?? row.low_qty_threshold ?? 0);
+        const unitsPer    = Math.max(1, Number(row.product_units_per_pack ?? 1));
+        const tracksPercent = !!row.product_tracks_percent;
+        const percent     = row.percent_remaining != null ? Number(row.percent_remaining) : null;
+        // Derive stock level: percent-tracked items compare percent vs threshold;
+        // all others compare qty vs threshold.
         const stockLevel =
-            qty <= 0                          ? 'out' :
-            (threshold > 0 && qty <= threshold) ? 'low' :
-                                                  'ok';
+            tracksPercent
+                ? (percent === null || percent <= 0           ? 'out'
+                   : (threshold > 0 && percent <= threshold)  ? 'low'
+                   :                                            'ok')
+                : (qty <= 0                           ? 'out'
+                   : (threshold > 0 && qty <= threshold)  ? 'low'
+                   :                                        'ok');
         return {
-            id:          row.id,
-            productId:   row.product_id || null,
-            locationId:  row.location_id || null,
-            name:        row.product_name || row.name || '',
-            brand:       row.product_brand || '',
-            category:    this._pantryIdForCategoryId(row.product_category_id),
+            id:           row.id,
+            productId:    row.product_id || null,
+            locationId:   row.location_id || null,
+            name:         row.product_name || row.name || '',
+            brand:        row.product_brand || '',
+            category:     this._pantryIdForCategoryId(row.product_category_id),
             stockLevel,
             qty,
-            unit:        row.product_count_unit || 'item',
-            photo:       row.product_image || '',
-            upc:         row.product_upc || row.upc || '',
-            notes:       row.notes || '',
-            isStaple:    !!row.product_is_staple,
-            low:         threshold,
+            unit:         row.product_count_unit || 'item',
+            unitsPer,
+            tracksPercent,
+            percent,
+            photo:        row.product_image || '',
+            upc:          row.product_upc || row.upc || '',
+            notes:        row.notes || '',
+            isStaple:     !!row.product_is_staple,
+            low:          threshold,
         };
     }
 
