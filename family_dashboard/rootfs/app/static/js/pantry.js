@@ -929,13 +929,6 @@ export class PantryApp {
                         </label>
                     </div>
 
-                    <!-- Notes -->
-                    <div class="pantry-modal-field">
-                        <label class="pantry-modal-label">Notes</label>
-                        <textarea class="pantry-modal-input pantry-modal-textarea" id="prodNotes"
-                                  rows="2" placeholder="Any notes about this product…">${this._esc(p?.notes || '')}</textarea>
-                    </div>
-
                     <!-- UPCs section -->
                     <div class="pantry-barcodes-section">
                         <div class="pantry-barcodes-header">
@@ -1074,7 +1067,6 @@ export class PantryApp {
                 default_store_id:    overlay.querySelector('#prodDefaultStore')?.value || null,
                 default_location_id: overlay.querySelector('#prodDefaultLocation')?.value || null,
                 is_staple:           overlay.querySelector('#prodIsStaple')?.checked ? 1 : 0,
-                notes:               overlay.querySelector('#prodNotes')?.value.trim() || '',
             };
             if (this._editProduct?.id) {
                 await this.store.updateProduct(this._editProduct.id, payload);
@@ -1327,10 +1319,17 @@ export class PantryApp {
                     </div>` : ''}
 
                     <div class="pantry-modal-field">
-                        <label>Notes / Brand Details</label>
+                        <label>Brand</label>
+                        <input type="text" id="pantryItemBrand" class="pantry-modal-input"
+                               value="${this._esc(val('brand') || '')}"
+                               placeholder="e.g. Quaker — or list any acceptable brands">
+                    </div>
+
+                    <div class="pantry-modal-field">
+                        <label>For this run</label>
                         <input type="text" id="pantryItemNotes" class="pantry-modal-input"
                                value="${this._esc(val('notes') || '')}"
-                               placeholder="Brand, size, substitution notes…">
+                               placeholder="One-off note, cleared when the item is bought">
                     </div>
 
                     <div class="pantry-modal-field">
@@ -1439,6 +1438,7 @@ export class PantryApp {
                 amount:   overlay.querySelector('#pantryItemAmount')?.value || '1',
                 unit:     overlay.querySelector('#pantryItemUnit')?.value.trim() || '',
                 category: catSelect?.value || detectCategory(name),
+                brand:    overlay.querySelector('#pantryItemBrand')?.value.trim() || '',
                 notes:    overlay.querySelector('#pantryItemNotes')?.value.trim() || '',
                 addedBy:  addedBy || null,
                 storeId:  storeId || null,
@@ -1448,13 +1448,15 @@ export class PantryApp {
             if (fulfillmentActive) data.fulfillment = fulfillmentActive.dataset.ful;
             // Thread scan productId through so the shopping list row links to the catalog product.
             // Carry every prefill field so _addItem can detect which ones the user edited
-            // and propagate those edits onto the linked catalog product.
+            // and propagate the product-attribute edits (name, brand, category, photo) onto
+            // the linked catalog product. `notes` is row-local on the shopping list — it
+            // captures one-off shopping-run notes and never propagates to the catalog.
             if (!this._editItem && prefill?.productId) {
                 data.productId            = prefill.productId;
                 data.originalScanName     = prefill.name     ?? null;
+                data.originalScanBrand    = prefill.brand    ?? null;
                 data.originalScanCategory = prefill.category ?? null;
                 data.originalScanPhoto    = prefill.photo    ?? null;
-                data.originalScanNotes    = prefill.notes    ?? null;
             }
             if (this._editItem) {
                 this._updateItem(this._editItem.id, data);
@@ -1629,25 +1631,30 @@ export class PantryApp {
                         </div>
                     </div>
 
-                    <div class="pantry-modal-field">
-                        <label>Brand / Notes</label>
-                        <input type="text" id="pantryInvNotes" class="pantry-modal-input"
-                               value="${this._esc(inv?.notes || '')}"
-                               placeholder="Brand, size, any notes for the shopper…">
-                    </div>
-
                     <div class="pantry-modal-row">
                         <div class="pantry-modal-field">
                             <label>Brand</label>
                             <input type="text" id="pantryInvBrand" class="pantry-modal-input"
-                                   value="${this._esc(inv?.brand || prefill?.brand || '')}" placeholder="e.g. Tropicana">
+                                   value="${this._esc(inv?.brand || prefill?.brand || '')}"
+                                   placeholder="e.g. Quaker — or list any acceptable brands">
                         </div>
                         <div class="pantry-modal-field">
-                            <label>UPC Barcode</label>
-                            <input type="text" id="pantryInvUPC" class="pantry-modal-input"
-                                   value="${this._esc(inv?.upc || prefill?.upc || '')}" placeholder="Scan or enter manually"
-                                   pattern="\\d{6,14}" maxlength="14">
+                            <label>Location</label>
+                            <select id="pantryInvLocation" class="pantry-modal-input">
+                                <option value="">— None —</option>
+                                ${(this.store.config?.locations || []).map(l => {
+                                    const sel = ((inv?.locationId ?? prefill?.locationId) === l.id) ? ' selected' : '';
+                                    return `<option value="${this._esc(l.id)}"${sel}>${this._esc(l.name || l.id)}</option>`;
+                                }).join('')}
+                            </select>
                         </div>
+                    </div>
+
+                    <div class="pantry-modal-field">
+                        <label>UPC Barcode</label>
+                        <input type="text" id="pantryInvUPC" class="pantry-modal-input"
+                               value="${this._esc(inv?.upc || prefill?.upc || '')}" placeholder="Scan or enter manually"
+                               pattern="\\d{6,14}" maxlength="14">
                     </div>
 
                     <div class="pantry-modal-field">
@@ -1665,7 +1672,7 @@ export class PantryApp {
                     </div>
 
                     ${!isNew ? `
-                        <button class="pantry-modal-delete" id="pantryInvDelete">🗑 Remove from Pantry</button>` : ''}
+                        <button class="pantry-modal-delete" id="pantryInvDelete">🗑 Remove from Inventory</button>` : ''}
                 </div>
                 <div class="pantry-modal-footer">
                     <button class="pantry-modal-save" id="pantryInvSave">
@@ -1733,11 +1740,11 @@ export class PantryApp {
                 defaultUnit:        overlay.querySelector('#pantryInvUnit')?.value.trim()      || '',
                 category:           catSelect?.value || detectCategory(name),
                 defaultFulfillment: fulfillmentActive?.dataset.ful || 'curbside',
-                notes:              overlay.querySelector('#pantryInvNotes')?.value.trim()    || '',
                 isStaple:           overlay.querySelector('#pantryInvStaple')?.checked ?? false,
                 photo:              this._editInvPhoto || null,
                 brand:              overlay.querySelector('#pantryInvBrand')?.value.trim()    || '',
                 upc:                overlay.querySelector('#pantryInvUPC')?.value.trim()      || '',
+                locationId:         overlay.querySelector('#pantryInvLocation')?.value || null,
                 autoAddToList:      overlay.querySelector('#pantryInvAutoAdd')?.checked ?? false,
                 productId:          prefill?.productId || null,
                 stockLevel:         prefill?.stockLevel || null,
@@ -1979,30 +1986,32 @@ export class PantryApp {
             };
             if (data.productId) {
                 payload.productId = data.productId;
-                // Compare each edited field against the prefill baseline (passed via
-                // originalScan*) and patch the diff onto the linked catalog product.
-                // Falls back to the cached product when the prefill didn't carry a
-                // baseline for that field. A freshly-created product may not be in
+                // Compare each product-attribute field against the prefill baseline
+                // (passed via originalScan*) and patch the diff onto the linked
+                // catalog product. Falls back to the cached product when the prefill
+                // didn't carry a baseline. A freshly-created product may not be in
                 // the cache yet, which is why originalScan* is the primary source.
+                // `notes` is intentionally NOT in this list — shopping-list notes
+                // are row-local ("for this run") and never persist to the catalog.
                 const cached = this._products?.find(p => p.id === data.productId);
                 const orig = {
                     name:     data.originalScanName     ?? cached?.name,
+                    brand:    data.originalScanBrand    ?? cached?.brand     ?? '',
                     category: data.originalScanCategory ?? this._categoryGroceryId(cached?.category_id),
                     photo:    data.originalScanPhoto    ?? cached?.image_url ?? '',
-                    notes:    data.originalScanNotes    ?? cached?.notes     ?? '',
                 };
                 const patch = {};
                 if (data.name && orig.name && orig.name !== data.name) {
                     patch.name = data.name;
+                }
+                if ((data.brand || '') !== (orig.brand || '')) {
+                    patch.brand = data.brand || '';
                 }
                 if (data.category && orig.category && orig.category !== data.category) {
                     patch.category_id = this.store._categoryIdForPantryId(data.category);
                 }
                 if ((data.photo || '') !== (orig.photo || '')) {
                     patch.image_url = data.photo || '';
-                }
-                if ((data.notes || '') !== (orig.notes || '')) {
-                    patch.notes = data.notes || '';
                 }
                 if (Object.keys(patch).length) {
                     await this.store.updateProduct(data.productId, patch);
@@ -2308,10 +2317,12 @@ export class PantryApp {
     }
 
     async _addInventoryItem(data) {
-        // If a productId is already in hand (resolver flow), reuse it.
-        // Otherwise create a fresh catalog product first. Either way, the
-        // inventory row references the product — image/brand/category live
-        // on the product, not duplicated on the inventory row.
+        // If a productId is already in hand (resolver flow), reuse it and patch
+        // any product-attribute edits (brand/category/photo/name) onto the
+        // catalog product so all surfaces stay in sync. Otherwise create a
+        // fresh catalog product first. Either way, the inventory row
+        // references the product — image/brand/category live on the product,
+        // not duplicated on the inventory row.
         this._setSyncStatus('saving');
         try {
             let pid = data.productId || null;
@@ -2321,16 +2332,33 @@ export class PantryApp {
                     brand:    data.brand   || '',
                     category: data.category || detectCategory(data.name),
                     photo:    data.photo   || '',
-                    notes:    data.notes   || '',
                     isStaple: !!data.isStaple,
                     upc:      data.upc     || '',
                 });
                 if (!product?.id) throw new Error('product create returned no id');
                 pid = product.id;
-            } else if (data.isStaple) {
-                // Existing product but the user toggled staple in the inv modal
-                // — propagate to the catalog so auto-replenishment kicks in.
-                await this.store.updateProduct(pid, { is_staple: 1 });
+            } else {
+                const cached = this._products?.find(p => p.id === pid);
+                const patch = {};
+                if (data.name && cached?.name && data.name !== cached.name) {
+                    patch.name = data.name;
+                }
+                if ((data.brand || '') !== (cached?.brand || '')) {
+                    patch.brand = data.brand || '';
+                }
+                const cachedCat = this._categoryGroceryId(cached?.category_id);
+                if (data.category && data.category !== cachedCat) {
+                    patch.category_id = this.store._categoryIdForPantryId(data.category);
+                }
+                if ((data.photo || '') !== (cached?.image_url || '')) {
+                    patch.image_url = data.photo || '';
+                }
+                if (data.isStaple !== !!cached?.is_staple) {
+                    patch.is_staple = data.isStaple ? 1 : 0;
+                }
+                if (Object.keys(patch).length) {
+                    await this.store.updateProduct(pid, patch);
+                }
             }
 
             // stockLevel → starting qty. Default "ok" with qty=1.
@@ -2340,9 +2368,9 @@ export class PantryApp {
                                             1;
 
             await this.store.addInventoryItem({
-                productId: pid,
-                qty:       startQty,
-                notes:     data.notes || '',
+                productId:  pid,
+                qty:        startQty,
+                locationId: data.locationId ?? null,
             });
             this._setSyncStatus('saved', 3000);
         } catch (err) {
@@ -2364,13 +2392,13 @@ export class PantryApp {
     }
 
     async _updateInventoryItem(id, changes, _rerender = true) {
-        // qty / notes / location patch the inventory row.
+        // qty / location patch the inventory row.
         // isStaple patches the parent product row (handled by the store).
-        // Other legacy fields (useCount, defaultAmount, …) still no-op until
-        // follow-up PRs add columns for them.
+        // name / brand / category / photo are product attributes — when the
+        // edit modal changes them, propagate the diff onto the linked product
+        // so all surfaces (catalog, shopping list, inventory) stay in sync.
         const patch = {};
         if ('qty'        in changes) patch.qty        = changes.qty;
-        if ('notes'      in changes) patch.notes      = changes.notes;
         if ('locationId' in changes) patch.locationId = changes.locationId;
         if ('isStaple'   in changes) patch.isStaple   = changes.isStaple;
 
@@ -2383,6 +2411,33 @@ export class PantryApp {
                 changes.stockLevel === 'out' ? 0 :
                 changes.stockLevel === 'low' ? Math.max(1, threshold) :
                                                Math.max(threshold + 1, (inv?.qty || 0) + 1);
+        }
+
+        // Diff product-attribute fields against the inventory row's current
+        // (joined-from-product) values, then PATCH the product when any
+        // changed. Skip when none of these keys are in the patch payload.
+        const inv = this._inventory.find(i => i.id === id);
+        if (inv?.productId) {
+            const prodPatch = {};
+            if ('name' in changes && changes.name && changes.name !== inv.name) {
+                prodPatch.name = changes.name;
+            }
+            if ('brand' in changes && (changes.brand || '') !== (inv.brand || '')) {
+                prodPatch.brand = changes.brand || '';
+            }
+            if ('category' in changes && changes.category && changes.category !== inv.category) {
+                prodPatch.category_id = this.store._categoryIdForPantryId(changes.category);
+            }
+            if ('photo' in changes && (changes.photo || '') !== (inv.photo || '')) {
+                prodPatch.image_url = changes.photo || '';
+            }
+            if (Object.keys(prodPatch).length) {
+                try {
+                    await this.store.updateProduct(inv.productId, prodPatch);
+                } catch (err) {
+                    console.warn('[PantryApp] product propagate failed:', err.message);
+                }
+            }
         }
 
         if (Object.keys(patch).length === 0) return;
