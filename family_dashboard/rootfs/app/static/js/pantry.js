@@ -99,6 +99,10 @@ export class PantryApp {
         // All products from DB (used for name autocomplete)
         this._products = [];
 
+        // Inventory tab view state
+        this._invViewMode  = 'audit';   // 'audit' | 'grid'
+        this._invLocId     = null;      // null = All, else location.id
+
         // Catalog tab state
         this._catalogSearch  = '';
         this._catalogProds   = []; // product rows with barcode_count
@@ -513,161 +517,324 @@ export class PantryApp {
             </div>`;
     }
 
-    // ── PANTRY TAB ────────────────────────────────────────────────────────────
+    // ── INVENTORY TAB ─────────────────────────────────────────────────────────
 
     _renderPantryTab(body) {
-        const q       = this._pantrySearch.toLowerCase();
-        const filter  = this._pantryFilter;
-        let   items   = [...this._inventory];
-        if (q)                  items = items.filter(i => i.name.toLowerCase().includes(q) || i.brand?.toLowerCase().includes(q) || i.notes?.toLowerCase().includes(q));
-        if (filter === 'staples') items = items.filter(i => i.isStaple);
-        if (filter === 'low')     items = items.filter(i => i.stockLevel === 'low' || i.stockLevel === 'out');
+        const q        = this._pantrySearch.toLowerCase();
+        const locations = this.store.config?.locations || [];
+        const locId    = this._invLocId;
+        const viewMode = this._invViewMode;
 
-        const staples  = this._inventory.filter(i => i.isStaple);
+        // Filter pipeline
+        let items = [...this._inventory];
+        if (locId)  items = items.filter(i => i.locationId === locId);
+        if (q)      items = items.filter(i =>
+            (i.name  || '').toLowerCase().includes(q) ||
+            (i.brand || '').toLowerCase().includes(q));
+
+        const sorted   = this._sortInventory(items);
         const lowItems = this._inventory.filter(i => i.stockLevel === 'low' || i.stockLevel === 'out');
         const outItems = this._inventory.filter(i => i.stockLevel === 'out');
 
         body.innerHTML = `
-            <div class="pantry-pantry-toolbar">
-                <div class="pantry-pantry-search-wrap">
-                    <svg class="pantry-pantry-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <!-- ── Toolbar ── -->
+            <div class="inv-toolbar">
+                <div class="inv-search-wrap">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                         <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                     </svg>
-                    <input type="search" id="pantryPantrySearch" class="pantry-pantry-search"
+                    <input type="search" id="invSearch" class="inv-search"
                            placeholder="Search inventory…" value="${this._esc(this._pantrySearch)}">
                 </div>
-                <button class="pantry-action-btn primary" id="pantryAddPantryItem">+ New Item</button>
+                <div class="inv-toolbar-actions">
+                    <button class="inv-scan-btn" id="invScanRestock" title="Scan to restock">📥 Restock</button>
+                    <button class="inv-scan-btn" id="invScanUsed"    title="Scan to mark empty">📤 Used</button>
+                    <button class="pantry-action-btn primary" id="invAddItem">+ Add</button>
+                </div>
             </div>
 
-            <div class="pantry-scan-bar">
-                <button class="pantry-scan-btn restock" id="pantryScanRestock">
-                    <span class="pantry-scan-icon">📥</span>
-                    <span>Scan to Restock</span>
-                </button>
-                <button class="pantry-scan-btn mark-used" id="pantryScanMarkUsed">
-                    <span class="pantry-scan-icon">📤</span>
-                    <span>Scan to Mark Empty</span>
-                </button>
+            <!-- ── View toggle + Location tabs ── -->
+            <div class="inv-nav-row">
+                <div class="inv-loc-tabs">
+                    <button class="inv-loc-tab${!locId ? ' active' : ''}" data-loc="">
+                        All <span class="inv-loc-count">${this._inventory.length}</span>
+                    </button>
+                    ${locations.map(l => {
+                        const cnt = this._inventory.filter(i => i.locationId === l.id).length;
+                        return `<button class="inv-loc-tab${locId === l.id ? ' active' : ''}" data-loc="${this._esc(l.id)}">
+                            ${this._esc(l.name || l.id)}
+                            <span class="inv-loc-count">${cnt}</span>
+                        </button>`;
+                    }).join('')}
+                </div>
+                <div class="inv-view-toggle">
+                    <button class="inv-view-btn${viewMode === 'audit' ? ' active' : ''}" data-view="audit" title="Audit list">≡</button>
+                    <button class="inv-view-btn${viewMode === 'grid'  ? ' active' : ''}" data-view="grid"  title="Visual grid">⊞</button>
+                </div>
             </div>
 
-            <div class="pantry-pantry-filters">
-                <button class="pantry-filter-btn${filter === 'all'     ? ' active' : ''}" data-pfilter="all">All (${this._inventory.length})</button>
-                <button class="pantry-filter-btn${filter === 'staples' ? ' active' : ''}" data-pfilter="staples">⭐ Staples (${staples.length})</button>
-                <button class="pantry-filter-btn${filter === 'low'     ? ' active' : ''}" data-pfilter="low">
-                    ⚠️ Need Restock (${lowItems.length})${lowItems.length > 0 ? ' 🔴' : ''}
-                </button>
-            </div>
-
-            ${outItems.length > 0 && filter === 'all' ? `
-                <div class="pantry-pantry-alert">
-                    🔴 <strong>${outItems.length} item${outItems.length > 1 ? 's' : ''} out</strong> — add to shopping list?
-                    <button class="pantry-pantry-alert-btn" id="pantryAddAllOut">Add All Out</button>
+            <!-- ── Reorder alerts ── -->
+            ${outItems.length > 0 ? `
+                <div class="inv-alert inv-alert-out">
+                    🔴 <strong>${outItems.length} item${outItems.length !== 1 ? 's' : ''} out</strong>
+                    <button class="inv-alert-btn" id="invAddAllOut">Add all to list</button>
+                </div>` : ''}
+            ${lowItems.filter(i => i.stockLevel === 'low').length > 0 ? `
+                <div class="inv-alert inv-alert-low">
+                    ⚠️ <strong>${lowItems.filter(i=>i.stockLevel==='low').length} running low</strong>
+                    <button class="inv-alert-btn" id="invAddAllLow">Add all to list</button>
                 </div>` : ''}
 
-            ${lowItems.length > 0 && (filter === 'all' || filter === 'low') ? `
-                <div class="pantry-pantry-alert pantry-pantry-alert-low">
-                    🟡 <strong>${lowItems.length} item${lowItems.length > 1 ? 's' : ''} low or out</strong> — restock?
-                    <button class="pantry-pantry-alert-btn" id="pantryAddAllLow">Add All Low</button>
-                </div>` : ''}
-
-            <div class="pantry-grid" id="pantryGrid">
-                ${items.length === 0
-                    ? `<div class="pantry-empty" style="grid-column:1/-1">
+            <!-- ── Item view ── -->
+            <div class="inv-items inv-items-${viewMode}" id="invItems">
+                ${sorted.length === 0
+                    ? `<div class="pantry-empty">
                            <div class="pantry-empty-icon">📦</div>
-                           <div class="pantry-empty-title">${q || filter !== 'all' ? 'No items match' : 'Inventory is empty'}</div>
-                           <div class="pantry-empty-text">Add items manually or use Scan to Restock to add items by scanning their barcode.</div>
+                           <div class="pantry-empty-title">${q || locId ? 'No items match' : 'Inventory is empty'}</div>
+                           <div class="pantry-empty-text">Scan a barcode or tap + Add to get started.</div>
                        </div>`
-                    : items.map(inv => this._pantryCardHTML(inv)).join('')
-                }
+                    : sorted.map(inv => this._invCardHTML(inv, viewMode)).join('')}
             </div>
         `;
 
-        body.querySelector('#pantryPantrySearch')?.addEventListener('input', e => {
+        // Search
+        body.querySelector('#invSearch')?.addEventListener('input', e => {
             this._pantrySearch = e.target.value;
             this._renderPantryTab(body);
         });
-        body.querySelectorAll('[data-pfilter]').forEach(btn => {
-            btn.addEventListener('click', () => { this._pantryFilter = btn.dataset.pfilter; this._render(); });
+
+        // Location tabs
+        body.querySelectorAll('.inv-loc-tab').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this._invLocId = btn.dataset.loc || null;
+                this._renderPantryTab(body);
+            });
         });
-        body.querySelector('#pantryAddPantryItem')?.addEventListener('click', () => this._openInvModal());
-        body.querySelector('#pantryAddAllOut')?.addEventListener('click', () => {
+
+        // View toggle
+        body.querySelectorAll('.inv-view-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this._invViewMode = btn.dataset.view;
+                this._renderPantryTab(body);
+            });
+        });
+
+        // Toolbar actions
+        body.querySelector('#invAddItem')?.addEventListener('click',     () => this._openInvModal());
+        body.querySelector('#invScanRestock')?.addEventListener('click', () => this._openScanner('restock'));
+        body.querySelector('#invScanUsed')?.addEventListener('click',    () => this._openScanner('mark_used'));
+
+        body.querySelector('#invAddAllOut')?.addEventListener('click', () => {
             outItems.forEach(inv => this._addFromInventory(inv));
         });
-        body.querySelector('#pantryAddAllLow')?.addEventListener('click', () => {
-            // "Low" alert covers both low and out items so one button restocks
-            // everything that needs attention. Skip items that already have an
-            // open (non-bought) shopping-list entry to avoid duplicates.
-            const openNames = new Set(
-                this._items
-                    .filter(i => !i.checked)
-                    .map(i => (i.name || '').trim().toLowerCase())
-            );
-            lowItems
-                .filter(inv => !openNames.has((inv.name || '').trim().toLowerCase()))
-                .forEach(inv => this._addFromInventory(inv));
+        body.querySelector('#invAddAllLow')?.addEventListener('click', () => {
+            const openNames = new Set(this._items.filter(i=>!i.checked).map(i=>i.name.toLowerCase()));
+            lowItems.filter(inv => !openNames.has(inv.name.toLowerCase()))
+                    .forEach(inv => this._addFromInventory(inv));
         });
 
-        // Scan buttons
-        body.querySelector('#pantryScanRestock')?.addEventListener('click', () => this._openScanner('restock'));
-        body.querySelector('#pantryScanMarkUsed')?.addEventListener('click', () => this._openScanner('mark_used'));
+        // All interactive controls on cards
+        this._bindInvControls(body);
+    }
 
-        // Card interactions
-        body.querySelectorAll('.pantry-card').forEach(card => {
-            const id  = card.dataset.id;
-            const inv = this._inventory.find(i => i.id === id);
-            if (!inv) return;
+    // ── Inventory item helpers ────────────────────────────────────────────────
 
-            // Status buttons
-            card.querySelectorAll('.pantry-status-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const newStatus = btn.dataset.status;
-                    this._setStockStatus(id, newStatus);
-                });
-            });
+    /** Derive the tracking type from product data. */
+    _invTrackType(inv) {
+        if (inv.tracksPercent) return 'percent';
+        if (inv.unitsPer > 1)  return 'multipack';
+        return 'count';
+    }
 
-            card.querySelector('.pantry-card-add')?.addEventListener('click', () => this._addFromInventory(inv));
-            card.querySelector('.pantry-card-edit')?.addEventListener('click', () => this._openInvModal(inv));
-            card.querySelector('.pantry-card-staple')?.addEventListener('click', () => {
-                this._updateInventoryItem(id, { isStaple: !inv.isStaple });
-            });
+    /** Status badge HTML (GOOD / LOW / REORDER). */
+    _invBadgeHTML(inv) {
+        const s = inv.stockLevel || 'ok';
+        const map = { ok: ['inv-badge-good', 'GOOD'], low: ['inv-badge-low', 'LOW'], out: ['inv-badge-out', 'REORDER'] };
+        const [cls, label] = map[s] || map.ok;
+        return `<span class="inv-badge ${cls}">${label}</span>`;
+    }
+
+    /**
+     * Dot-grid visualization for multi-pack items.
+     * Shows up to 10 boxes × unitsPer dots (capped at 60 total for layout).
+     * Filled dots = in stock; each box of unitsPer forms a visual group.
+     */
+    _invDotGridHTML(inv) {
+        const up     = inv.unitsPer;
+        const total  = inv.qty;
+        const maxDots = 60;
+        const dots   = Math.min(total, maxDots);
+        const boxes  = Math.ceil(dots / up);
+        let html = '';
+        for (let b = 0; b < boxes; b++) {
+            html += '<span class="inv-dot-group">';
+            for (let d = 0; d < up; d++) {
+                const idx = b * up + d;
+                html += `<span class="inv-dot${idx < total ? ' filled' : ''}"></span>`;
+            }
+            html += '</span>';
+        }
+        if (total > maxDots) html += `<span class="inv-dot-overflow">+${total - maxDots}</span>`;
+        return `<div class="inv-dot-grid">${html}</div>`;
+    }
+
+    /** Tracking control HTML — differs by type. */
+    _invCtrlHTML(inv) {
+        const type = this._invTrackType(inv);
+        if (type === 'multipack') {
+            const packs = inv.unitsPer > 0 ? Math.floor(inv.qty / inv.unitsPer) : inv.qty;
+            return `
+                <div class="inv-ctrl inv-ctrl-mp" data-id="${inv.id}" data-units-per="${inv.unitsPer}">
+                    ${this._invDotGridHTML(inv)}
+                    <div class="inv-mp-row">
+                        <button class="inv-step-btn" data-action="dec-pack" data-id="${inv.id}">−</button>
+                        <div class="inv-mp-counts">
+                            <span class="inv-mp-packs">${packs} box${packs !== 1 ? 'es' : ''}</span>
+                            <span class="inv-mp-total">${inv.qty} ${inv.unit}s total</span>
+                        </div>
+                        <button class="inv-step-btn" data-action="inc-pack" data-id="${inv.id}">+</button>
+                    </div>
+                    <div class="inv-threshold-hint">Reorder threshold: ${inv.low} ${inv.unit}s</div>
+                </div>`;
+        }
+        if (type === 'percent') {
+            const pct = inv.percent ?? 0;
+            return `
+                <div class="inv-ctrl inv-ctrl-pct" data-id="${inv.id}">
+                    <div class="inv-fill-bar-wrap">
+                        <div class="inv-fill-bar" style="width:${Math.max(0,Math.min(100,pct))}%"></div>
+                        ${inv.low > 0 ? `<div class="inv-fill-threshold" style="left:${inv.low}%"></div>` : ''}
+                    </div>
+                    <div class="inv-pct-row">
+                        <button class="inv-step-btn" data-action="dec-pct" data-id="${inv.id}" data-step="10">−</button>
+                        <input type="range" class="inv-pct-slider" min="0" max="100" step="5"
+                               value="${pct}" data-id="${inv.id}">
+                        <button class="inv-step-btn" data-action="inc-pct" data-id="${inv.id}" data-step="10">+</button>
+                        <span class="inv-pct-val" id="inv-pct-val-${inv.id}">${pct}%</span>
+                    </div>
+                    ${inv.low > 0 ? `<div class="inv-threshold-hint">Reorder at: ${inv.low}%</div>` : ''}
+                </div>`;
+        }
+        // Simple count
+        return `
+            <div class="inv-ctrl inv-ctrl-count" data-id="${inv.id}">
+                <button class="inv-step-btn" data-action="dec" data-id="${inv.id}">−</button>
+                <span class="inv-count-val" id="inv-count-${inv.id}">${inv.qty}</span>
+                <span class="inv-count-unit">${inv.unit}${inv.qty !== 1 ? 's' : ''}</span>
+                <button class="inv-step-btn" data-action="inc" data-id="${inv.id}">+</button>
+                ${inv.low > 0 ? `<div class="inv-threshold-hint">Reorder at: ${inv.low}</div>` : ''}
+            </div>`;
+    }
+
+    /** Single card for both Audit and Grid views. */
+    _invCardHTML(inv, mode = 'grid') {
+        const cat    = catOf(inv.category);
+        const onList = this._items.some(i => !i.checked && (i.productId === inv.productId || i.name.toLowerCase() === inv.name.toLowerCase()));
+        const type   = this._invTrackType(inv);
+        const s      = inv.stockLevel || 'ok';
+        const sortOrder = s === 'out' ? 0 : s === 'low' ? 1 : 2;
+
+        return `
+        <div class="inv-card inv-card-${mode} inv-status-${s}" data-id="${inv.id}" style="order:${sortOrder}">
+            <div class="inv-card-inner">
+
+                <div class="inv-card-media">
+                    ${inv.photo
+                        ? `<img src="${inv.photo}" alt="${this._esc(inv.name)}">`
+                        : `<div class="inv-card-emoji" style="--cat-color:${cat.color}">${cat.emoji}</div>`}
+                    ${inv.isStaple ? `<span class="inv-staple-dot" title="Staple">⭐</span>` : ''}
+                </div>
+
+                <div class="inv-card-info">
+                    <div class="inv-card-name-row">
+                        <span class="inv-card-name">${this._esc(inv.name)}</span>
+                        ${this._invBadgeHTML(inv)}
+                    </div>
+                    ${inv.brand ? `<div class="inv-card-brand">${this._esc(inv.brand)}</div>` : ''}
+
+                    ${this._invCtrlHTML(inv)}
+                </div>
+
+                <div class="inv-card-actions">
+                    <button class="inv-card-edit-btn" data-id="${inv.id}" title="Edit">✏️</button>
+                    <button class="inv-card-list-btn${onList ? ' on-list' : ''}" data-id="${inv.id}" title="Add to shopping list">
+                        ${onList ? '✓' : '+'}
+                    </button>
+                </div>
+
+            </div>
+        </div>`;
+    }
+
+    /** Sort inventory: out first, then low, then ok; alpha within tier. */
+    _sortInventory(items) {
+        const order = { out: 0, low: 1, ok: 2 };
+        return [...items].sort((a, b) => {
+            const sd = (order[a.stockLevel] ?? 2) - (order[b.stockLevel] ?? 2);
+            return sd !== 0 ? sd : (a.name || '').localeCompare(b.name || '');
         });
     }
 
-    _pantryCardHTML(inv) {
-        const cat      = catOf(inv.category);
-        const onList   = this._items.some(i => !i.checked && (i.inventoryRef === inv.id || i.name.toLowerCase() === inv.name.toLowerCase()));
-        const status   = inv.stockLevel || 'ok';
-        const statusInfo = { ok: { cls:'ok', label:'In Stock', icon:'✅' }, low: { cls:'low', label:'Low', icon:'⚠️' }, out: { cls:'out', label:'Out', icon:'🔴' } }[status] || { cls:'ok', label:'In Stock', icon:'✅' };
+    /** Bind interactive controls on the rendered inventory container. */
+    _bindInvControls(container) {
+        // +/− step buttons
+        container.querySelectorAll('.inv-step-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id     = btn.dataset.id;
+                const action = btn.dataset.action;
+                const inv    = this._inventory.find(i => i.id === id);
+                if (!inv) return;
 
-        return `
-        <div class="pantry-card status-${statusInfo.cls}" data-id="${inv.id}">
-            <div class="pantry-card-media" style="--cat-color:${cat.color}">
-                ${inv.photo
-                    ? `<img src="${inv.photo}" class="pantry-card-photo" alt="${this._esc(inv.name)}">`
-                    : `<span class="pantry-card-emoji">${cat.emoji}</span>`}
-                ${inv.isStaple ? `<span class="pantry-staple-badge" title="Weekly staple">⭐</span>` : ''}
-                ${onList ? `<span class="pantry-on-list-badge">✓ On list</span>` : ''}
-                ${inv.upc ? `<span class="pantry-upc-badge" title="UPC: ${inv.upc}">🔲</span>` : ''}
-            </div>
-            <div class="pantry-card-body">
-                <div class="pantry-card-name">${this._esc(inv.name)}</div>
-                ${inv.brand ? `<div class="pantry-card-brand">${this._esc(inv.brand)}</div>` : ''}
-                ${inv.notes && !inv.brand ? `<div class="pantry-card-brand">${this._esc(inv.notes)}</div>` : ''}
-                <div class="pantry-status-row">
-                    <button class="pantry-status-btn${status === 'ok'  ? ' active' : ''}" data-status="ok"  title="In Stock">✅</button>
-                    <button class="pantry-status-btn${status === 'low' ? ' active' : ''}" data-status="low" title="Running Low">⚠️</button>
-                    <button class="pantry-status-btn${status === 'out' ? ' active' : ''}" data-status="out" title="Out">🔴</button>
-                    <span class="pantry-status-label status-${statusInfo.cls}">${statusInfo.label}</span>
-                </div>
-            </div>
-            <div class="pantry-card-footer">
-                <button class="pantry-card-staple" title="${inv.isStaple ? 'Remove staple' : 'Mark as staple'}">${inv.isStaple ? '⭐' : '☆'}</button>
-                <button class="pantry-card-edit"   title="Edit">✏️</button>
-                <button class="pantry-card-add${onList ? ' on-list' : ''}" title="Add to shopping list">
-                    ${onList ? '✓ Listed' : '+ List'}
-                </button>
-            </div>
-        </div>`;
+                if (action === 'inc' || action === 'dec') {
+                    const delta = action === 'inc' ? 1 : -1;
+                    const newQty = Math.max(0, inv.qty + delta);
+                    this._updateInventoryItem(id, { qty: newQty });
+                } else if (action === 'inc-pack' || action === 'dec-pack') {
+                    const up    = inv.unitsPer || 1;
+                    const delta = action === 'inc-pack' ? up : -up;
+                    const newQty = Math.max(0, inv.qty + delta);
+                    this._updateInventoryItem(id, { qty: newQty });
+                } else if (action === 'inc-pct' || action === 'dec-pct') {
+                    const step    = Number(btn.dataset.step || 10);
+                    const delta   = action === 'inc-pct' ? step : -step;
+                    const newPct  = Math.max(0, Math.min(100, (inv.percent ?? 0) + delta));
+                    this._setPercent(id, newPct);
+                }
+            });
+        });
+
+        // Percent slider drag
+        container.querySelectorAll('.inv-pct-slider').forEach(slider => {
+            let debounce = null;
+            slider.addEventListener('input', () => {
+                const id  = slider.dataset.id;
+                const pct = Number(slider.value);
+                const valEl = container.querySelector(`#inv-pct-val-${id}`);
+                if (valEl) valEl.textContent = pct + '%';
+                clearTimeout(debounce);
+                debounce = setTimeout(() => this._setPercent(id, pct), 300);
+            });
+        });
+
+        // Edit + add-to-list
+        container.querySelectorAll('.inv-card-edit-btn').forEach(btn => {
+            const inv = this._inventory.find(i => i.id === btn.dataset.id);
+            if (inv) btn.addEventListener('click', () => this._openInvModal(inv));
+        });
+        container.querySelectorAll('.inv-card-list-btn').forEach(btn => {
+            const inv = this._inventory.find(i => i.id === btn.dataset.id);
+            if (inv) btn.addEventListener('click', () => this._addFromInventory(inv));
+        });
+    }
+
+    async _setPercent(id, pct) {
+        this._setSyncStatus('saving');
+        try {
+            await this.store.updateInventoryItem(id, { percent: pct });
+            this._setSyncStatus('saved', 3000);
+        } catch {
+            this._setSyncStatus('offline', 3000);
+        }
     }
 
     // ── CATALOG TAB ───────────────────────────────────────────────────────────
