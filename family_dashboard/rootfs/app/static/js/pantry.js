@@ -884,12 +884,12 @@ export class PantryApp {
                     <!-- Pack size -->
                     <div class="pantry-modal-row">
                         <div class="pantry-modal-field">
-                            <label class="pantry-modal-label">Pack Size (units/pack)</label>
+                            <label class="pantry-modal-label">Pack size (items per box/pack)</label>
                             <input class="pantry-modal-input" id="prodUnitsPer" type="number" min="1" step="0.1"
                                    placeholder="1" value="${p?.units_per_pack ?? 1}">
                         </div>
                         <div class="pantry-modal-field">
-                            <label class="pantry-modal-label">Unit Name (e.g. can, bag)</label>
+                            <label class="pantry-modal-label">Individual unit (e.g. packet, can, oz)</label>
                             <input class="pantry-modal-input" id="prodCountUnit" type="text"
                                    placeholder="item" value="${this._esc(p?.count_unit || 'item')}">
                         </div>
@@ -1571,27 +1571,39 @@ export class PantryApp {
         const prefill = this._prefillInv;
         const isNew   = !inv;
 
+        // Resolve pack-size info from the linked catalog product so the qty
+        // input can show the boxes→individual-units conversion.
+        const pid      = inv?.productId || prefill?.productId || null;
+        const prod     = pid ? (this._products?.find(p => p.id === pid) ?? null) : null;
+        const unitsPer = Math.max(1, Number(prod?.units_per_pack ?? 1));
+        const countUnit = (prod?.count_unit || 'item').trim();
+        const packLabel = unitsPer > 1 ? `packs (${unitsPer} ${countUnit}s each)` : countUnit + 's';
+        // For editing, show current qty converted back to packs when possible.
+        const currentPacks = isNew ? 1 : (unitsPer > 1
+            ? Math.max(1, Math.round((inv?.qty ?? 1) / unitsPer))
+            : (inv?.qty ?? 1));
+
         overlay.innerHTML = `
             <div class="pantry-modal" role="dialog" aria-modal="true">
                 <div class="pantry-modal-header">
-                    <div class="pantry-modal-title">${isNew ? '📦 New Pantry Item' : `✏️ Edit: ${this._esc(inv.name)}`}</div>
+                    <div class="pantry-modal-title">${isNew ? '📦 Add to Inventory' : `✏️ Edit: ${this._esc(inv.name)}`}</div>
                     <button class="pantry-modal-close" id="pantryInvClose">×</button>
                 </div>
                 <div class="pantry-modal-body">
 
-                    <div class="pantry-modal-photo-area" id="pantryInvPhotoArea">
-                        ${this._editInvPhoto
-                            ? `<img src="${this._editInvPhoto}" class="pantry-modal-photo-img" alt="Item photo">
-                               <div class="pantry-modal-photo-overlay">
-                                   <button class="pantry-photo-remove-btn" id="pantryInvPhotoRemove">🗑 Remove</button>
-                               </div>`
-                            : `<div class="pantry-modal-photo-placeholder">
-                                   <div style="font-size:28px">📷</div>
-                                   <div style="font-size:13px;color:var(--color-muted);margin-top:4px">Product photo (helps with brand ID)</div>
-                               </div>`
-                        }
+                    <!-- Read-only product thumbnail — edit image/brand/name in Catalog -->
+                    <div class="pantry-inv-thumb-row">
+                        <div class="pantry-inv-thumb">
+                            ${this._editInvPhoto
+                                ? `<img src="${this._editInvPhoto}" alt="Product photo">`
+                                : `<div class="pantry-inv-thumb-placeholder">📦</div>`}
+                        </div>
+                        <div class="pantry-inv-thumb-meta">
+                            <div class="pantry-inv-thumb-name">${this._esc(inv?.name || prefill?.name || 'New item')}</div>
+                            ${(inv?.brand || prefill?.brand) ? `<div class="pantry-inv-thumb-brand">${this._esc(inv?.brand || prefill?.brand)}</div>` : ''}
+                            <div class="pantry-inv-thumb-hint">To change photo or name, edit in Catalog.</div>
+                        </div>
                     </div>
-                    <input type="file" id="pantryInvPhotoInput" accept="image/*" style="display:none">
 
                     <div class="pantry-modal-field">
                         <label>Item Name *</label>
@@ -1599,17 +1611,14 @@ export class PantryApp {
                                value="${this._esc(inv?.name || prefill?.name || '')}" placeholder="e.g. Organic Whole Milk">
                     </div>
 
-                    <div class="pantry-modal-row">
-                        <div class="pantry-modal-field">
-                            <label>Default Amount</label>
-                            <input type="text" id="pantryInvAmount" class="pantry-modal-input"
-                                   value="${this._esc(inv?.defaultAmount || '')}" placeholder="1">
-                        </div>
-                        <div class="pantry-modal-field">
-                            <label>Unit</label>
-                            <input type="text" id="pantryInvUnit" class="pantry-modal-input"
-                                   value="${this._esc(inv?.defaultUnit || '')}" placeholder="gallon, lbs…">
-                        </div>
+                    <!-- Qty added — pack-aware when product has units_per_pack > 1 -->
+                    <div class="pantry-modal-field">
+                        <label>${unitsPer > 1 ? `How many ${packLabel} are you adding?` : `Qty (${countUnit}s)`}</label>
+                        <input type="number" id="pantryInvQtyPacks" class="pantry-modal-input"
+                               min="1" step="1" value="${currentPacks}">
+                        ${unitsPer > 1
+                            ? `<div class="pantry-inv-qty-calc" id="pantryInvQtyCalc">= ${currentPacks * unitsPer} ${countUnit}s</div>`
+                            : ''}
                     </div>
 
                     <div class="pantry-modal-field">
@@ -1651,13 +1660,6 @@ export class PantryApp {
                     </div>
 
                     <div class="pantry-modal-field">
-                        <label>UPC Barcode</label>
-                        <input type="text" id="pantryInvUPC" class="pantry-modal-input"
-                               value="${this._esc(inv?.upc || prefill?.upc || '')}" placeholder="Scan or enter manually"
-                               pattern="\\d{6,14}" maxlength="14">
-                    </div>
-
-                    <div class="pantry-modal-field">
                         <label class="pantry-checkbox-label">
                             <input type="checkbox" id="pantryInvAutoAdd" ${inv?.autoAddToList ? 'checked' : ''}>
                             🛒 Auto-add to shopping list when marked Out
@@ -1676,7 +1678,7 @@ export class PantryApp {
                 </div>
                 <div class="pantry-modal-footer">
                     <button class="pantry-modal-save" id="pantryInvSave">
-                        ${isNew ? 'Add to Pantry' : 'Save Changes'}
+                        ${isNew ? 'Add to Inventory' : 'Save Changes'}
                     </button>
                     <button class="pantry-modal-cancel" id="pantryInvCancel">Cancel</button>
                 </div>
@@ -1700,30 +1702,15 @@ export class PantryApp {
             });
         });
 
-        // Photo upload (addon version — async multipart POST)
-        const photoArea  = overlay.querySelector('#pantryInvPhotoArea');
-        const photoInput = overlay.querySelector('#pantryInvPhotoInput');
-        photoArea?.addEventListener('click', e => {
-            if (!e.target.closest('#pantryInvPhotoRemove')) photoInput?.click();
-        });
-        photoInput?.addEventListener('change', async (e) => {
-            const file = e.target.files?.[0];
-            photoInput.value = '';
-            if (!file) return;
-            this._showPhotoUploading(photoArea);
-            try {
-                const url = await this.store.uploadPhoto(file, 400, 0.75);
-                this._editInvPhoto = url;
-                this._updateInvPhotoPreview(overlay);
-            } catch (err) {
-                console.error('[PantryApp] Pantry photo upload failed:', err);
-                this._editInvPhoto = null;
-                this._updateInvPhotoPreview(overlay);
-            }
-        });
-        overlay.querySelector('#pantryInvPhotoRemove')?.addEventListener('click', e => {
-            e.stopPropagation(); this._editInvPhoto = null; this._updateInvPhotoPreview(overlay);
-        });
+        // Live-update the packs → individual units calculation
+        const qtyInput = overlay.querySelector('#pantryInvQtyPacks');
+        const qtyCalc  = overlay.querySelector('#pantryInvQtyCalc');
+        if (qtyInput && qtyCalc && unitsPer > 1) {
+            qtyInput.addEventListener('input', () => {
+                const packs = Math.max(0, parseInt(qtyInput.value) || 0);
+                qtyCalc.textContent = `= ${packs * unitsPer} ${countUnit}s`;
+            });
+        }
 
         const close = () => { overlay.classList.remove('active'); this._editInvItem = null; this._editInvPhoto = null; };
         overlay.querySelector('#pantryInvClose')?.addEventListener('click', close);
@@ -1734,16 +1721,16 @@ export class PantryApp {
             const name = nameInput?.value.trim();
             if (!name) { nameInput?.focus(); return; }
             const fulfillmentActive = overlay.querySelector('.pantry-fulfillment-btn.active');
+            const packs   = Math.max(1, parseInt(qtyInput?.value) || 1);
+            const totalQty = packs * unitsPer;
             const data = {
                 name,
-                defaultAmount:      overlay.querySelector('#pantryInvAmount')?.value.trim()   || '',
-                defaultUnit:        overlay.querySelector('#pantryInvUnit')?.value.trim()      || '',
+                qty:                totalQty,
                 category:           catSelect?.value || detectCategory(name),
                 defaultFulfillment: fulfillmentActive?.dataset.ful || 'curbside',
                 isStaple:           overlay.querySelector('#pantryInvStaple')?.checked ?? false,
                 photo:              this._editInvPhoto || null,
                 brand:              overlay.querySelector('#pantryInvBrand')?.value.trim()    || '',
-                upc:                overlay.querySelector('#pantryInvUPC')?.value.trim()      || '',
                 locationId:         overlay.querySelector('#pantryInvLocation')?.value || null,
                 autoAddToList:      overlay.querySelector('#pantryInvAutoAdd')?.checked ?? false,
                 productId:          prefill?.productId || null,
@@ -2361,11 +2348,10 @@ export class PantryApp {
                 }
             }
 
-            // stockLevel → starting qty. Default "ok" with qty=1.
-            const startQty =
-                data.stockLevel === 'out' ? 0 :
-                data.stockLevel === 'low' ? 1 :
-                                            1;
+            // qty comes from the modal (packs × units_per_pack already computed).
+            // Fall back to stockLevel hint when called from non-modal paths.
+            const startQty = data.qty != null ? data.qty :
+                data.stockLevel === 'out' ? 0 : 1;
 
             await this.store.addInventoryItem({
                 productId:  pid,
@@ -2497,10 +2483,10 @@ export class PantryApp {
     _handleResolvedNeed(barcode, resolved) {
         this._openItemModal(null, {
             name:        resolved.name,
+            brand:       resolved.brand    || '',
             category:    resolved.category || detectCategory(resolved.name),
             fulfillment: 'unplanned',
-            notes:       '',
-            photo:       resolved.photo || null,
+            photo:       resolved.photo    || null,
             productId:   resolved.productId,
         });
     }
