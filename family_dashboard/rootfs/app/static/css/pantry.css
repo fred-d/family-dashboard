@@ -1948,6 +1948,11 @@ select.pantry-modal-input { cursor: pointer; }
 }
 #scannerQr { width: 100%; }
 #scannerQr video { width: 100% !important; object-fit: cover; }
+/* html5-qrcode injects its own qrbox border + a shaded-region overlay.
+   We render our own .scanner-corners — strip the library's visuals so we
+   don't end up with two nested boxes. */
+#scannerQr [id^="qr-shaded-"] { display: none !important; }
+#scannerQr div { border: 0 !important; box-shadow: none !important; }
 
 .scanner-corners { position: absolute; inset: 20px; pointer-events: none; }
 .sc-corner {
