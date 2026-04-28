@@ -745,16 +745,18 @@ export class PantryApp {
             </div>`;
     }
 
-    /** Single card for both Audit and Grid views. */
+    /** Single card. Grid mode follows the tactile mockup; audit is the dense list. */
     _invCardHTML(inv, mode = 'grid') {
         const cat    = catOf(inv.category);
         const onList = this._items.some(i => !i.checked && (i.productId === inv.productId || i.name.toLowerCase() === inv.name.toLowerCase()));
-        const type   = this._invTrackType(inv);
         const s      = inv.stockLevel || 'ok';
         const sortOrder = s === 'out' ? 0 : s === 'low' ? 1 : 2;
 
+        if (mode === 'grid') return this._invGridCardHTML(inv, { cat, onList, s, sortOrder });
+
+        // Audit mode — dense horizontal list (left border accent + inline ctrl)
         return `
-        <div class="inv-card inv-card-${mode} inv-status-${s}" data-id="${inv.id}" style="order:${sortOrder}">
+        <div class="inv-card inv-card-audit inv-status-${s}" data-id="${inv.id}" style="order:${sortOrder}">
             <div class="inv-card-inner">
 
                 <div class="inv-card-media">
@@ -769,6 +771,7 @@ export class PantryApp {
                         <span class="inv-card-name">${this._esc(inv.name)}</span>
                         ${this._invBadgeHTML(inv)}
                     </div>
+                    ${inv.description ? `<div class="inv-card-desc">${this._esc(inv.description)}</div>` : ''}
                     ${inv.brand ? `<div class="inv-card-brand">${this._esc(inv.brand)}</div>` : ''}
 
                     ${this._invCtrlHTML(inv)}
@@ -783,6 +786,113 @@ export class PantryApp {
 
             </div>
         </div>`;
+    }
+
+    /**
+     * Tactile grid card. Follows the v1.9.8 mockup: photo + name + description
+     * + status pill on top, brand line below, big stepper / status toggle in
+     * the middle, "Add to List" + "Edit" footer buttons. All cards in the
+     * grid share the same outer height via CSS `grid-auto-rows: 1fr`.
+     */
+    _invGridCardHTML(inv, { cat, onList, s, sortOrder }) {
+        return `
+        <div class="inv-grid-card inv-status-${s}" data-id="${inv.id}" style="order:${sortOrder}">
+
+            <!-- Header: thumb + titles + status pill -->
+            <div class="inv-gc-head">
+                <div class="inv-gc-thumb">
+                    ${inv.photo
+                        ? `<img src="${inv.photo}" alt="${this._esc(inv.name)}">`
+                        : `<div class="inv-gc-thumb-emoji" style="--cat-color:${cat.color}">${cat.emoji}</div>`}
+                    ${inv.isStaple ? `<span class="inv-gc-staple" title="Staple">⭐</span>` : ''}
+                </div>
+                <div class="inv-gc-titles">
+                    <div class="inv-gc-name">${this._esc(inv.name)}</div>
+                    ${inv.description
+                        ? `<div class="inv-gc-desc">${this._esc(inv.description)}</div>`
+                        : ''}
+                    ${this._invBadgeHTML(inv)}
+                </div>
+            </div>
+
+            <!-- Brand annotation (italic) -->
+            ${inv.brand
+                ? `<div class="inv-gc-brand">${this._esc(inv.brand)}</div>`
+                : `<div class="inv-gc-brand-spacer"></div>`}
+
+            <!-- Counter / status / percent control -->
+            <div class="inv-gc-control">
+                ${this._invGridCtrlHTML(inv)}
+            </div>
+
+            <!-- Footer actions -->
+            <div class="inv-gc-actions">
+                <button class="inv-gc-action-btn list${onList ? ' on-list' : ''}" data-action="list" data-id="${inv.id}">
+                    ${onList ? '✓ On List' : '+ Add to List'}
+                </button>
+                <button class="inv-gc-action-btn edit" data-action="edit" data-id="${inv.id}">
+                    Edit
+                </button>
+            </div>
+
+        </div>`;
+    }
+
+    /**
+     * Grid-mode tracking control. Same data as `_invCtrlHTML` but laid out
+     * for the larger card: oversized stepper buttons, prominent count, and
+     * a tucked threshold hint.
+     */
+    _invGridCtrlHTML(inv) {
+        const type = this._invTrackType(inv);
+
+        if (type === 'status') {
+            const s = inv.stockLevel || 'ok';
+            return `
+                <div class="inv-gc-status-toggle">
+                    <button class="inv-status-btn inv-sb-out${s === 'out' ? ' active' : ''}"
+                            data-action="set-status" data-id="${inv.id}" data-qty="0">REORDER</button>
+                    <button class="inv-status-btn inv-sb-low${s === 'low' ? ' active' : ''}"
+                            data-action="set-status" data-id="${inv.id}" data-qty="1">LOW</button>
+                    <button class="inv-status-btn inv-sb-ok${s === 'ok' ? ' active' : ''}"
+                            data-action="set-status" data-id="${inv.id}" data-qty="2">GOOD</button>
+                </div>`;
+        }
+
+        if (type === 'percent') {
+            const pct = inv.percent ?? 0;
+            return `
+                <div class="inv-gc-percent">
+                    <div class="inv-fill-bar-wrap">
+                        <div class="inv-fill-bar" style="width:${Math.max(0,Math.min(100,pct))}%"></div>
+                        ${inv.low > 0 ? `<div class="inv-fill-threshold" style="left:${inv.low}%"></div>` : ''}
+                    </div>
+                    <div class="inv-gc-pct-row">
+                        <button class="inv-gc-step-btn" data-action="dec-pct" data-id="${inv.id}" data-step="10">−</button>
+                        <input type="range" class="inv-pct-slider" min="0" max="100" step="5"
+                               value="${pct}" data-id="${inv.id}">
+                        <button class="inv-gc-step-btn" data-action="inc-pct" data-id="${inv.id}" data-step="10">+</button>
+                    </div>
+                    <div class="inv-gc-pct-val" id="inv-pct-val-${inv.id}">${pct}%${inv.low > 0 ? ` <span class="inv-gc-thresh">· reorder at ${inv.low}%</span>` : ''}</div>
+                </div>`;
+        }
+
+        // Count (and Count + pack-size aka multipack)
+        const isMultipack = inv.unitsPer > 1;
+        return `
+            <div class="inv-gc-stepper">
+                <button class="inv-gc-step-btn dec" data-action="dec" data-id="${inv.id}">−</button>
+                <div class="inv-gc-count">
+                    <span class="inv-gc-count-val">${inv.qty}</span>
+                </div>
+                <button class="inv-gc-step-btn inc" data-action="inc" data-id="${inv.id}">+</button>
+            </div>
+            <div class="inv-gc-count-meta">
+                ${inv.unit && inv.unit !== 'item' ? `<span class="inv-gc-unit">${this._esc(inv.unit)}${inv.qty !== 1 ? 's' : ''}</span>` : ''}
+                ${inv.low > 0 ? `<span class="inv-gc-thresh">· reorder at ${inv.low}</span>` : ''}
+            </div>
+            ${isMultipack ? `<div class="inv-gc-dotgrid-wrap">${this._invDotGridHTML(inv)}</div>` : ''}
+        `;
     }
 
     /** Sort inventory: out first, then low, then ok; alpha within tier. */
@@ -834,12 +944,13 @@ export class PantryApp {
             });
         });
 
-        // Edit + add-to-list
-        container.querySelectorAll('.inv-card-edit-btn').forEach(btn => {
+        // Edit + add-to-list (audit mode uses .inv-card-* classes;
+        // grid mode uses data-action on .inv-gc-action-btn)
+        container.querySelectorAll('.inv-card-edit-btn, .inv-gc-action-btn[data-action="edit"]').forEach(btn => {
             const inv = this._inventory.find(i => i.id === btn.dataset.id);
             if (inv) btn.addEventListener('click', () => this._openInvModal(inv));
         });
-        container.querySelectorAll('.inv-card-list-btn').forEach(btn => {
+        container.querySelectorAll('.inv-card-list-btn, .inv-gc-action-btn[data-action="list"]').forEach(btn => {
             const inv = this._inventory.find(i => i.id === btn.dataset.id);
             if (inv) btn.addEventListener('click', () => this._addFromInventory(inv));
         });
@@ -1257,13 +1368,20 @@ export class PantryApp {
                     <div class="pantry-modal-field">
                         <label class="pantry-modal-label">Product Name *</label>
                         <input class="pantry-modal-input" id="prodName" type="text"
-                               placeholder="e.g. Orange Juice" value="${this._esc(p?.name || '')}">
+                               placeholder="e.g. Lemonade Drink Mix" value="${this._esc(p?.name || '')}">
+                    </div>
+                    <div class="pantry-modal-field">
+                        <label class="pantry-modal-label">
+                            Description <span class="pantry-modal-label-hint">(form / size — e.g. Pitcher Packets, 64oz Bottle, Family Pack)</span>
+                        </label>
+                        <input class="pantry-modal-input" id="prodNotes" type="text"
+                               placeholder="e.g. Pitcher Packets" value="${this._esc(p?.notes || '')}">
                     </div>
                     <div class="pantry-modal-row">
                         <div class="pantry-modal-field">
                             <label class="pantry-modal-label">Brand</label>
                             <input class="pantry-modal-input" id="prodBrand" type="text"
-                                   placeholder="e.g. Simply Orange" value="${this._esc(p?.brand || '')}">
+                                   placeholder="e.g. Great Value, Brookshire's, or Crystal Light" value="${this._esc(p?.brand || '')}">
                         </div>
                         <div class="pantry-modal-field">
                             <label class="pantry-modal-label">Category</label>
@@ -1507,6 +1625,8 @@ export class PantryApp {
                 default_store_id:    overlay.querySelector('#prodDefaultStore')?.value || null,
                 default_location_id: overlay.querySelector('#prodDefaultLocation')?.value || null,
                 is_staple:           overlay.querySelector('#prodIsStaple')?.checked ? 1 : 0,
+                // Description (rendered as sub-name on cards)
+                notes:               overlay.querySelector('#prodNotes')?.value.trim() || '',
             };
             if (this._editProduct?.id) {
                 await this.store.updateProduct(this._editProduct.id, payload);
