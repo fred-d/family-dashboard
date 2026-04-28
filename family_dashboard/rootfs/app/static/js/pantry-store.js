@@ -161,6 +161,16 @@ export class PantryStore {
         return this._send('DELETE', `/api/pantry/products/${pid}`);
     }
 
+    /**
+     * Merge `sourcePid` into `intoPid`. Re-points all inventory rows,
+     * shopping list entries, barcodes, and history at the destination,
+     * then deletes the source product. Backend coalesces inventory rows
+     * at the same location (sums qty rather than leaving a duplicate).
+     */
+    async mergeProduct(sourcePid, intoPid) {
+        return this._send('POST', `/api/pantry/products/${sourcePid}/merge`, { into: intoPid });
+    }
+
     /** Add a single barcode to a product. */
     async addBarcode(pid, barcode) {
         return this._send('POST', `/api/pantry/products/${pid}/barcodes`, { barcode });

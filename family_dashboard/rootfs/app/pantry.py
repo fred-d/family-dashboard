@@ -1749,6 +1749,30 @@ def api_shopping():
         p = _product_row(c, body['product_id'])
         name = p['name'] if p else ''
 
+    # Find-or-create: a manual add with no product_id should always end up
+    # linked to a catalog product. Without this, every "Olive Oil" typed by
+    # hand creates a fresh duplicate at put-away time. Match case-insensitively
+    # on name; if no match, auto-create a minimal status-tracked product so
+    # the row is always linked to the catalog from creation.
+    pid = body.get('product_id')
+    if not pid and name:
+        match = c.execute(
+            'SELECT id FROM products WHERE LOWER(name) = LOWER(?) LIMIT 1', (name,)
+        ).fetchone()
+        if match:
+            pid = match['id']
+        else:
+            pid = _uid()
+            now_p = _now()
+            c.execute('''
+                INSERT INTO products
+                  (id, name, category_id, default_unit, min_threshold,
+                   tracks_percent, units_per_pack, count_unit, is_staple,
+                   notes, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 0, 0, 1, 'status', 0, '', ?, ?)
+            ''', (pid, name, body.get('category_id'),
+                  body.get('unit') or 'count', now_p, now_p))
+
     sid = _uid()
     now = _now()
     fulfillment = body.get('fulfillment', 'unplanned')
@@ -1760,7 +1784,7 @@ def api_shopping():
            added_by,notes,fulfillment,photo_url,created_at,updated_at)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (
-        sid, body.get('product_id'), name,
+        sid, pid, name,
         float(body.get('qty', 1)), body.get('unit', 'count'),
         body.get('store_id'), body.get('category_id'),
         body.get('status', 'needed'), 'manual',
@@ -1858,18 +1882,19 @@ def api_shopping_put_away():
             skipped += 1
             continue
 
-        # No product link — fallback for legacy rows (the resolver flow now
-        # always assigns a product_id at scan time). Create a minimal product
-        # so Put Away still lands in catalog + inventory. Non-staple → no
-        # auto-replenishment, so default min_threshold=1 is safe again.
+        # No product link — fallback for legacy rows (manual adds now always
+        # link via api_shopping; this path catches imported / legacy data).
+        # Default to 'status' tracking so the user sees a Good/Low/Out toggle
+        # in inventory rather than a meaningless number for a brand-new item.
         if not pid:
             pid = _uid()
             now_p = _now()
             c.execute('''
                 INSERT INTO products
                   (id, name, category_id, default_unit, min_threshold,
-                   units_per_pack, count_unit, is_staple, notes, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 1, 1, 'item', 0, '', ?, ?)
+                   tracks_percent, units_per_pack, count_unit, is_staple,
+                   notes, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 0, 0, 1, 'status', 0, '', ?, ?)
             ''', (pid, row['name'], row['category_id'], row['unit'] or 'count', now_p, now_p))
             c.execute('UPDATE shopping_list SET product_id=? WHERE id=?', (pid, sid))
 
