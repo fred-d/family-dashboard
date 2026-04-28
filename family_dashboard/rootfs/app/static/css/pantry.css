@@ -3035,6 +3035,13 @@ select.pantry-modal-input { cursor: pointer; }
     text-align: center;
 }
 
+.pantry-modal-label-hint {
+    font-weight: 400;
+    font-size:   11px;
+    color:       var(--color-muted);
+    margin-left: 4px;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────
    Merge Duplicates modal (Catalog tab → Find Duplicates)
    ───────────────────────────────────────────────────────────────────────── */

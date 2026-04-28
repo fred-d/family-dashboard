@@ -1221,13 +1221,15 @@ export class PantryApp {
 
         // Derive current tracking type from product fields. New products
         // default to 'status' — the most common case for a household pantry
-        // (fresh items, anything you don't really count).
+        // (fresh items, anything you don't really count). Note: 'multipack'
+        // is no longer a separate top-level tracking type — it's just Count
+        // with an optional pack size > 1 that drives the dot-grid rendering.
         const pCU  = p?.count_unit || 'item';
         const initTT = !p                              ? 'status'
                      : pCU === 'status'                ? 'status'
                      : p?.tracks_percent                ? 'percent'
-                     : (p?.units_per_pack ?? 1) > 1     ? 'multipack'
                      :                                    'count';
+        const initUnitsPer = Math.max(1, Number(p?.units_per_pack ?? 1));
         const initCU = (pCU === 'status' || pCU === '%') ? 'item' : pCU;
         const sel = (v) => initTT === v ? 'selected' : '';
 
@@ -1269,36 +1271,32 @@ export class PantryApp {
                         </div>
                     </div>
 
-                    <!-- Tracking type selector -->
+                    <!-- Tracking type selector — three modes only -->
                     <div class="pantry-modal-field">
                         <label class="pantry-modal-label">How to track stock</label>
                         <select class="pantry-modal-input" id="prodTrackType">
-                            <option value="count"     ${sel('count')}>Count — individual units (cans, bags…)</option>
-                            <option value="multipack" ${sel('multipack')}>Multipack — box / pack containing N units</option>
-                            <option value="percent"   ${sel('percent')}>Percent — % remaining (liquids, bulk)</option>
-                            <option value="status"    ${sel('status')}>Status — Good / Low / Out (fresh items, whole items)</option>
+                            <option value="status"  ${sel('status')}>Status — Good / Low / Out (fresh items, anything you don't count)</option>
+                            <option value="count"   ${sel('count')}>Count — track number of units (cans, bags, eggs…)</option>
+                            <option value="percent" ${sel('percent')}>Percent — % remaining (liquids, toothpaste, condiments)</option>
                         </select>
                     </div>
 
-                    <!-- Multipack: pack size + unit name -->
-                    <div class="pantry-modal-row pantry-track-mp-fields" ${initTT !== 'multipack' ? 'style="display:none"' : ''}>
-                        <div class="pantry-modal-field">
-                            <label class="pantry-modal-label">Units per box / pack</label>
-                            <input class="pantry-modal-input" id="prodUnitsPer" type="number" min="2" step="1"
-                                   value="${Math.max(2, p?.units_per_pack ?? 2)}">
+                    <!-- Count fields: unit name + optional pack size -->
+                    <div class="pantry-track-count-fields" ${initTT !== 'count' ? 'style="display:none"' : ''}>
+                        <div class="pantry-modal-row">
+                            <div class="pantry-modal-field">
+                                <label class="pantry-modal-label">Unit name (e.g. item, can, packet, egg)</label>
+                                <input class="pantry-modal-input" id="prodCountUnit" type="text"
+                                       placeholder="item" value="${this._esc(initCU)}">
+                            </div>
+                            <div class="pantry-modal-field">
+                                <label class="pantry-modal-label">
+                                    Pack size <span class="pantry-modal-label-hint">(optional — set if buying in boxes / cartons)</span>
+                                </label>
+                                <input class="pantry-modal-input" id="prodUnitsPer" type="number" min="1" step="1"
+                                       value="${initUnitsPer}">
+                            </div>
                         </div>
-                        <div class="pantry-modal-field">
-                            <label class="pantry-modal-label">Individual unit (e.g. packet, can)</label>
-                            <input class="pantry-modal-input" id="prodCountUnit" type="text"
-                                   placeholder="item" value="${this._esc(initCU)}">
-                        </div>
-                    </div>
-
-                    <!-- Count: unit name only -->
-                    <div class="pantry-modal-field pantry-track-count-fields" ${initTT !== 'count' ? 'style="display:none"' : ''}>
-                        <label class="pantry-modal-label">Unit name (e.g. item, can, bag)</label>
-                        <input class="pantry-modal-input" id="prodCountUnitSimple" type="text"
-                               placeholder="item" value="${this._esc(initTT === 'count' ? initCU : 'item')}">
                     </div>
 
                     <!-- Threshold (hidden for status; label changes for percent) -->
@@ -1379,16 +1377,14 @@ export class PantryApp {
 
         // Tracking type dropdown — show/hide conditional fields on change
         const trackTypeSel   = overlay.querySelector('#prodTrackType');
-        const mpFields       = overlay.querySelector('.pantry-track-mp-fields');
         const countFields    = overlay.querySelector('.pantry-track-count-fields');
         const threshRow      = overlay.querySelector('.pantry-track-thresh-row');
         const threshLabel    = overlay.querySelector('#prodMinThreshLabel');
         const threshInput    = overlay.querySelector('#prodMinThresh');
         const applyTrackType = () => {
-            const tt = trackTypeSel?.value || 'count';
-            if (mpFields)    mpFields.style.display    = tt === 'multipack' ? '' : 'none';
-            if (countFields) countFields.style.display = tt === 'count'     ? '' : 'none';
-            if (threshRow)   threshRow.style.display   = tt === 'status'    ? 'none' : '';
+            const tt = trackTypeSel?.value || 'status';
+            if (countFields) countFields.style.display = tt === 'count'  ? '' : 'none';
+            if (threshRow)   threshRow.style.display   = tt === 'status' ? 'none' : '';
             if (threshLabel) threshLabel.textContent   = tt === 'percent' ? 'Reorder at (% remaining)' : 'Reorder threshold';
             if (threshInput) threshInput.step          = tt === 'percent' ? '5' : '0.5';
         };
@@ -1480,22 +1476,21 @@ export class PantryApp {
             const name = overlay.querySelector('#prodName')?.value.trim();
             if (!name) { overlay.querySelector('#prodName')?.focus(); return; }
 
-            // Resolve tracking-type-specific fields
-            const tt = overlay.querySelector('#prodTrackType')?.value || 'count';
+            // Resolve tracking-type-specific fields. Three top-level modes;
+            // multipack is just Count with pack size > 1 under the hood.
+            const tt = overlay.querySelector('#prodTrackType')?.value || 'status';
             let units_per_pack = 1;
             let count_unit     = 'item';
             let tracks_percent = false;
-            if (tt === 'multipack') {
-                units_per_pack = Math.max(2, parseFloat(overlay.querySelector('#prodUnitsPer')?.value) || 2);
+            if (tt === 'count') {
                 count_unit     = overlay.querySelector('#prodCountUnit')?.value.trim() || 'item';
+                units_per_pack = Math.max(1, parseFloat(overlay.querySelector('#prodUnitsPer')?.value) || 1);
             } else if (tt === 'percent') {
                 tracks_percent = true;
                 count_unit     = '%';
-            } else if (tt === 'status') {
-                count_unit     = 'status';
             } else {
-                // count
-                count_unit = overlay.querySelector('#prodCountUnitSimple')?.value.trim() || 'item';
+                // status (default)
+                count_unit     = 'status';
             }
 
             const payload = {
@@ -1811,7 +1806,17 @@ export class PantryApp {
 
         const nameInput = overlay.querySelector('#pantryItemName');
         const catSelect = overlay.querySelector('#pantryItemCategory');
+        // Reset autocomplete-link state for this open of the modal
+        this._pickedItemProductId = null;
+        this._pickedItemSnapshot  = null;
         nameInput?.addEventListener('input', () => {
+            // If the user types away from the picked suggestion, drop the link
+            // so we don't accidentally save under a stale productId.
+            if (this._pickedItemSnapshot &&
+                nameInput.value.trim().toLowerCase() !== this._pickedItemSnapshot.name.toLowerCase()) {
+                this._pickedItemProductId = null;
+                this._pickedItemSnapshot  = null;
+            }
             // Only auto-detect if the category hasn't been set explicitly (still at default)
             if (catSelect && catSelect.value === 'other') {
                 const cat = detectCategory(nameInput.value);
@@ -1902,6 +1907,16 @@ export class PantryApp {
                 data.originalScanBrand    = prefill.brand    ?? null;
                 data.originalScanCategory = prefill.category ?? null;
                 data.originalScanPhoto    = prefill.photo    ?? null;
+            } else if (!this._editItem && this._pickedItemProductId) {
+                // User picked an autocomplete suggestion → link to the existing
+                // catalog product. Seed originalScan* from the snapshot so the
+                // propagation diff in _addItem only fires on fields the user
+                // actually edited after picking.
+                data.productId            = this._pickedItemProductId;
+                data.originalScanName     = this._pickedItemSnapshot?.name     ?? null;
+                data.originalScanBrand    = this._pickedItemSnapshot?.brand    ?? null;
+                data.originalScanCategory = this._pickedItemSnapshot?.category ?? null;
+                data.originalScanPhoto    = this._pickedItemSnapshot?.photo    ?? null;
             }
             if (this._editItem) {
                 this._updateItem(this._editItem.id, data);
@@ -1952,22 +1967,27 @@ export class PantryApp {
         if (!q || q.length < 2) { sug.innerHTML = ''; return; }
         const ql = q.toLowerCase();
 
-        // 1. Inventory items — best match (in pantry, has stock info)
+        // 1. Inventory items — best match (in pantry, has stock info).
+        // Always carry productId so picking links the shopping row to the
+        // catalog product (no duplicate created on save).
         const invMatches = this._inventory
             .filter(i => i.name.toLowerCase().includes(ql))
-            .map(i => ({ source: 'inv', id: i.id, name: i.name, category: i.category,
-                         notes: i.notes, photo: i.photo,
-                         defaultAmount: i.defaultAmount, defaultUnit: i.defaultUnit,
-                         defaultFulfillment: i.defaultFulfillment }));
+            .map(i => ({
+                source: 'inv', id: i.id, productId: i.productId,
+                name: i.name, brand: i.brand || '',
+                category: i.category, photo: i.photo || '',
+            }));
 
         // 2. Product catalog — items not already surfaced via inventory
         const invNames = new Set(invMatches.map(i => i.name.toLowerCase()));
         const prodMatches = this._products
             .filter(p => p.name.toLowerCase().includes(ql) && !invNames.has(p.name.toLowerCase()))
-            .map(p => ({ source: 'prod', id: p.id, name: p.name,
-                         category: this._categoryGroceryId(p.category_id),
-                         notes: p.notes || '', photo: p.image_url || '',
-                         brand: p.brand || '' }));
+            .map(p => ({
+                source: 'prod', id: p.id, productId: p.id,
+                name: p.name, brand: p.brand || '',
+                category: this._categoryGroceryId(p.category_id),
+                photo: p.image_url || '',
+            }));
 
         const matches = [...invMatches, ...prodMatches].slice(0, 6);
         if (!matches.length) { sug.innerHTML = ''; return; }
@@ -1988,13 +2008,19 @@ export class PantryApp {
                 const m = matches[parseInt(el.dataset.sugIdx)];
                 if (!m) return;
                 overlay.querySelector('#pantryItemName').value     = m.name;
-                overlay.querySelector('#pantryItemAmount').value   = m.defaultAmount || '';
-                overlay.querySelector('#pantryItemUnit').value     = m.defaultUnit   || '';
-                overlay.querySelector('#pantryItemCategory').value = m.category      || 'other';
-                overlay.querySelector('#pantryItemNotes').value    = m.notes         || '';
-                const fulfBtns = overlay.querySelectorAll('.pantry-fulfillment-btn');
-                fulfBtns.forEach(b => b.classList.toggle('active', b.dataset.ful === (m.defaultFulfillment || 'curbside')));
+                overlay.querySelector('#pantryItemBrand').value    = m.brand || '';
+                overlay.querySelector('#pantryItemCategory').value = m.category || 'other';
                 if (m.photo) { this._editItemPhoto = m.photo; this._updateItemPhotoPreview(overlay); }
+                // Track the linked product so the save handler can pass productId
+                // and prevent the backend from auto-creating a duplicate. Cleared
+                // when the user types again (see name-input handler).
+                this._pickedItemProductId = m.productId || null;
+                this._pickedItemSnapshot  = {
+                    name:     m.name,
+                    brand:    m.brand || '',
+                    category: m.category || 'other',
+                    photo:    m.photo || '',
+                };
                 sug.innerHTML = '';
             });
         });
