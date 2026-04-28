@@ -99,8 +99,10 @@ export class PantryApp {
         // All products from DB (used for name autocomplete)
         this._products = [];
 
-        // Inventory tab view state
-        this._invViewMode  = 'audit';   // 'audit' | 'grid'
+        // Inventory tab view state — view mode persists across reloads so
+        // the user's preference (audit list vs grid) is remembered.
+        const savedView    = (typeof localStorage !== 'undefined' && localStorage.getItem('fc_inv_view_mode')) || '';
+        this._invViewMode  = (savedView === 'audit' || savedView === 'grid') ? savedView : 'audit';
         this._invLocId     = null;      // null = All, else location.id
 
         // Catalog tab state
@@ -611,10 +613,11 @@ export class PantryApp {
             });
         });
 
-        // View toggle
+        // View toggle — persist the choice so reloads keep the user's preference
         body.querySelectorAll('.inv-view-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 this._invViewMode = btn.dataset.view;
+                try { localStorage.setItem('fc_inv_view_mode', this._invViewMode); } catch {}
                 this._renderPantryTab(body);
             });
         });
@@ -906,8 +909,9 @@ export class PantryApp {
 
     /** Bind interactive controls on the rendered inventory container. */
     _bindInvControls(container) {
-        // +/− step buttons
-        container.querySelectorAll('.inv-step-btn').forEach(btn => {
+        // +/− step buttons (audit + grid share handler logic).
+        // Grid card uses .inv-gc-step-btn; audit / status buttons use .inv-step-btn.
+        container.querySelectorAll('.inv-step-btn, .inv-gc-step-btn, .inv-status-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const id     = btn.dataset.id;
                 const action = btn.dataset.action;
@@ -1633,8 +1637,16 @@ export class PantryApp {
             } else {
                 await this.store.createProduct(payload);
             }
-            const freshProds = await this.store.fetchProducts();
+            // Refresh both products AND inventory: an edit to name/brand/photo/
+            // description (notes) shows up on inventory cards via the JOIN, so
+            // the inventory cache needs to refetch too — the store doesn't
+            // auto-emit on product PATCH.
+            const [freshProds, freshInv] = await Promise.all([
+                this.store.fetchProducts(),
+                this.store.fetchInventory(),
+            ]);
             if (freshProds) { this._catalogProds = freshProds; this._products = freshProds; }
+            if (freshInv)   { this._inventory = freshInv; }
             close();
             this._render();
         });
