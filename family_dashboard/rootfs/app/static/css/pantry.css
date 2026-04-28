@@ -2057,13 +2057,14 @@ select.pantry-modal-input { cursor: pointer; }
 }
 .inv-items-grid {
     display:               grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap:                   14px;
-    padding:               16px;
-    align-items:           start;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-auto-rows:        1fr;            /* consistent heights across the row */
+    gap:                   16px;
+    padding:               18px;
+    align-items:           stretch;
 }
 @media (max-width: 768px) {
-    .inv-items-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; padding: 10px; }
+    .inv-items-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; padding: 12px; }
 }
 
 /* ── Cards ── */
@@ -2132,11 +2133,231 @@ select.pantry-modal-input { cursor: pointer; }
 
 .inv-staple-dot { position: absolute; top: 6px; left: 6px; font-size: 13px; }
 
+/* Audit row description (sub-name under product name) */
+.inv-card-desc { font-size: 11px; color: var(--color-text); opacity: 0.8; margin-bottom: 2px; line-height: 1.2; }
+
 /* Name row + badge */
 .inv-card-name-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 2px; }
 .inv-card-name  { font-size: 14px; font-weight: 700; color: var(--color-text); line-height: 1.2; }
 .inv-card-brand { font-size: 11px; color: var(--color-muted); margin-bottom: 6px;
                   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Tactile grid card (v1.9.8) — based on the "Lemonade Drink Mix" mockup
+   Photo + name + description + status pill on top, brand below, big stepper
+   in the middle, two action buttons at the bottom. Outer height equalised
+   across the row by .inv-items-grid grid-auto-rows: 1fr.
+   ───────────────────────────────────────────────────────────────────────── */
+
+.inv-grid-card {
+    background:    var(--color-bg);
+    border:        3px solid var(--inv-accent, var(--theme-primary));
+    border-radius: 16px;
+    padding:       16px;
+    display:       flex;
+    flex-direction: column;
+    gap:           12px;
+    transition:    transform 0.15s, box-shadow 0.15s;
+    box-shadow:    0 1px 3px rgba(0,0,0,0.05);
+}
+.inv-grid-card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.08); }
+
+/* Header: thumb + titles */
+.inv-gc-head {
+    display:     flex;
+    align-items: flex-start;
+    gap:         12px;
+}
+.inv-gc-thumb {
+    position:      relative;
+    width:         60px;
+    height:        76px;
+    flex-shrink:   0;
+    border-radius: 8px;
+    overflow:      hidden;
+    background:    var(--color-surface);
+    display:       flex;
+    align-items:   center;
+    justify-content: center;
+}
+.inv-gc-thumb img { width: 100%; height: 100%; object-fit: contain; padding: 4px; }
+.inv-gc-thumb-emoji { font-size: 36px; }
+.inv-gc-staple { position: absolute; top: 2px; right: 2px; font-size: 12px; }
+
+.inv-gc-titles {
+    flex:           1;
+    min-width:      0;
+    display:        flex;
+    flex-direction: column;
+    gap:            2px;
+}
+.inv-gc-name {
+    font-size:    18px;
+    font-weight:  800;
+    color:        var(--color-text);
+    line-height:  1.15;
+    word-break:   break-word;
+}
+.inv-gc-desc {
+    font-size:    14px;
+    color:        var(--color-text);
+    opacity:      0.75;
+    line-height:  1.2;
+    margin-bottom: 2px;
+}
+/* Status pill is reused .inv-badge — bump padding for the larger card */
+.inv-gc-titles .inv-badge {
+    padding:       4px 14px;
+    font-size:     11px;
+    margin-top:    2px;
+    align-self:    flex-start;
+    border-radius: var(--r-pill);
+}
+
+/* Brand line */
+.inv-gc-brand {
+    font-size:    14px;
+    color:        var(--color-text);
+    opacity:      0.85;
+    margin:       0 2px;
+    line-height:  1.3;
+    word-break:   break-word;
+}
+.inv-gc-brand-spacer { height: 0; }   /* keeps layout consistent when brand absent */
+
+/* Control area (stepper / status / percent) — fills remaining vertical space
+   so cards align cleanly when grid-auto-rows: 1fr stretches them */
+.inv-gc-control {
+    flex:           1;
+    display:        flex;
+    flex-direction: column;
+    justify-content: center;
+    gap:            6px;
+    margin:         4px 0;
+}
+
+/* Stepper (Count / Multipack) */
+.inv-gc-stepper {
+    display:               grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap:                   8px;
+    align-items:           stretch;
+}
+.inv-gc-step-btn {
+    height:       64px;
+    border:       1.5px solid var(--color-border);
+    border-radius: 12px;
+    background:   var(--color-bg);
+    font-size:    34px;
+    font-weight:  300;
+    color:        var(--color-text);
+    cursor:       pointer;
+    transition:   all 0.12s;
+    display:      flex;
+    align-items:  center;
+    justify-content: center;
+}
+.inv-gc-step-btn:hover  { border-color: var(--inv-accent); color: var(--inv-accent); }
+.inv-gc-step-btn:active { transform: scale(0.96); }
+.inv-gc-count {
+    height:        64px;
+    border-radius: 12px;
+    background:    var(--color-surface);
+    border:        1.5px solid var(--color-border);
+    display:       flex;
+    align-items:   center;
+    justify-content: center;
+}
+.inv-gc-count-val {
+    font-size:    34px;
+    font-weight:  700;
+    color:        var(--color-text);
+    line-height:  1;
+}
+.inv-gc-count-meta {
+    text-align: center;
+    font-size:  11px;
+    color:      var(--color-muted);
+    min-height: 14px;
+}
+.inv-gc-thresh { color: var(--color-muted); }
+.inv-gc-dotgrid-wrap {
+    display:        flex;
+    justify-content: center;
+    margin-top:     2px;
+}
+
+/* Status toggle (3-button) */
+.inv-gc-status-toggle {
+    display: flex;
+    border:        1.5px solid var(--color-border);
+    border-radius: 12px;
+    overflow:      hidden;
+}
+.inv-gc-status-toggle .inv-status-btn {
+    flex:          1;
+    padding:       16px 8px;
+    font-size:     12px;
+    font-weight:   800;
+    letter-spacing: 0.05em;
+    border:        none;
+    background:    var(--color-bg);
+    color:         var(--color-muted);
+    cursor:        pointer;
+    transition:    all 0.15s;
+    border-right:  1px solid var(--color-border);
+}
+.inv-gc-status-toggle .inv-status-btn:last-child { border-right: none; }
+.inv-gc-status-toggle .inv-sb-out.active  { background: #fee2e2; color: #b91c1c; }
+.inv-gc-status-toggle .inv-sb-low.active  { background: #fef3c7; color: #92400e; }
+.inv-gc-status-toggle .inv-sb-ok.active   { background: #dcfce7; color: #15803d; }
+
+/* Percent control */
+.inv-gc-percent { display: flex; flex-direction: column; gap: 8px; }
+.inv-gc-percent .inv-fill-bar-wrap { height: 14px; border-radius: 7px; }
+.inv-gc-percent .inv-fill-bar      { border-radius: 7px; }
+.inv-gc-pct-row {
+    display:     flex;
+    align-items: center;
+    gap:         8px;
+}
+.inv-gc-pct-row .inv-gc-step-btn { height: 44px; font-size: 24px; }
+.inv-gc-percent .inv-pct-slider  { flex: 1; }
+.inv-gc-pct-val {
+    text-align: center;
+    font-size:  16px;
+    font-weight: 700;
+    color:      var(--color-text);
+}
+
+/* Footer actions */
+.inv-gc-actions {
+    display:               grid;
+    grid-template-columns: 1fr 1fr;
+    gap:                   10px;
+    margin-top:            auto;
+}
+.inv-gc-action-btn {
+    padding:       10px 16px;
+    border-radius: var(--r-pill);
+    border:        1.5px solid var(--color-border);
+    background:    var(--color-bg);
+    font-size:     14px;
+    font-weight:   600;
+    color:         var(--color-text);
+    cursor:        pointer;
+    transition:    all 0.12s;
+}
+.inv-gc-action-btn:hover  { border-color: var(--inv-accent); color: var(--inv-accent); }
+.inv-gc-action-btn:active { transform: scale(0.97); }
+.inv-gc-action-btn.list.on-list {
+    background:    var(--inv-accent-dim, #dcfce7);
+    border-color:  var(--inv-accent);
+    color:         var(--inv-accent);
+}
+
+/* Old grid-card layer — keep visual but defer to new card when they coexist
+   (new mode uses .inv-grid-card without the .inv-card prefix) */
 
 /* Status badge */
 .inv-badge {

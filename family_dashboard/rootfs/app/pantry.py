@@ -1116,6 +1116,7 @@ def _inv_with_product(c: sqlite3.Connection, where: str = '', args: tuple = ()) 
           p.units_per_pack AS product_units_per_pack,
           p.count_unit     AS product_count_unit,
           p.is_staple      AS product_is_staple,
+          p.notes          AS product_notes,
           (SELECT barcode FROM barcode_catalog
            WHERE product_id = p.id
            ORDER BY cached_at DESC LIMIT 1) AS upc

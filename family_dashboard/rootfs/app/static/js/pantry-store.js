@@ -522,6 +522,10 @@ export class PantryStore {
             locationId:   row.location_id || null,
             name:         row.product_name || row.name || '',
             brand:        row.product_brand || '',
+            // Product-level descriptor (e.g. "Pitcher Packets", "64oz Bottle").
+            // Stored in products.notes; rendered as a sub-name under the product
+            // name on inventory cards. Distinct from per-row inventory notes.
+            description:  row.product_notes || '',
             category:     this._pantryIdForCategoryId(row.product_category_id),
             stockLevel,
             qty,
