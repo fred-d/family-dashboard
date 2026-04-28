@@ -3034,3 +3034,95 @@ select.pantry-modal-input { cursor: pointer; }
     color:      var(--color-muted);
     text-align: center;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Merge Duplicates modal (Catalog tab → Find Duplicates)
+   ───────────────────────────────────────────────────────────────────────── */
+
+.pantry-action-warn {
+    background:    #fef3c7;
+    color:         #92400e;
+    border-color:  #fcd34d;
+}
+.pantry-action-warn:hover { background: #fde68a; }
+
+.pantry-dupe-modal { max-width: 640px; }
+.pantry-dupe-intro {
+    font-size:  13px;
+    color:      var(--color-muted);
+    margin:     0 0 16px;
+    line-height: 1.5;
+}
+.pantry-dupe-group {
+    border:        1px solid var(--color-border);
+    border-radius: 10px;
+    padding:       12px;
+    margin-bottom: 12px;
+    background:    var(--color-surface);
+}
+.pantry-dupe-group-header {
+    display:        flex;
+    justify-content: space-between;
+    align-items:    center;
+    margin-bottom:  4px;
+}
+.pantry-dupe-group-name  { font-size: 16px; font-weight: 700; color: var(--color-text); }
+.pantry-dupe-group-count { font-size: 11px; color: var(--color-muted); background: var(--color-bg); padding: 2px 8px; border-radius: 999px; }
+.pantry-dupe-group-hint  { font-size: 12px; color: var(--color-muted); margin-bottom: 8px; }
+
+.pantry-dupe-options {
+    display:        flex;
+    flex-direction: column;
+    gap:            6px;
+    margin-bottom:  10px;
+}
+.pantry-dupe-option {
+    display:       flex;
+    align-items:   center;
+    gap:           10px;
+    padding:       8px;
+    border:        1.5px solid var(--color-border);
+    border-radius: 8px;
+    cursor:        pointer;
+    transition:    all 0.12s;
+    background:    var(--color-bg);
+}
+.pantry-dupe-option:hover { border-color: var(--theme-primary); }
+.pantry-dupe-option.selected {
+    border-color: var(--theme-primary);
+    background:   color-mix(in srgb, var(--theme-primary) 8%, transparent);
+}
+.pantry-dupe-option input[type="radio"] { flex-shrink: 0; }
+.pantry-dupe-thumb {
+    width:  44px; height: 44px;
+    border-radius: 8px;
+    background:    var(--color-bg);
+    display:       flex; align-items: center; justify-content: center;
+    overflow:      hidden;
+    flex-shrink:   0;
+}
+.pantry-dupe-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.pantry-dupe-emoji     { font-size: 24px; }
+.pantry-dupe-info      { flex: 1; min-width: 0; }
+.pantry-dupe-name      { font-size: 14px; font-weight: 600; color: var(--color-text); }
+.pantry-dupe-meta {
+    display:     flex;
+    gap:         8px;
+    align-items: center;
+    font-size:   11px;
+    color:       var(--color-muted);
+    margin-top:  2px;
+}
+.pantry-dupe-meta .muted { font-style: italic; }
+.pantry-dupe-pill {
+    background:    var(--color-surface);
+    border:        1px solid var(--color-border);
+    border-radius: 999px;
+    padding:       1px 7px;
+}
+
+.pantry-dupe-group-actions {
+    display:         flex;
+    justify-content: flex-end;
+    gap:             8px;
+}

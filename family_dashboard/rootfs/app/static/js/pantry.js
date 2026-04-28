@@ -873,6 +873,12 @@ export class PantryApp {
                            value="${this._esc(this._catalogSearch)}">
                 </div>
                 <div class="pantry-catalog-actions">
+                    ${this._catalogDuplicateGroups().length > 0
+                        ? `<button class="pantry-action-btn pantry-action-warn" id="pantryFindDupes"
+                                   title="Catalog has products with the same name">
+                               🔀 Merge Duplicates (${this._catalogDuplicateGroups().length})
+                           </button>`
+                        : ''}
                     <button class="pantry-action-btn" id="pantryUpcLookupToggle" title="Temporary UPC analysis tool">
                         🔍 UPC Lookup
                     </button>
@@ -925,6 +931,10 @@ export class PantryApp {
             this._renderCatalogTab(body);
         });
 
+        body.querySelector('#pantryFindDupes')?.addEventListener('click', () => {
+            this._openMergeDuplicatesModal();
+        });
+
         body.querySelector('#upcLookupGo')?.addEventListener('click', () => this._doUpcRawLookup(body));
         body.querySelector('#upcLookupBarcode')?.addEventListener('keydown', e => {
             if (e.key === 'Enter') this._doUpcRawLookup(body);
@@ -935,6 +945,187 @@ export class PantryApp {
             card.addEventListener('click', () => {
                 const p = this._catalogProds.find(x => x.id === pid);
                 if (p) this._openProductModal(p);
+            });
+        });
+    }
+
+    /**
+     * Group catalog products by case-insensitive name. Returns an array of
+     * groups where each group has size > 1 — i.e. real duplicates that need
+     * merging. Empty array means nothing to clean up (button stays hidden).
+     */
+    _catalogDuplicateGroups() {
+        const map = new Map();
+        for (const p of (this._catalogProds || [])) {
+            const key = (p.name || '').trim().toLowerCase();
+            if (!key) continue;
+            if (!map.has(key)) map.set(key, []);
+            map.get(key).push(p);
+        }
+        return [...map.values()].filter(g => g.length > 1);
+    }
+
+    /**
+     * Score a duplicate candidate to pick the best survivor by default.
+     * Higher score = keep this one. Items with a real photo, more linked
+     * UPCs, and more inventory presence all rise to the top.
+     */
+    _dupeProductScore(p) {
+        let s = 0;
+        if (p.image_url) s += 10;
+        s += Number(p.barcode_count || 0) * 5;
+        if (p.brand) s += 2;
+        // Older entries (created first) win ties — keeps the oldest as canonical
+        return s;
+    }
+
+    _openMergeDuplicatesModal() {
+        const groups = this._catalogDuplicateGroups();
+        if (groups.length === 0) return;
+
+        // Pre-select a survivor for each group (the highest-scoring product)
+        this._mergeKeepers = {};
+        groups.forEach((grp, i) => {
+            const sorted = [...grp].sort((a, b) =>
+                this._dupeProductScore(b) - this._dupeProductScore(a) ||
+                String(a.created_at || '').localeCompare(String(b.created_at || ''))
+            );
+            this._mergeKeepers[i] = sorted[0].id;
+        });
+
+        const overlay = document.getElementById('pantryItemOverlay');
+        if (!overlay) return;
+        overlay.classList.add('active');
+        this._renderMergeDuplicatesModal();
+    }
+
+    _renderMergeDuplicatesModal() {
+        const overlay = document.getElementById('pantryItemOverlay');
+        if (!overlay) return;
+        const groups = this._catalogDuplicateGroups();
+
+        if (groups.length === 0) {
+            // Nothing left to merge — auto-close
+            overlay.classList.remove('active');
+            overlay.innerHTML = '';
+            this._render();
+            return;
+        }
+
+        const groupsHTML = groups.map((grp, gi) => {
+            const keepId = this._mergeKeepers[gi] || grp[0].id;
+            return `
+                <div class="pantry-dupe-group" data-group="${gi}">
+                    <div class="pantry-dupe-group-header">
+                        <span class="pantry-dupe-group-name">${this._esc(grp[0].name)}</span>
+                        <span class="pantry-dupe-group-count">${grp.length} copies</span>
+                    </div>
+                    <div class="pantry-dupe-group-hint">Pick the one to keep — the rest will merge into it.</div>
+                    <div class="pantry-dupe-options">
+                        ${grp.map(p => `
+                            <label class="pantry-dupe-option${p.id === keepId ? ' selected' : ''}">
+                                <input type="radio" name="dupe-${gi}" value="${p.id}" ${p.id === keepId ? 'checked' : ''}>
+                                <div class="pantry-dupe-thumb">
+                                    ${p.image_url
+                                        ? `<img src="${this._esc(p.image_url)}" alt="">`
+                                        : `<span class="pantry-dupe-emoji">${catOf(p.category_id || 'other').emoji}</span>`}
+                                </div>
+                                <div class="pantry-dupe-info">
+                                    <div class="pantry-dupe-name">${this._esc(p.name)}</div>
+                                    <div class="pantry-dupe-meta">
+                                        ${p.brand ? `<span>${this._esc(p.brand)}</span>` : '<span class="muted">— no brand —</span>'}
+                                        <span class="pantry-dupe-pill">${p.barcode_count || 0} UPC${p.barcode_count === 1 ? '' : 's'}</span>
+                                    </div>
+                                </div>
+                            </label>
+                        `).join('')}
+                    </div>
+                    <div class="pantry-dupe-group-actions">
+                        <button class="pantry-modal-cancel" data-group="${gi}" data-action="skip">Skip</button>
+                        <button class="pantry-modal-save" data-group="${gi}" data-action="merge">Merge ${grp.length - 1} into selected</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        overlay.innerHTML = `
+            <div class="pantry-modal pantry-dupe-modal" role="dialog" aria-label="Merge Duplicates">
+                <div class="pantry-modal-header">
+                    <div class="pantry-modal-title">🔀 Merge Duplicate Products</div>
+                    <button class="pantry-modal-close" id="dupeClose">×</button>
+                </div>
+                <div class="pantry-modal-body">
+                    <p class="pantry-dupe-intro">
+                        Found ${groups.length} group${groups.length === 1 ? '' : 's'} of products with the same name.
+                        For each, pick the one to <strong>keep</strong> — the others will be merged into it
+                        (inventory rows summed by location, UPCs and history re-pointed).
+                    </p>
+                    ${groupsHTML}
+                </div>
+                <div class="pantry-modal-footer">
+                    <button class="pantry-modal-cancel" id="dupeDone">Done</button>
+                </div>
+            </div>
+        `;
+
+        const close = () => {
+            overlay.classList.remove('active');
+            overlay.innerHTML = '';
+            this._mergeKeepers = {};
+            this._render();
+        };
+        overlay.querySelector('#dupeClose')?.addEventListener('click', close);
+        overlay.querySelector('#dupeDone')?.addEventListener('click', close);
+        overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+        // Radio change → update local keeper selection (no re-render of full modal,
+        // just toggle the selected class on the labels)
+        overlay.querySelectorAll('input[type="radio"]').forEach(r => {
+            r.addEventListener('change', () => {
+                const gi = Number(r.name.split('-')[1]);
+                this._mergeKeepers[gi] = r.value;
+                // Re-style this group's options
+                const grpEl = overlay.querySelector(`.pantry-dupe-group[data-group="${gi}"]`);
+                grpEl?.querySelectorAll('.pantry-dupe-option').forEach(opt => {
+                    const input = opt.querySelector('input');
+                    opt.classList.toggle('selected', input?.checked);
+                });
+            });
+        });
+
+        // Skip / Merge per group
+        overlay.querySelectorAll('button[data-action]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const gi = Number(btn.dataset.group);
+                const action = btn.dataset.action;
+                if (action === 'skip') {
+                    // Hide just this group; keep others visible
+                    const grpEl = overlay.querySelector(`.pantry-dupe-group[data-group="${gi}"]`);
+                    if (grpEl) grpEl.style.display = 'none';
+                    return;
+                }
+                if (action === 'merge') {
+                    btn.disabled = true;
+                    btn.textContent = 'Merging…';
+                    const groupsNow = this._catalogDuplicateGroups();
+                    const grp = groupsNow[gi];
+                    if (!grp) return;
+                    const keepId = this._mergeKeepers[gi];
+                    const losers = grp.filter(p => p.id !== keepId);
+                    try {
+                        for (const loser of losers) {
+                            await this.store.mergeProduct(loser.id, keepId);
+                        }
+                        // Refresh products list and re-render the modal
+                        const fresh = await this.store.fetchProducts();
+                        if (fresh) { this._catalogProds = fresh; this._products = fresh; }
+                        this._renderMergeDuplicatesModal();
+                    } catch (err) {
+                        console.warn('[Merge] failed:', err);
+                        btn.disabled = false;
+                        btn.textContent = `Merge ${grp.length - 1} into selected`;
+                    }
+                }
             });
         });
     }
@@ -1028,12 +1219,15 @@ export class PantryApp {
         const locOpts   = `<option value="">— None —</option>` +
             locs.map(l => `<option value="${l.id}" ${p?.default_location_id === l.id ? 'selected' : ''}>${this._esc(l.name || l.id)}</option>`).join('');
 
-        // Derive current tracking type from product fields
+        // Derive current tracking type from product fields. New products
+        // default to 'status' — the most common case for a household pantry
+        // (fresh items, anything you don't really count).
         const pCU  = p?.count_unit || 'item';
-        const initTT = pCU === 'status'        ? 'status'
-                     : p?.tracks_percent        ? 'percent'
-                     : (p?.units_per_pack ?? 1) > 1 ? 'multipack'
-                     :                           'count';
+        const initTT = !p                              ? 'status'
+                     : pCU === 'status'                ? 'status'
+                     : p?.tracks_percent                ? 'percent'
+                     : (p?.units_per_pack ?? 1) > 1     ? 'multipack'
+                     :                                    'count';
         const initCU = (pCU === 'status' || pCU === '%') ? 'item' : pCU;
         const sel = (v) => initTT === v ? 'selected' : '';
 
