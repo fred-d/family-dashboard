@@ -1481,9 +1481,20 @@ export class PantryApp {
                                    value="${p?.min_threshold ?? (initTT === 'percent' ? 25 : 1)}">
                         </div>
                         <div class="pantry-modal-field">
-                            <label class="pantry-modal-label">Default unit</label>
+                            <label class="pantry-modal-label">
+                                Purchase unit <span class="pantry-modal-label-hint">(how it's bought — e.g. \"2 bottles\")</span>
+                            </label>
                             <input class="pantry-modal-input" id="prodDefaultUnit" type="text"
+                                   list="prodDefaultUnitList"
                                    placeholder="count" value="${this._esc(p?.default_unit || 'count')}">
+                            <datalist id="prodDefaultUnitList">
+                                <option value="count"><option value="each">
+                                <option value="bag"><option value="box"><option value="pack">
+                                <option value="case"><option value="carton"><option value="container">
+                                <option value="bottle"><option value="can"><option value="jar"><option value="jug">
+                                <option value="lb"><option value="oz"><option value="gallon"><option value="quart"><option value="pint">
+                                <option value="bunch"><option value="head"><option value="loaf"><option value="dozen">
+                            </datalist>
                         </div>
                     </div>
 
@@ -2223,17 +2234,23 @@ export class PantryApp {
         const prefill = this._prefillInv;
         const isNew   = !inv;
 
-        // Resolve pack-size info from the linked catalog product so the qty
-        // input can show the boxes→individual-units conversion.
-        const pid      = inv?.productId || prefill?.productId || null;
-        const prod     = pid ? (this._products?.find(p => p.id === pid) ?? null) : null;
-        const unitsPer = Math.max(1, Number(prod?.units_per_pack ?? 1));
+        // Resolve track type from linked catalog product so the qty field
+        // can adapt: status items hide it, percent shows %, count shows
+        // a plain integer matching the tile.
+        const pid       = inv?.productId || prefill?.productId || null;
+        const prod      = pid ? (this._products?.find(p => p.id === pid) ?? null) : null;
         const countUnit = (prod?.count_unit || 'item').trim();
-        const packLabel = unitsPer > 1 ? `packs (${unitsPer} ${countUnit}s each)` : countUnit + 's';
-        // For editing, show current qty converted back to packs when possible.
-        const currentPacks = isNew ? 1 : (unitsPer > 1
-            ? Math.max(1, Math.round((inv?.qty ?? 1) / unitsPer))
-            : (inv?.qty ?? 1));
+        const trackType = countUnit === 'status' ? 'status'
+                        : prod?.tracks_percent     ? 'percent'
+                        :                            'count';
+        // Initial value: percent shows percent_remaining, count shows raw qty
+        const initVal = trackType === 'percent'
+            ? (inv?.percent != null ? inv.percent : 100)
+            : (isNew ? 1 : (inv?.qty ?? 1));
+        // Field label per type — count/multipack both display individual units now
+        const qtyLabel = trackType === 'percent'
+            ? 'Percent remaining'
+            : (countUnit !== 'item' ? `Qty (${countUnit}s)` : 'Qty (items)');
 
         overlay.innerHTML = `
             <div class="pantry-modal" role="dialog" aria-modal="true">
@@ -2263,15 +2280,16 @@ export class PantryApp {
                                value="${this._esc(inv?.name || prefill?.name || '')}" placeholder="e.g. Organic Whole Milk">
                     </div>
 
-                    <!-- Qty added — pack-aware when product has units_per_pack > 1 -->
-                    <div class="pantry-modal-field">
-                        <label>${unitsPer > 1 ? `How many ${packLabel} are you adding?` : `Qty (${countUnit}s)`}</label>
-                        <input type="number" id="pantryInvQtyPacks" class="pantry-modal-input"
-                               min="1" step="1" value="${currentPacks}">
-                        ${unitsPer > 1
-                            ? `<div class="pantry-inv-qty-calc" id="pantryInvQtyCalc">= ${currentPacks * unitsPer} ${countUnit}s</div>`
-                            : ''}
-                    </div>
+                    <!-- Qty / percent — hidden for Status items (no number to track) -->
+                    ${trackType === 'status' ? '' : `
+                        <div class="pantry-modal-field">
+                            <label>${qtyLabel}</label>
+                            <input type="number" id="pantryInvQty" class="pantry-modal-input"
+                                   min="0"
+                                   ${trackType === 'percent' ? 'max="100" step="5"' : 'step="1"'}
+                                   value="${initVal}">
+                        </div>
+                    `}
 
                     <div class="pantry-modal-field">
                         <label>Category</label>
@@ -2354,16 +2372,6 @@ export class PantryApp {
             });
         });
 
-        // Live-update the packs → individual units calculation
-        const qtyInput = overlay.querySelector('#pantryInvQtyPacks');
-        const qtyCalc  = overlay.querySelector('#pantryInvQtyCalc');
-        if (qtyInput && qtyCalc && unitsPer > 1) {
-            qtyInput.addEventListener('input', () => {
-                const packs = Math.max(0, parseInt(qtyInput.value) || 0);
-                qtyCalc.textContent = `= ${packs * unitsPer} ${countUnit}s`;
-            });
-        }
-
         const close = () => { overlay.classList.remove('active'); this._editInvItem = null; this._editInvPhoto = null; };
         overlay.querySelector('#pantryInvClose')?.addEventListener('click', close);
         overlay.querySelector('#pantryInvCancel')?.addEventListener('click', close);
@@ -2373,11 +2381,9 @@ export class PantryApp {
             const name = nameInput?.value.trim();
             if (!name) { nameInput?.focus(); return; }
             const fulfillmentActive = overlay.querySelector('.pantry-fulfillment-btn.active');
-            const packs   = Math.max(1, parseInt(qtyInput?.value) || 1);
-            const totalQty = packs * unitsPer;
+            const qtyInput = overlay.querySelector('#pantryInvQty');
             const data = {
                 name,
-                qty:                totalQty,
                 category:           catSelect?.value || detectCategory(name),
                 defaultFulfillment: fulfillmentActive?.dataset.ful || 'curbside',
                 isStaple:           overlay.querySelector('#pantryInvStaple')?.checked ?? false,
@@ -2388,6 +2394,18 @@ export class PantryApp {
                 productId:          prefill?.productId || null,
                 stockLevel:         prefill?.stockLevel || null,
             };
+            // Per-track-type qty handling. Status hides the input entirely;
+            // we leave qty alone (or default to 2/ok for new items).
+            if (trackType === 'status') {
+                if (!this._editInvItem) data.qty = 2;     // new status item starts ok
+            } else if (trackType === 'percent') {
+                const pct = Math.max(0, Math.min(100, parseFloat(qtyInput?.value) || 0));
+                data.percent = pct;
+                if (!this._editInvItem) data.qty = 1;     // dummy bottle count
+            } else {
+                // count / multipack — raw individual units (no pack math)
+                data.qty = Math.max(0, parseInt(qtyInput?.value) || 0);
+            }
             if (this._editInvItem) {
                 this._updateInventoryItem(this._editInvItem.id, data);
             } else {
@@ -2828,14 +2846,23 @@ export class PantryApp {
         const overlay = document.getElementById('pantryItemOverlay');
         if (!overlay) return;
 
-        // Enrich each item with current inventory qty for context
+        // Enrich each item with current inventory qty for context.
+        // Resolve track type so Status / Percent items can hide the "Got N"
+        // input — those tracking modes don't take a numeric purchase amount.
         const rows = purchased.map(item => {
             const invItem = this._inventory.find(inv =>
                 (item.productId && inv.productId === item.productId) ||
                 inv.name.toLowerCase() === item.name.toLowerCase()
             );
+            const prod = item.productId
+                ? this._products?.find(p => p.id === item.productId)
+                : null;
+            const cu = (prod?.count_unit || invItem?.unit || 'item').trim();
+            const trackType = cu === 'status' ? 'status'
+                            : prod?.tracks_percent ? 'percent'
+                            :                        'count';
             const unit = (item.unit && item.unit !== 'count') ? item.unit : 'unit';
-            return { item, invItem, unit };
+            return { item, invItem, unit, trackType };
         });
 
         overlay.innerHTML = `
@@ -2850,6 +2877,30 @@ export class PantryApp {
                 <div class="pantry-modal-body pantry-putaway-body">
                     ${rows.map((r, idx) => {
                         const cat = catOf(r.item.category);
+                        // Inventory line wording per track type
+                        const invLine = !r.invItem
+                            ? `<div class="pantry-putaway-inv new">New to inventory</div>`
+                            : r.trackType === 'status'
+                                ? `<div class="pantry-putaway-inv">In inventory · status: ${(r.invItem.stockLevel || 'ok').toUpperCase()}</div>`
+                            : r.trackType === 'percent'
+                                ? `<div class="pantry-putaway-inv">In inventory: ${r.invItem.percent ?? 0}%</div>`
+                                : `<div class="pantry-putaway-inv">In inventory: ${r.invItem.qty} ${r.invItem.unit !== 'item' ? r.invItem.unit + (r.invItem.qty !== 1 ? 's' : '') : (r.invItem.qty !== 1 ? 'items' : 'item')}</div>`;
+                        // Qty input only for count items — Status & Percent
+                        // don't take a purchase amount (status flips to ok,
+                        // percent resets to 100 on backend put-away).
+                        const qtyInput = (r.trackType === 'count')
+                            ? `<div class="pantry-putaway-qty">
+                                   <label>Got</label>
+                                   <input type="number" class="pantry-putaway-qty-input"
+                                          data-idx="${idx}" min="0" step="0.25"
+                                          value="${r.item.qty}">
+                                   <span class="pantry-putaway-unit">${this._esc(r.unit)}</span>
+                               </div>`
+                            : `<div class="pantry-putaway-qty pantry-putaway-noqty">
+                                   <span class="pantry-putaway-restock-hint">
+                                       ${r.trackType === 'status' ? '→ GOOD' : '→ 100%'}
+                                   </span>
+                               </div>`;
                         return `
                         <div class="pantry-putaway-row">
                             ${r.item.photo
@@ -2857,17 +2908,9 @@ export class PantryApp {
                                 : `<div class="pantry-putaway-thumb no-photo">${cat.emoji}</div>`}
                             <div class="pantry-putaway-info">
                                 <div class="pantry-putaway-name">${this._esc(r.item.name)}</div>
-                                ${r.invItem
-                                    ? `<div class="pantry-putaway-inv">In inventory: ${r.invItem.qty} ${r.invItem.unit}</div>`
-                                    : `<div class="pantry-putaway-inv new">New to inventory</div>`}
+                                ${invLine}
                             </div>
-                            <div class="pantry-putaway-qty">
-                                <label>Got</label>
-                                <input type="number" class="pantry-putaway-qty-input"
-                                       data-idx="${idx}" min="0" step="0.25"
-                                       value="${r.item.qty}">
-                                <span class="pantry-putaway-unit">${this._esc(r.unit)}</span>
-                            </div>
+                            ${qtyInput}
                         </div>`;
                     }).join('')}
                 </div>
@@ -2888,6 +2931,16 @@ export class PantryApp {
 
         overlay.querySelector('#pantryPutAwayConfirm')?.addEventListener('click', () => {
             const items = rows.map((r, idx) => {
+                if (r.trackType === 'status') {
+                    // Restock signal — backend adds 2 so any existing qty
+                    // (0 = out, 1 = low) clears the threshold and sticks at ok.
+                    return { id: r.item.id, received_qty: 2 };
+                }
+                if (r.trackType === 'percent') {
+                    // Bumps a nominal "one bottle" into the qty slot; we also
+                    // refresh percent_remaining → 100 below after put-away.
+                    return { id: r.item.id, received_qty: 1, _resetPercent: r.invItem?.id || null };
+                }
                 const qtyInput = overlay.querySelector(`.pantry-putaway-qty-input[data-idx="${idx}"]`);
                 return {
                     id:           r.item.id,
@@ -2902,7 +2955,20 @@ export class PantryApp {
     async _confirmPutAway(items) {
         this._setSyncStatus('saving');
         try {
-            await this.store.putAway(items);
+            // Strip the frontend-only _resetPercent flag before sending and
+            // remember which inventory rows need a follow-up percent reset.
+            const percentResets = items
+                .filter(i => i._resetPercent)
+                .map(i => i._resetPercent);
+            const cleanItems = items.map(({ _resetPercent, ...rest }) => rest);
+            await this.store.putAway(cleanItems);
+
+            // Percent items: reset to 100 on the (possibly newly-merged) inv
+            // row so the tile shows "full bottle" right after put-away.
+            for (const invId of percentResets) {
+                try { await this.store.updateInventoryItem(invId, { percent: 100 }); }
+                catch (err) { console.warn('[PantryApp] percent reset failed:', err.message); }
+            }
             this._setSyncStatus('saved', 3000);
         } catch {
             this._setSyncStatus('offline', 3000);
@@ -3037,6 +3103,7 @@ export class PantryApp {
         // so all surfaces (catalog, shopping list, inventory) stay in sync.
         const patch = {};
         if ('qty'        in changes) patch.qty        = changes.qty;
+        if ('percent'    in changes) patch.percent    = changes.percent;
         if ('locationId' in changes) patch.locationId = changes.locationId;
         if ('isStaple'   in changes) patch.isStaple   = changes.isStaple;
 

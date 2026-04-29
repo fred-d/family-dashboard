@@ -2350,21 +2350,21 @@ select.pantry-modal-input { cursor: pointer; }
 .inv-gc-percent .inv-fill-bar-wrap { height: 12px; border-radius: 6px; }
 .inv-gc-percent .inv-fill-bar      { border-radius: 6px; transition: width 0.2s ease; }
 
-/* Footer actions */
+/* Footer actions — compact, secondary to the stepper */
 .inv-gc-actions {
     display:               grid;
     grid-template-columns: 1fr 1fr;
-    gap:                   8px;
+    gap:                   6px;
     margin-top:            auto;
 }
 .inv-gc-action-btn {
-    padding:       8px 12px;
+    padding:       5px 8px;
     border-radius: var(--r-pill);
-    border:        1.5px solid var(--color-border);
+    border:        1px solid var(--color-border);
     background:    var(--color-bg);
-    font-size:     13px;
+    font-size:     11px;
     font-weight:   600;
-    color:         var(--color-text);
+    color:         var(--color-muted);
     cursor:        pointer;
     transition:    border-color 0.12s, color 0.12s, background 0.12s;
     -webkit-tap-highlight-color: transparent;
@@ -3109,6 +3109,18 @@ select.pantry-modal-input { cursor: pointer; }
 }
 
 .pantry-putaway-unit { font-size: 11px; color: var(--color-muted); }
+
+/* Put-away "no qty" placeholder for Status / Percent items */
+.pantry-putaway-noqty { min-width: 70px; justify-content: flex-end; }
+.pantry-putaway-restock-hint {
+    font-size:     12px;
+    font-weight:   700;
+    color:         var(--theme-primary);
+    background:    color-mix(in srgb, var(--theme-primary) 10%, transparent);
+    padding:       4px 10px;
+    border-radius: var(--r-pill);
+    white-space:   nowrap;
+}
 .pantry-lightbox-close:hover { background: rgba(0,0,0,0.8); }
 
 /* ─────────────────────────────────────────────────────────────────────────
