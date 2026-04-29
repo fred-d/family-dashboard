@@ -16,8 +16,8 @@ import { MealPlanner } from './meals.js';
 import { MealStore } from './meal-store.js';
 import { RecipeApp } from './recipes.js';
 import { RecipeStore } from './recipe-store.js';
-import { PantryApp } from './pantry.js?v=35';
-import { PantryStore } from './pantry-store.js?v=20';
+import { PantryApp } from './pantry.js?v=36';
+import { PantryStore } from './pantry-store.js?v=21';
 import {
     openSettings, closeSettings,
     loadCalendarColors, saveDefaultView,

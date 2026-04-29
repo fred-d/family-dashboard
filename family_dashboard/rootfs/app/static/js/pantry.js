@@ -113,6 +113,13 @@ export class PantryApp {
         this._editProductBarcodes = []; // barcodes on the product being edited
         this._upcLookupOpen  = false;
 
+        // Manage modal (Categories & Locations)
+        this._manageSection = 'categories'; // 'categories' | 'locations'
+        this._manageEditId  = null;
+        this._manageEditVal = '';
+        this._manageAddOpen = false;
+        this._manageAddVal  = { name: '', color: '#4a90e2', icon: '' };
+
         // Edit modals
         this._editItem        = null;
         this._editItemPhoto   = null;
@@ -1043,6 +1050,9 @@ export class PantryApp {
                                🔀 Merge Duplicates (${this._catalogDuplicateGroups().length})
                            </button>`
                         : ''}
+                    <button class="pantry-action-btn" id="pantryManageBtn" title="Manage categories and locations">
+                        ⚙ Manage
+                    </button>
                     <button class="pantry-action-btn" id="pantryUpcLookupToggle" title="Temporary UPC analysis tool">
                         🔍 UPC Lookup
                     </button>
@@ -1088,6 +1098,10 @@ export class PantryApp {
 
         body.querySelector('#pantryAddProduct')?.addEventListener('click', () => {
             this._openProductModal(null);
+        });
+
+        body.querySelector('#pantryManageBtn')?.addEventListener('click', () => {
+            this._openManageModal();
         });
 
         body.querySelector('#pantryUpcLookupToggle')?.addEventListener('click', () => {
@@ -3722,6 +3736,283 @@ export class PantryApp {
         const h = Math.floor(m / 60);
         if (h < 24)  return `${h}h ago`;
         return `${Math.floor(h / 24)}d ago`;
+    }
+
+    // ── MANAGE MODAL (Categories & Locations) ─────────────────────────────────
+
+    _openManageModal() {
+        this._manageSection = 'categories';
+        this._manageEditId  = null;
+        this._manageEditVal = '';
+        this._manageAddOpen = false;
+        this._manageAddVal  = { name: '', color: '#4a90e2', icon: '' };
+        const overlay = document.getElementById('pantryItemOverlay');
+        if (!overlay) return;
+        overlay.classList.add('active');
+        this._renderManageModal();
+    }
+
+    _renderManageModal() {
+        const overlay = document.getElementById('pantryItemOverlay');
+        if (!overlay) return;
+
+        const section      = this._manageSection;
+        const categories   = this.store.config?.categories || [];
+        const locations    = this.store.config?.locations  || [];
+        const items        = section === 'categories' ? categories : locations;
+        const defaultColor = section === 'categories' ? '#888888' : '#4a90e2';
+        const addVal       = this._manageAddVal;
+
+        overlay.innerHTML = `
+            <div class="pantry-modal pantry-manage-modal">
+                <div class="pantry-modal-header">
+                    <span class="pantry-modal-title">⚙ Manage</span>
+                    <button class="pantry-modal-close" id="pantryManageClose">✕</button>
+                </div>
+
+                <div class="pantry-manage-tabs">
+                    <button class="pantry-manage-tab${section === 'categories' ? ' active' : ''}" data-sec="categories">
+                        🏷 Categories
+                        <span class="pantry-tab-count">${categories.length}</span>
+                    </button>
+                    <button class="pantry-manage-tab${section === 'locations' ? ' active' : ''}" data-sec="locations">
+                        📍 Locations
+                        <span class="pantry-tab-count">${locations.length}</span>
+                    </button>
+                </div>
+
+                <div class="pantry-manage-list" id="pantryManageList">
+                    ${items.length === 0
+                        ? `<div class="pantry-manage-empty">No ${section} yet — add one below.</div>`
+                        : items.map(item => this._manageItemRowHTML(item)).join('')
+                    }
+                </div>
+
+                <div class="pantry-manage-add-row">
+                    ${this._manageAddOpen ? `
+                        <div class="pantry-manage-add-form">
+                            <input type="color" class="pantry-manage-color-pick" id="manageAddColor"
+                                   value="${this._esc(addVal.color || defaultColor)}" title="Pick color">
+                            <input type="text" class="pantry-manage-name-input" id="manageAddName"
+                                   placeholder="Name…" value="${this._esc(addVal.name)}"
+                                   maxlength="64">
+                            <button class="pantry-action-btn primary" id="manageAddSave">Add</button>
+                            <button class="pantry-action-btn" id="manageAddCancel">Cancel</button>
+                        </div>
+                    ` : `
+                        <button class="pantry-manage-add-btn" id="pantryManageAddOpen">
+                            + Add ${section === 'categories' ? 'Category' : 'Location'}
+                        </button>
+                    `}
+                </div>
+            </div>
+        `;
+
+        const close = () => {
+            overlay.classList.remove('active');
+            overlay.innerHTML = '';
+        };
+        overlay.querySelector('#pantryManageClose')?.addEventListener('click', close);
+        overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+        // Section tabs
+        overlay.querySelectorAll('.pantry-manage-tab').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this._manageSection = btn.dataset.sec;
+                this._manageEditId  = null;
+                this._manageEditVal = '';
+                this._manageAddOpen = false;
+                this._manageAddVal  = { name: '', color: defaultColor, icon: '' };
+                this._renderManageModal();
+            });
+        });
+
+        // Open add form
+        overlay.querySelector('#pantryManageAddOpen')?.addEventListener('click', () => {
+            this._manageAddOpen = true;
+            this._manageAddVal  = { name: '', color: defaultColor, icon: '' };
+            this._renderManageModal();
+            setTimeout(() => overlay.querySelector('#manageAddName')?.focus(), 50);
+        });
+
+        // Add form: track inputs
+        overlay.querySelector('#manageAddName')?.addEventListener('input', e => {
+            this._manageAddVal.name = e.target.value;
+        });
+        overlay.querySelector('#manageAddColor')?.addEventListener('input', e => {
+            this._manageAddVal.color = e.target.value;
+        });
+
+        // Cancel add
+        overlay.querySelector('#manageAddCancel')?.addEventListener('click', () => {
+            this._manageAddOpen = false;
+            this._renderManageModal();
+        });
+
+        // Save add
+        overlay.querySelector('#manageAddSave')?.addEventListener('click', () => this._manageAddSave());
+        overlay.querySelector('#manageAddName')?.addEventListener('keydown', e => {
+            if (e.key === 'Enter')  this._manageAddSave();
+            if (e.key === 'Escape') { this._manageAddOpen = false; this._renderManageModal(); }
+        });
+
+        // Rename buttons
+        overlay.querySelectorAll('.pantry-manage-rename-btn').forEach(btn => {
+            const id = btn.dataset.id;
+            btn.addEventListener('click', () => {
+                const src = section === 'categories' ? categories : locations;
+                this._manageEditId  = id;
+                this._manageEditVal = src.find(x => x.id === id)?.name || '';
+                this._renderManageModal();
+                setTimeout(() => overlay.querySelector(`#manageRename_${CSS.escape(id)}`)?.focus(), 50);
+            });
+        });
+
+        // Rename input live track
+        overlay.querySelectorAll('.pantry-manage-rename-input').forEach(inp => {
+            inp.addEventListener('input', e => { this._manageEditVal = e.target.value; });
+            inp.addEventListener('keydown', e => {
+                if (e.key === 'Enter')  this._manageRenameSave(inp.dataset.id);
+                if (e.key === 'Escape') { this._manageEditId = null; this._manageEditVal = ''; this._renderManageModal(); }
+            });
+        });
+
+        // Rename save / cancel buttons
+        overlay.querySelectorAll('.pantry-manage-rename-save-btn').forEach(btn => {
+            btn.addEventListener('click', () => this._manageRenameSave(btn.dataset.id));
+        });
+        overlay.querySelectorAll('.pantry-manage-rename-cancel-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this._manageEditId  = null;
+                this._manageEditVal = '';
+                this._renderManageModal();
+            });
+        });
+
+        // Color picker change on existing items
+        overlay.querySelectorAll('.pantry-manage-color-pick-existing').forEach(inp => {
+            inp.addEventListener('change', async e => {
+                const id    = inp.dataset.id;
+                const color = e.target.value;
+                try {
+                    if (section === 'categories') await this.store.updateCategory(id, { color });
+                    else                          await this.store.updateLocation(id, { color });
+                    this._renderManageModal();
+                } catch (err) {
+                    this._showToast(`Failed: ${err.message}`, null);
+                }
+            });
+        });
+
+        // Delete buttons
+        overlay.querySelectorAll('.pantry-manage-delete-btn').forEach(btn => {
+            btn.addEventListener('click', () => this._manageDelete(btn.dataset.id));
+        });
+    }
+
+    /** Build the HTML for one item row in the manage list. */
+    _manageItemRowHTML(item) {
+        const isEditing = this._manageEditId === item.id;
+        const color     = item.color || '#888888';
+        const safeid    = this._esc(item.id);
+
+        if (isEditing) {
+            return `
+                <div class="pantry-manage-row pantry-manage-row-editing" data-id="${safeid}">
+                    <label class="pantry-manage-color-wrap" title="Change color">
+                        <span class="pantry-manage-color-dot" style="background:${this._esc(color)}"></span>
+                        <input type="color" class="pantry-manage-color-pick-existing"
+                               data-id="${safeid}" value="${this._esc(color)}">
+                    </label>
+                    <input type="text" class="pantry-manage-rename-input"
+                           id="manageRename_${safeid}" data-id="${safeid}"
+                           value="${this._esc(this._manageEditVal)}" maxlength="64">
+                    <button class="pantry-action-btn primary pantry-manage-rename-save-btn sm"
+                            data-id="${safeid}">Save</button>
+                    <button class="pantry-action-btn pantry-manage-rename-cancel-btn sm"
+                            data-id="${safeid}">✕</button>
+                </div>`;
+        }
+
+        return `
+            <div class="pantry-manage-row" data-id="${safeid}">
+                <label class="pantry-manage-color-wrap" title="Change color">
+                    <span class="pantry-manage-color-dot" style="background:${this._esc(color)}"></span>
+                    <input type="color" class="pantry-manage-color-pick-existing"
+                           data-id="${safeid}" value="${this._esc(color)}">
+                </label>
+                <span class="pantry-manage-item-name">${this._esc(item.name)}</span>
+                <div class="pantry-manage-row-actions">
+                    <button class="pantry-manage-icon-btn pantry-manage-rename-btn"
+                            data-id="${safeid}" title="Rename">✏</button>
+                    <button class="pantry-manage-icon-btn pantry-manage-delete-btn"
+                            data-id="${safeid}" title="Delete">🗑</button>
+                </div>
+            </div>`;
+    }
+
+    async _manageAddSave() {
+        const name  = (this._manageAddVal.name || '').trim();
+        const color = this._manageAddVal.color || '#888888';
+        if (!name) {
+            document.getElementById('manageAddName')?.classList.add('pantry-input-error');
+            document.getElementById('manageAddName')?.focus();
+            return;
+        }
+        try {
+            if (this._manageSection === 'categories') {
+                await this.store.createCategory({ name, color });
+            } else {
+                await this.store.createLocation({ name, color });
+            }
+            this._manageAddOpen = false;
+            this._manageAddVal  = { name: '', color, icon: '' };
+            this._renderManageModal();
+        } catch (err) {
+            this._showToast(`Failed: ${err.message}`, null);
+        }
+    }
+
+    async _manageRenameSave(id) {
+        const name = (this._manageEditVal || '').trim();
+        if (!name) return;
+        try {
+            if (this._manageSection === 'categories') {
+                await this.store.updateCategory(id, { name });
+            } else {
+                await this.store.updateLocation(id, { name });
+            }
+            this._manageEditId  = null;
+            this._manageEditVal = '';
+            this._renderManageModal();
+        } catch (err) {
+            this._showToast(`Failed: ${err.message}`, null);
+        }
+    }
+
+    async _manageDelete(id) {
+        const section = this._manageSection;
+        const src     = section === 'categories'
+            ? (this.store.config?.categories || [])
+            : (this.store.config?.locations  || []);
+        const item    = src.find(x => x.id === id);
+        if (!item) return;
+
+        try {
+            if (section === 'categories') {
+                await this.store.deleteCategory(id);
+            } else {
+                await this.store.deleteLocation(id);
+            }
+            if (this._manageEditId === id) {
+                this._manageEditId  = null;
+                this._manageEditVal = '';
+            }
+            this._renderManageModal();
+        } catch (err) {
+            // Location DELETE returns 409 when inventory items reference it
+            this._showToast(err.message || `Cannot delete "${item.name}"`, null);
+        }
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
