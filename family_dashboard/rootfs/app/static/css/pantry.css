@@ -2236,55 +2236,64 @@ select.pantry-modal-input { cursor: pointer; }
     margin:         4px 0;
 }
 
-/* Stepper (Count / Multipack) */
+/* Stepper (Count / Multipack / Percent) — compact, label inside count box */
 .inv-gc-stepper {
     display:               grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap:                   8px;
+    grid-template-columns: 56px 1fr 56px;
+    gap:                   10px;
     align-items:           stretch;
 }
 .inv-gc-step-btn {
-    height:       64px;
-    border:       1.5px solid var(--color-border);
-    border-radius: 12px;
-    background:   var(--color-bg);
-    font-size:    34px;
-    font-weight:  300;
-    color:        var(--color-text);
-    cursor:       pointer;
-    transition:   all 0.12s;
-    display:      flex;
-    align-items:  center;
-    justify-content: center;
-}
-.inv-gc-step-btn:hover  { border-color: var(--inv-accent); color: var(--inv-accent); }
-.inv-gc-step-btn:active { transform: scale(0.96); }
-.inv-gc-count {
-    height:        64px;
-    border-radius: 12px;
-    background:    var(--color-surface);
+    height:        52px;
     border:        1.5px solid var(--color-border);
+    border-radius: 10px;
+    background:    var(--color-bg);
+    font-size:     24px;
+    font-weight:   400;
+    color:         var(--color-text);
+    cursor:        pointer;
+    transition:    transform 0.06s, border-color 0.12s, color 0.12s;
     display:       flex;
     align-items:   center;
     justify-content: center;
+    user-select:   none;
+}
+.inv-gc-step-btn:hover  { border-color: var(--inv-accent); color: var(--inv-accent); }
+.inv-gc-step-btn:active { transform: scale(0.92); }
+.inv-gc-count {
+    height:        52px;
+    border-radius: 10px;
+    background:    var(--color-surface);
+    border:        1.5px solid var(--color-border);
+    display:       flex;
+    flex-direction: column;
+    align-items:   center;
+    justify-content: center;
+    line-height:   1;
 }
 .inv-gc-count-val {
-    font-size:    34px;
+    font-size:    24px;
     font-weight:  700;
     color:        var(--color-text);
-    line-height:  1;
+}
+.inv-gc-count-label {
+    font-size:    10px;
+    color:        var(--color-muted);
+    margin-top:   2px;
+    text-transform: lowercase;
+    letter-spacing: 0.02em;
 }
 .inv-gc-count-meta {
-    text-align: center;
-    font-size:  11px;
-    color:      var(--color-muted);
-    min-height: 14px;
+    text-align:  center;
+    font-size:   11px;
+    color:       var(--color-muted);
+    margin-top:  4px;
 }
 .inv-gc-thresh { color: var(--color-muted); }
 .inv-gc-dotgrid-wrap {
     display:        flex;
     justify-content: center;
-    margin-top:     2px;
+    margin-top:     6px;
 }
 
 /* Status toggle (3-button) */
@@ -2312,23 +2321,10 @@ select.pantry-modal-input { cursor: pointer; }
 .inv-gc-status-toggle .inv-sb-low.active  { background: #fef3c7; color: #92400e; }
 .inv-gc-status-toggle .inv-sb-ok.active   { background: #dcfce7; color: #15803d; }
 
-/* Percent control */
-.inv-gc-percent { display: flex; flex-direction: column; gap: 8px; }
-.inv-gc-percent .inv-fill-bar-wrap { height: 14px; border-radius: 7px; }
-.inv-gc-percent .inv-fill-bar      { border-radius: 7px; }
-.inv-gc-pct-row {
-    display:     flex;
-    align-items: center;
-    gap:         8px;
-}
-.inv-gc-pct-row .inv-gc-step-btn { height: 44px; font-size: 24px; }
-.inv-gc-percent .inv-pct-slider  { flex: 1; }
-.inv-gc-pct-val {
-    text-align: center;
-    font-size:  16px;
-    font-weight: 700;
-    color:      var(--color-text);
-}
+/* Percent control — fill bar above the shared stepper layout */
+.inv-gc-percent { display: flex; flex-direction: column; gap: 10px; }
+.inv-gc-percent .inv-fill-bar-wrap { height: 12px; border-radius: 6px; }
+.inv-gc-percent .inv-fill-bar      { border-radius: 6px; transition: width 0.2s ease; }
 
 /* Footer actions */
 .inv-gc-actions {
