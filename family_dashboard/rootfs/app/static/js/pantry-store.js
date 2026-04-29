@@ -378,6 +378,55 @@ export class PantryStore {
         return this._send('DELETE', `/api/pantry/items/${id}`);
     }
 
+    // ── Location CRUD ────────────────────────────────────────────────────────
+
+    /** Create a new location. Refreshes config so the UI sees the new entry. */
+    async createLocation(data) {
+        const res = await this._send('POST', '/api/pantry/locations', data);
+        await this.fetchConfig();
+        return res;
+    }
+
+    /** Rename / recolor a location. */
+    async updateLocation(lid, data) {
+        const res = await this._send('PATCH', `/api/pantry/locations/${encodeURIComponent(lid)}`, data);
+        await this.fetchConfig();
+        return res;
+    }
+
+    /**
+     * Delete a location. Backend returns 409 when inventory items still
+     * reference it — the caller should surface that error to the user.
+     */
+    async deleteLocation(lid) {
+        const res = await this._send('DELETE', `/api/pantry/locations/${encodeURIComponent(lid)}`);
+        await this.fetchConfig();
+        return res;
+    }
+
+    // ── Category CRUD ────────────────────────────────────────────────────────
+
+    /** Create a new category. Refreshes config so the UI sees the new entry. */
+    async createCategory(data) {
+        const res = await this._send('POST', '/api/pantry/categories', data);
+        await this.fetchConfig();
+        return res;
+    }
+
+    /** Rename / recolor a category. */
+    async updateCategory(cid, data) {
+        const res = await this._send('PATCH', `/api/pantry/categories/${encodeURIComponent(cid)}`, data);
+        await this.fetchConfig();
+        return res;
+    }
+
+    /** Delete a category (unrestricted on the backend). */
+    async deleteCategory(cid) {
+        const res = await this._send('DELETE', `/api/pantry/categories/${encodeURIComponent(cid)}`);
+        await this.fetchConfig();
+        return res;
+    }
+
     // ── Photos (unchanged from pantry-store) ────────────────────────────────
 
     async uploadPhoto(file, maxPx = 400, quality = 0.82) {
