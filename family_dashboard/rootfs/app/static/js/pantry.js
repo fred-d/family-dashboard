@@ -774,7 +774,7 @@ export class PantryApp {
                         <span class="inv-card-name">${this._esc(inv.name)}</span>
                         ${this._invBadgeHTML(inv)}
                     </div>
-                    ${inv.description ? `<div class="inv-card-desc">${this._esc(inv.description)}</div>` : ''}
+                    ${this._invDescription(inv) ? `<div class="inv-card-desc">${this._esc(this._invDescription(inv))}</div>` : ''}
                     ${inv.brand ? `<div class="inv-card-brand">${this._esc(inv.brand)}</div>` : ''}
 
                     ${this._invCtrlHTML(inv)}
@@ -792,12 +792,26 @@ export class PantryApp {
     }
 
     /**
+     * Resolve description for an inventory item with a defensive fallback to
+     * the cached product list. Backend JOIN exposes p.notes AS product_notes
+     * and the store mirrors that into inv.description, but if the catalog
+     * was edited and the inventory cache is stale, the products list
+     * (refetched on every catalog save) is the authoritative source.
+     */
+    _invDescription(inv) {
+        if (inv.description) return inv.description;
+        const prod = this._products?.find(p => p.id === inv.productId);
+        return prod?.notes || '';
+    }
+
+    /**
      * Tactile grid card. Follows the v1.9.8 mockup: photo + name + description
      * + status pill on top, brand line below, big stepper / status toggle in
      * the middle, "Add to List" + "Edit" footer buttons. All cards in the
      * grid share the same outer height via CSS `grid-auto-rows: 1fr`.
      */
     _invGridCardHTML(inv, { cat, onList, s, sortOrder }) {
+        const desc = this._invDescription(inv);
         return `
         <div class="inv-grid-card inv-status-${s}" data-id="${inv.id}" style="order:${sortOrder}">
 
@@ -811,9 +825,7 @@ export class PantryApp {
                 </div>
                 <div class="inv-gc-titles">
                     <div class="inv-gc-name">${this._esc(inv.name)}</div>
-                    ${inv.description
-                        ? `<div class="inv-gc-desc">${this._esc(inv.description)}</div>`
-                        : ''}
+                    ${desc ? `<div class="inv-gc-desc">${this._esc(desc)}</div>` : ''}
                     ${this._invBadgeHTML(inv)}
                 </div>
             </div>
@@ -842,9 +854,8 @@ export class PantryApp {
     }
 
     /**
-     * Grid-mode tracking control. Same data as `_invCtrlHTML` but laid out
-     * for the larger card: oversized stepper buttons, prominent count, and
-     * a tucked threshold hint.
+     * Grid-mode tracking control. Tactile but compact: 50px square stepper
+     * buttons, count box with a small unit label inside, percent steps by 25.
      */
     _invGridCtrlHTML(inv) {
         const type = this._invTrackType(inv);
@@ -870,31 +881,34 @@ export class PantryApp {
                         <div class="inv-fill-bar" style="width:${Math.max(0,Math.min(100,pct))}%"></div>
                         ${inv.low > 0 ? `<div class="inv-fill-threshold" style="left:${inv.low}%"></div>` : ''}
                     </div>
-                    <div class="inv-gc-pct-row">
-                        <button class="inv-gc-step-btn" data-action="dec-pct" data-id="${inv.id}" data-step="10">−</button>
-                        <input type="range" class="inv-pct-slider" min="0" max="100" step="5"
-                               value="${pct}" data-id="${inv.id}">
-                        <button class="inv-gc-step-btn" data-action="inc-pct" data-id="${inv.id}" data-step="10">+</button>
+                    <div class="inv-gc-stepper">
+                        <button class="inv-gc-step-btn dec" data-action="dec-pct" data-id="${inv.id}" data-step="25">−</button>
+                        <div class="inv-gc-count">
+                            <span class="inv-gc-count-val">${pct}</span>
+                            <span class="inv-gc-count-label">percent</span>
+                        </div>
+                        <button class="inv-gc-step-btn inc" data-action="inc-pct" data-id="${inv.id}" data-step="25">+</button>
                     </div>
-                    <div class="inv-gc-pct-val" id="inv-pct-val-${inv.id}">${pct}%${inv.low > 0 ? ` <span class="inv-gc-thresh">· reorder at ${inv.low}%</span>` : ''}</div>
+                    ${inv.low > 0 ? `<div class="inv-gc-count-meta"><span class="inv-gc-thresh">reorder at ${inv.low}%</span></div>` : ''}
                 </div>`;
         }
 
         // Count (and Count + pack-size aka multipack)
         const isMultipack = inv.unitsPer > 1;
+        const unitLabel   = (inv.unit && inv.unit !== 'item' && inv.unit !== 'status' && inv.unit !== '%')
+            ? `${this._esc(inv.unit)}${inv.qty !== 1 ? 's' : ''}`
+            : (inv.qty === 1 ? 'item' : 'items');
         return `
             <div class="inv-gc-stepper">
                 <button class="inv-gc-step-btn dec" data-action="dec" data-id="${inv.id}">−</button>
                 <div class="inv-gc-count">
                     <span class="inv-gc-count-val">${inv.qty}</span>
+                    <span class="inv-gc-count-label">${unitLabel}</span>
                 </div>
                 <button class="inv-gc-step-btn inc" data-action="inc" data-id="${inv.id}">+</button>
             </div>
-            <div class="inv-gc-count-meta">
-                ${inv.unit && inv.unit !== 'item' ? `<span class="inv-gc-unit">${this._esc(inv.unit)}${inv.qty !== 1 ? 's' : ''}</span>` : ''}
-                ${inv.low > 0 ? `<span class="inv-gc-thresh">· reorder at ${inv.low}</span>` : ''}
-            </div>
             ${isMultipack ? `<div class="inv-gc-dotgrid-wrap">${this._invDotGridHTML(inv)}</div>` : ''}
+            ${inv.low > 0 ? `<div class="inv-gc-count-meta"><span class="inv-gc-thresh">reorder at ${inv.low}</span></div>` : ''}
         `;
     }
 
@@ -911,6 +925,9 @@ export class PantryApp {
     _bindInvControls(container) {
         // +/− step buttons (audit + grid share handler logic).
         // Grid card uses .inv-gc-step-btn; audit / status buttons use .inv-step-btn.
+        // Each click optimistically mutates the local inventory row + re-renders
+        // immediately, then fires the backend PATCH in the background. The SSE
+        // refetch that follows arrives in the same shape so there's no flicker.
         container.querySelectorAll('.inv-step-btn, .inv-gc-step-btn, .inv-status-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const id     = btn.dataset.id;
@@ -919,32 +936,22 @@ export class PantryApp {
                 if (!inv) return;
 
                 if (action === 'inc' || action === 'dec') {
-                    const delta = action === 'inc' ? 1 : -1;
+                    const delta  = action === 'inc' ? 1 : -1;
                     const newQty = Math.max(0, inv.qty + delta);
+                    this._optimisticInvUpdate(id, { qty: newQty });
                     this._updateInventoryItem(id, { qty: newQty });
                 } else if (action === 'set-status') {
                     // Status-type items: qty 0=out, 1=low, 2=ok
                     const qty = Math.max(0, Math.min(2, Number(btn.dataset.qty)));
+                    this._optimisticInvUpdate(id, { qty });
                     this._updateInventoryItem(id, { qty });
                 } else if (action === 'inc-pct' || action === 'dec-pct') {
-                    const step    = Number(btn.dataset.step || 10);
-                    const delta   = action === 'inc-pct' ? step : -step;
-                    const newPct  = Math.max(0, Math.min(100, (inv.percent ?? 0) + delta));
+                    const step   = Number(btn.dataset.step || 25);
+                    const delta  = action === 'inc-pct' ? step : -step;
+                    const newPct = Math.max(0, Math.min(100, (inv.percent ?? 0) + delta));
+                    this._optimisticInvUpdate(id, { percent: newPct });
                     this._setPercent(id, newPct);
                 }
-            });
-        });
-
-        // Percent slider drag
-        container.querySelectorAll('.inv-pct-slider').forEach(slider => {
-            let debounce = null;
-            slider.addEventListener('input', () => {
-                const id  = slider.dataset.id;
-                const pct = Number(slider.value);
-                const valEl = container.querySelector(`#inv-pct-val-${id}`);
-                if (valEl) valEl.textContent = pct + '%';
-                clearTimeout(debounce);
-                debounce = setTimeout(() => this._setPercent(id, pct), 300);
             });
         });
 
@@ -958,6 +965,41 @@ export class PantryApp {
             const inv = this._inventory.find(i => i.id === btn.dataset.id);
             if (inv) btn.addEventListener('click', () => this._addFromInventory(inv));
         });
+    }
+
+    /**
+     * Apply a stepper change locally and re-render immediately so the UI
+     * reflects the new value within a frame, instead of waiting for the
+     * backend round-trip. Stock level is re-derived from the new value
+     * (matching the store's normalizer logic) so badge colour / sort order
+     * update in the same paint.
+     */
+    _optimisticInvUpdate(id, patch) {
+        const inv = this._inventory.find(i => i.id === id);
+        if (!inv) return;
+        if ('qty' in patch)     inv.qty     = patch.qty;
+        if ('percent' in patch) inv.percent = patch.percent;
+
+        const threshold = inv.low || 0;
+        const tt = inv.trackType ||
+            (inv.unit === 'status' ? 'status'
+             : inv.tracksPercent     ? 'percent'
+             : inv.unitsPer > 1      ? 'multipack'
+             :                         'count');
+        inv.stockLevel =
+            tt === 'status'
+                ? (inv.qty <= 0 ? 'out' : inv.qty === 1 ? 'low' : 'ok')
+            : tt === 'percent'
+                ? ((inv.percent ?? 0) <= 0                                 ? 'out'
+                   : (threshold > 0 && (inv.percent ?? 0) <= threshold)    ? 'low'
+                   :                                                         'ok')
+            :   (inv.qty <= 0                              ? 'out'
+                 : (threshold > 0 && inv.qty <= threshold) ? 'low'
+                 :                                           'ok');
+
+        // Re-render the inventory body in place (cheaper than full _render)
+        const body = document.getElementById('pantryBody');
+        if (body && this._tab === 'inventory') this._renderPantryTab(body);
     }
 
     async _setPercent(id, pct) {
