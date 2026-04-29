@@ -753,13 +753,12 @@ export class PantryApp {
         const cat    = catOf(inv.category);
         const onList = this._items.some(i => !i.checked && (i.productId === inv.productId || i.name.toLowerCase() === inv.name.toLowerCase()));
         const s      = inv.stockLevel || 'ok';
-        const sortOrder = s === 'out' ? 0 : s === 'low' ? 1 : 2;
 
-        if (mode === 'grid') return this._invGridCardHTML(inv, { cat, onList, s, sortOrder });
+        if (mode === 'grid') return this._invGridCardHTML(inv, { cat, onList, s });
 
         // Audit mode — dense horizontal list (left border accent + inline ctrl)
         return `
-        <div class="inv-card inv-card-audit inv-status-${s}" data-id="${inv.id}" style="order:${sortOrder}">
+        <div class="inv-card inv-card-audit inv-status-${s}" data-id="${inv.id}">
             <div class="inv-card-inner">
 
                 <div class="inv-card-media">
@@ -810,12 +809,14 @@ export class PantryApp {
      * the middle, "Add to List" + "Edit" footer buttons. All cards in the
      * grid share the same outer height via CSS `grid-auto-rows: 1fr`.
      */
-    _invGridCardHTML(inv, { cat, onList, s, sortOrder }) {
-        const desc = this._invDescription(inv);
+    _invGridCardHTML(inv, { cat, onList, s }) {
+        const desc    = this._invDescription(inv);
+        const locName = (this.store.config?.locations || [])
+            .find(l => l.id === inv.locationId)?.name || '';
         return `
-        <div class="inv-grid-card inv-status-${s}" data-id="${inv.id}" style="order:${sortOrder}">
+        <div class="inv-grid-card inv-status-${s}" data-id="${inv.id}">
 
-            <!-- Header: thumb + titles + status pill -->
+            <!-- Header: thumb + titles + status pill + location chip -->
             <div class="inv-gc-head">
                 <div class="inv-gc-thumb">
                     ${inv.photo
@@ -826,7 +827,10 @@ export class PantryApp {
                 <div class="inv-gc-titles">
                     <div class="inv-gc-name">${this._esc(inv.name)}</div>
                     ${desc ? `<div class="inv-gc-desc">${this._esc(desc)}</div>` : ''}
-                    ${this._invBadgeHTML(inv)}
+                    <div class="inv-gc-pills">
+                        ${this._invBadgeHTML(inv)}
+                        ${locName ? `<span class="inv-gc-loc">📍 ${this._esc(locName)}</span>` : ''}
+                    </div>
                 </div>
             </div>
 
@@ -912,13 +916,16 @@ export class PantryApp {
         `;
     }
 
-    /** Sort inventory: out first, then low, then ok; alpha within tier. */
+    /**
+     * Sort inventory alphabetically by name. Items keep their position when
+     * status changes — the alert banner at the top of the tab calls out
+     * what's running low, so the cards don't need to reshuffle on every
+     * stepper click. Predictable layout > marginally faster scanning.
+     */
     _sortInventory(items) {
-        const order = { out: 0, low: 1, ok: 2 };
-        return [...items].sort((a, b) => {
-            const sd = (order[a.stockLevel] ?? 2) - (order[b.stockLevel] ?? 2);
-            return sd !== 0 ? sd : (a.name || '').localeCompare(b.name || '');
-        });
+        return [...items].sort((a, b) =>
+            (a.name || '').localeCompare(b.name || '')
+        );
     }
 
     /** Bind interactive controls on the rendered inventory container. */
