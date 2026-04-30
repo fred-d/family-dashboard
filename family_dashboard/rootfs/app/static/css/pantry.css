@@ -2313,12 +2313,6 @@ select.pantry-modal-input { cursor: pointer; }
     margin-top:  4px;
 }
 .inv-gc-thresh { color: var(--color-muted); }
-.inv-gc-dotgrid-wrap {
-    display:        flex;
-    justify-content: center;
-    margin-top:     6px;
-}
-
 /* Status toggle (3-button) */
 .inv-gc-status-toggle {
     display: flex;
@@ -2480,29 +2474,6 @@ select.pantry-modal-input { cursor: pointer; }
 .inv-sb-out:hover:not(.active) { background: #fff1f2; }
 .inv-sb-low:hover:not(.active) { background: #fffbeb; }
 .inv-sb-ok:hover:not(.active)  { background: #f0fdf4; }
-
-/* Multi-pack ctrl */
-.inv-ctrl-mp { display: flex; flex-direction: column; gap: 6px; }
-.inv-dot-grid {
-    display:     flex;
-    flex-wrap:   wrap;
-    gap:         3px;
-    align-items: flex-start;
-}
-.inv-dot-group { display: flex; gap: 2px; margin-right: 4px; flex-wrap: wrap; }
-.inv-dot {
-    width: 10px; height: 10px;
-    border-radius: 2px;
-    background:    var(--color-border);
-    transition:    background 0.2s;
-}
-.inv-dot.filled { background: var(--inv-accent, var(--theme-primary)); }
-.inv-dot-overflow { font-size: 11px; color: var(--color-muted); align-self: center; }
-.inv-mp-row {
-    display:     flex;
-    align-items: center;
-    gap:         8px;
-}
 
 /* Percent ctrl */
 .inv-ctrl-pct { display: flex; flex-direction: column; gap: 6px; }

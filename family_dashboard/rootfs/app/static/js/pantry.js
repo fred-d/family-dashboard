@@ -712,17 +712,14 @@ export class PantryApp {
                 </div>`;
         }
 
-        // ── Multipack: dot-grid + step by 1 individual unit ──────────────────
+        // ── Multipack: step by 1 individual unit (same stepper layout as count) ─
         if (type === 'multipack') {
             return `
-                <div class="inv-ctrl inv-ctrl-mp" data-id="${inv.id}" data-units-per="${inv.unitsPer}">
-                    ${this._invDotGridHTML(inv)}
-                    <div class="inv-mp-row">
-                        <button class="inv-step-btn" data-action="dec" data-id="${inv.id}">−</button>
-                        <span class="inv-count-val">${inv.qty}</span>
-                        <span class="inv-count-unit">${inv.unit}${inv.qty !== 1 ? 's' : ''}</span>
-                        <button class="inv-step-btn" data-action="inc" data-id="${inv.id}">+</button>
-                    </div>
+                <div class="inv-ctrl inv-ctrl-count" data-id="${inv.id}">
+                    <button class="inv-step-btn" data-action="dec" data-id="${inv.id}">−</button>
+                    <span class="inv-count-val" id="inv-count-${inv.id}">${inv.qty}</span>
+                    <span class="inv-count-unit">${inv.unit}${inv.qty !== 1 ? 's' : ''}</span>
+                    <button class="inv-step-btn" data-action="inc" data-id="${inv.id}">+</button>
                     ${inv.low > 0 ? `<div class="inv-threshold-hint">Reorder at: ${inv.low} ${inv.unit}s</div>` : ''}
                 </div>`;
         }
@@ -918,7 +915,6 @@ export class PantryApp {
                 </div>
                 <button class="inv-gc-step-btn inc" data-action="inc" data-id="${inv.id}">+</button>
             </div>
-            ${isMultipack ? `<div class="inv-gc-dotgrid-wrap">${this._invDotGridHTML(inv)}</div>` : ''}
             ${inv.low > 0 ? `<div class="inv-gc-count-meta"><span class="inv-gc-thresh">reorder at ${inv.low}</span></div>` : ''}
         `;
     }
@@ -2406,7 +2402,11 @@ export class PantryApp {
                 locationId:         overlay.querySelector('#pantryInvLocation')?.value || null,
                 autoAddToList:      overlay.querySelector('#pantryInvAutoAdd')?.checked ?? false,
                 productId:          prefill?.productId || null,
-                stockLevel:         prefill?.stockLevel || null,
+                // Only pass stockLevel when pre-filling from a scanner/prompt
+                // flow that has a concrete status value. Omitting it (rather
+                // than null) prevents the _updateInventoryItem handler from
+                // mistakenly overwriting the user's manually entered qty.
+                ...(prefill?.stockLevel ? { stockLevel: prefill.stockLevel } : {}),
             };
             // Per-track-type qty handling. Status hides the input entirely;
             // we leave qty alone (or default to 2/ok for new items).
@@ -3122,8 +3122,11 @@ export class PantryApp {
         if ('isStaple'   in changes) patch.isStaple   = changes.isStaple;
 
         // stockLevel is a derived field — translate back into a qty so the
-        // backend's percent/threshold logic keeps working.
-        if ('stockLevel' in changes) {
+        // backend's percent/threshold logic keeps working. Guard against null
+        // explicitly: the edit modal always includes the key but leaves it null
+        // when there's no pre-fill, and a null stockLevel must NOT override the
+        // explicit qty the user typed in the modal.
+        if ('stockLevel' in changes && changes.stockLevel != null) {
             const inv = this._inventory.find(i => i.id === id);
             const threshold = inv?.low ?? 0;
             patch.qty =
