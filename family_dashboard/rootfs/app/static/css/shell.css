@@ -293,51 +293,84 @@ html, body {
 }
 
 @media (max-width: 768px) {
-  /* Full-column layout */
+  /* Full-column layout — two rows only (header + content).
+     The nav is outside .app so it can't be a grid child; it's fixed instead. */
   .app {
     grid-template-columns: 1fr;
-    grid-template-rows: var(--header-h) 1fr var(--mobile-nav-h);
+    grid-template-rows: var(--header-h) 1fr;
     grid-template-areas:
       "header"
-      "content"
-      "mobile-nav";
+      "content";
   }
 
   .sidebar    { display: none !important; }
   .header     { border-radius: 0; padding: 0 var(--sp-4); }
   .header-title { font-size: 18px; }
-  .content    { padding: 4px; }
 
-  /* Mobile bottom nav */
+  /* Reserve space at the bottom of content so nothing scrolls behind the nav */
+  .content {
+    padding: 4px;
+    padding-bottom: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Mobile bottom nav — fixed so it's always anchored to the screen bottom
+     regardless of content height or scroll position. The extra height for the
+     iOS home-indicator safe area is absorbed into the nav's own padding so
+     the tap targets stay in the correct position. */
   .mobile-nav {
-    grid-area: mobile-nav;
+    position: fixed;
+    bottom: 0;
+    left:   0;
+    right:  0;
+    height: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0px));
     display: flex !important;
-    align-items: center;
+    align-items: stretch;         /* buttons fill full nav height — no gap at top */
     justify-content: space-around;
     background: var(--color-white);
     border-top: 2px solid var(--theme-sidebar-border);
     box-shadow: 0 -2px 12px rgba(0,0,0,0.08);
-    padding: 4px 0;
-    z-index: 100;
+    padding: 0 0 env(safe-area-inset-bottom, 0px);
+    z-index: 200;
   }
 
   .mobile-nav-btn {
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: flex-start; /* keep icon+label at top of the stretched button */
     gap: 3px;
-    padding: 6px 12px;
+    padding: 8px 12px 6px;       /* extra top padding replaces old nav padding-top */
     border: none;
     background: transparent;
     cursor: pointer;
     color: #9ca3af;
-    transition: color 0.2s;
+    transition: color 0.2s, background 0.2s;
     flex: 1;
-    border-radius: var(--r-sm);
+    border-radius: 0;
+    position: relative;
   }
   .mobile-nav-btn svg  { width: 24px; height: 24px; stroke: currentColor; stroke-width: 1.5; fill: none; }
   .mobile-nav-btn span { font-size: 10px; font-weight: 600; }
-  .mobile-nav-btn.active { color: var(--theme-primary); }
+
+  /* Active state — mirrors sidebar: accent bar + subtle background tint */
+  .mobile-nav-btn.active {
+    color: var(--theme-primary);
+    background: var(--theme-hover);
+  }
+  .mobile-nav-btn.active::before {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 4px;                  /* match sidebar's 4px left bar */
+    background: var(--theme-primary);
+    border-radius: 4px 4px 0 0;
+  }
+
+  /* Any FABs / floating elements must clear the fixed nav + safe area */
+  .pantry-add-fab,
+  .pantry-list-fabs {
+    bottom: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0px) + 16px);
+  }
 
   /* Settings modal full-screen on mobile */
   .settings-overlay { padding: 0; }
@@ -352,8 +385,6 @@ html, body {
   .pantry-store-item  { min-height: 64px; }
   .pantry-store-check { width: 44px; height: 44px; min-width: 44px; }
 
-  /* Grocery add FAB — ensure it's visible above mobile nav */
-  .pantry-add-fab { bottom: calc(var(--mobile-nav-h) + 16px); }
 }
 
 /* Desktop: hide mobile nav */

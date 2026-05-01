@@ -760,38 +760,110 @@ export class PantryApp {
 
         if (mode === 'grid') return this._invGridCardHTML(inv, { cat, onList, s });
 
-        // Audit mode — dense horizontal list (left border accent + inline ctrl)
+        // Audit mode — uniform-height row: Thumb | Identity | Control | Buttons
+        // Each row has a fixed min-height (72px) so all three tracking types
+        // (status/count/percent) sit at the same visual baseline.
+        const loc = inv.locationId
+            ? (this.store.config?.locations || []).find(l => l.id === inv.locationId)
+            : null;
+
+        const subParts = [];
+        const desc = this._invDescription(inv);
+        if (desc)      subParts.push(this._esc(desc));
+        if (inv.brand) subParts.push(this._esc(inv.brand));
+        if (loc)       subParts.push(`📍 ${this._esc(loc.name)}`);
+
         return `
-        <div class="inv-card inv-card-audit inv-status-${s}" data-id="${inv.id}">
-            <div class="inv-card-inner">
+        <div class="inv-row inv-status-${s}" data-id="${inv.id}">
 
-                <div class="inv-card-media">
-                    ${inv.photo
-                        ? `<img src="${inv.photo}" alt="${this._esc(inv.name)}">`
-                        : `<div class="inv-card-emoji" style="--cat-color:${cat.color}">${cat.emoji}</div>`}
-                    ${inv.isStaple ? `<span class="inv-staple-dot" title="Staple">⭐</span>` : ''}
-                </div>
-
-                <div class="inv-card-info">
-                    <div class="inv-card-name-row">
-                        <span class="inv-card-name">${this._esc(inv.name)}</span>
-                        ${this._invBadgeHTML(inv)}
-                    </div>
-                    ${this._invDescription(inv) ? `<div class="inv-card-desc">${this._esc(this._invDescription(inv))}</div>` : ''}
-                    ${inv.brand ? `<div class="inv-card-brand">${this._esc(inv.brand)}</div>` : ''}
-
-                    ${this._invCtrlHTML(inv)}
-                </div>
-
-                <div class="inv-card-actions">
-                    <button class="inv-card-edit-btn" data-id="${inv.id}" title="Edit">✏️</button>
-                    <button class="inv-card-list-btn${onList ? ' on-list' : ''}" data-id="${inv.id}" title="Add to shopping list">
-                        ${onList ? '✓' : '+'}
-                    </button>
-                </div>
-
+            <div class="inv-row-thumb">
+                ${inv.photo
+                    ? `<img src="${inv.photo}" alt="${this._esc(inv.name)}">`
+                    : `<span class="inv-row-emoji">${cat.emoji}</span>`}
+                ${inv.isStaple ? `<span class="inv-staple-pip" title="Weekly staple"></span>` : ''}
             </div>
+
+            <div class="inv-row-body">
+                <div class="inv-row-headline">
+                    <span class="inv-row-name">${this._esc(inv.name)}</span>
+                    ${this._invBadgeHTML(inv)}
+                </div>
+                ${subParts.length ? `<div class="inv-row-sub">${subParts.join(' · ')}</div>` : ''}
+            </div>
+
+            <div class="inv-row-ctrl">
+                ${this._invAuditCtrlHTML(inv)}
+            </div>
+
+            <div class="inv-row-btns">
+                <button class="inv-row-btn inv-row-edit-btn" data-id="${inv.id}" title="Edit">✏</button>
+                <button class="inv-row-btn inv-row-add-btn${onList ? ' on-list' : ''}"
+                        data-id="${inv.id}" title="${onList ? 'Already on list' : 'Add to list'}">
+                    ${onList ? '✓' : '+'}
+                </button>
+            </div>
+
         </div>`;
+    }
+
+    /**
+     * Compact audit-list control — fits in 2 visual lines inside a 72px row.
+     * Status: 3-button toggle (1 line).
+     * Count:  [−] N unit [+] + threshold hint below.
+     * Percent: thin fill bar + [−] N% [+] + threshold inline.
+     * No range slider — the slider is reserved for the grid card view.
+     */
+    _invAuditCtrlHTML(inv) {
+        const type   = this._invTrackType(inv);
+        const thresh = inv.low > 0;
+
+        if (type === 'status') {
+            const s = inv.stockLevel || 'ok';
+            return `
+                <div class="inv-actl inv-actl-status">
+                    <div class="inv-status-toggle">
+                        <button class="inv-status-btn inv-sb-out${s === 'out' ? ' active' : ''}"
+                                data-action="set-status" data-id="${inv.id}" data-qty="0">REORDER</button>
+                        <button class="inv-status-btn inv-sb-low${s === 'low' ? ' active' : ''}"
+                                data-action="set-status" data-id="${inv.id}" data-qty="1">LOW</button>
+                        <button class="inv-status-btn inv-sb-ok${s === 'ok' ? ' active' : ''}"
+                                data-action="set-status" data-id="${inv.id}" data-qty="2">GOOD</button>
+                    </div>
+                </div>`;
+        }
+
+        if (type === 'percent') {
+            const pct  = inv.percent ?? 0;
+            const barW = Math.max(0, Math.min(100, pct));
+            return `
+                <div class="inv-actl inv-actl-pct">
+                    <div class="inv-actl-bar-wrap">
+                        <div class="inv-actl-bar" style="width:${barW}%"></div>
+                        ${thresh ? `<div class="inv-actl-bar-mark" style="left:${inv.low}%"></div>` : ''}
+                    </div>
+                    <div class="inv-actl-row">
+                        <button class="inv-step-btn" data-action="dec-pct" data-id="${inv.id}" data-step="25">−</button>
+                        <span class="inv-actl-qty">${pct}%</span>
+                        <button class="inv-step-btn" data-action="inc-pct" data-id="${inv.id}" data-step="25">+</button>
+                        ${thresh ? `<span class="inv-actl-hint">↑${inv.low}% min</span>` : ''}
+                    </div>
+                </div>`;
+        }
+
+        // Count / multipack
+        const unitLabel = (inv.unit && inv.unit !== 'item' && inv.unit !== 'status' && inv.unit !== '%')
+            ? `${inv.unit}${inv.qty !== 1 ? 's' : ''}`
+            : (inv.qty === 1 ? 'item' : 'items');
+        return `
+            <div class="inv-actl inv-actl-count">
+                <div class="inv-actl-row">
+                    <button class="inv-step-btn" data-action="dec" data-id="${inv.id}">−</button>
+                    <span class="inv-actl-qty">${inv.qty}</span>
+                    <span class="inv-actl-unit">${unitLabel}</span>
+                    <button class="inv-step-btn" data-action="inc" data-id="${inv.id}">+</button>
+                </div>
+                ${thresh ? `<div class="inv-actl-hint">reorder at ${inv.low}</div>` : ''}
+            </div>`;
     }
 
     /**
@@ -965,13 +1037,14 @@ export class PantryApp {
             });
         });
 
-        // Edit + add-to-list (audit mode uses .inv-card-* classes;
-        // grid mode uses data-action on .inv-gc-action-btn)
-        container.querySelectorAll('.inv-card-edit-btn, .inv-gc-action-btn[data-action="edit"]').forEach(btn => {
+        // Edit + add-to-list buttons.
+        // Audit list: .inv-row-edit-btn / .inv-row-add-btn
+        // Grid cards: data-action attribute on .inv-gc-action-btn
+        container.querySelectorAll('.inv-row-edit-btn, .inv-gc-action-btn[data-action="edit"]').forEach(btn => {
             const inv = this._inventory.find(i => i.id === btn.dataset.id);
             if (inv) btn.addEventListener('click', () => this._openInvModal(inv));
         });
-        container.querySelectorAll('.inv-card-list-btn, .inv-gc-action-btn[data-action="list"]').forEach(btn => {
+        container.querySelectorAll('.inv-row-add-btn, .inv-gc-action-btn[data-action="list"]').forEach(btn => {
             const inv = this._inventory.find(i => i.id === btn.dataset.id);
             if (inv) btn.addEventListener('click', () => this._addFromInventory(inv));
         });
@@ -1049,6 +1122,12 @@ export class PantryApp {
                     <button class="pantry-action-btn" id="pantryManageBtn" title="Manage categories and locations">
                         ⚙ Manage
                     </button>
+                    <button class="pantry-action-btn" id="pantryExportBtn" title="Export catalog to JSON file">
+                        ⬇ Export
+                    </button>
+                    <button class="pantry-action-btn" id="pantryImportBtn" title="Import catalog from JSON file">
+                        ⬆ Import
+                    </button>
                     <button class="pantry-action-btn" id="pantryUpcLookupToggle" title="Temporary UPC analysis tool">
                         🔍 UPC Lookup
                     </button>
@@ -1098,6 +1177,14 @@ export class PantryApp {
 
         body.querySelector('#pantryManageBtn')?.addEventListener('click', () => {
             this._openManageModal();
+        });
+
+        body.querySelector('#pantryExportBtn')?.addEventListener('click', () => {
+            this._exportCatalog();
+        });
+
+        body.querySelector('#pantryImportBtn')?.addEventListener('click', () => {
+            this._importCatalog(body);
         });
 
         body.querySelector('#pantryUpcLookupToggle')?.addEventListener('click', () => {
@@ -2169,29 +2256,40 @@ export class PantryApp {
         if (!q || q.length < 2) { sug.innerHTML = ''; return; }
         const ql = q.toLowerCase();
 
-        // 1. Inventory items — best match (in pantry, has stock info).
-        // Always carry productId so picking links the shopping row to the
-        // catalog product (no duplicate created on save).
-        const invMatches = this._inventory
-            .filter(i => i.name.toLowerCase().includes(ql))
-            .map(i => ({
-                source: 'inv', id: i.id, productId: i.productId,
-                name: i.name, brand: i.brand || '',
-                category: i.category, photo: i.photo || '',
-            }));
+        // Source of truth: the catalog (products table). One catalog entry per
+        // product regardless of how many inventory rows exist for it — so even
+        // if "Grapes" has 2 inventory rows (e.g. two locations), only one
+        // suggestion appears. We then badge it "In Pantry" when any inventory
+        // row links to that product.
+        const matches = this._products
+            .filter(p => p.name.toLowerCase().includes(ql))
+            // Rank: name starts-with the query beats mid-word match
+            .sort((a, b) => {
+                const aStart = a.name.toLowerCase().startsWith(ql) ? 0 : 1;
+                const bStart = b.name.toLowerCase().startsWith(ql) ? 0 : 1;
+                return aStart - bStart || a.name.localeCompare(b.name);
+            })
+            .slice(0, 7)
+            .map(p => {
+                // Check if this product is in the pantry inventory
+                // (pick the best-stocked row when there are multiples)
+                const invRows = this._inventory.filter(i => i.productId === p.id);
+                const stockOrder = { ok: 0, low: 1, out: 2 };
+                const bestInv = invRows.sort((a, b) =>
+                    (stockOrder[a.stockLevel] ?? 3) - (stockOrder[b.stockLevel] ?? 3)
+                )[0] ?? null;
 
-        // 2. Product catalog — items not already surfaced via inventory
-        const invNames = new Set(invMatches.map(i => i.name.toLowerCase()));
-        const prodMatches = this._products
-            .filter(p => p.name.toLowerCase().includes(ql) && !invNames.has(p.name.toLowerCase()))
-            .map(p => ({
-                source: 'prod', id: p.id, productId: p.id,
-                name: p.name, brand: p.brand || '',
-                category: this._categoryGroceryId(p.category_id),
-                photo: p.image_url || '',
-            }));
+                return {
+                    productId:  p.id,
+                    name:       p.name,
+                    brand:      p.brand || '',
+                    category:   this._categoryGroceryId(p.category_id),
+                    photo:      p.image_url || '',
+                    inPantry:   !!bestInv,
+                    stockLevel: bestInv?.stockLevel ?? null,
+                };
+            });
 
-        const matches = [...invMatches, ...prodMatches].slice(0, 6);
         if (!matches.length) { sug.innerHTML = ''; return; }
 
         sug.innerHTML = matches.map((m, idx) => `
@@ -2199,9 +2297,9 @@ export class PantryApp {
                 <span class="pantry-sug-cat">${catOf(m.category).emoji}</span>
                 <span class="pantry-sug-name">${this._esc(m.name)}</span>
                 ${m.brand ? `<span class="pantry-sug-brand">${this._esc(m.brand)}</span>` : ''}
-                ${m.source === 'inv'
-                    ? '<span class="pantry-sug-badge inv">In Pantry</span>'
-                    : '<span class="pantry-sug-badge prod">Saved</span>'}
+                ${m.inPantry
+                    ? `<span class="pantry-sug-badge inv">In Pantry</span>`
+                    : `<span class="pantry-sug-badge prod">Catalog</span>`}
             </div>`).join('');
 
         sug.querySelectorAll('.pantry-item-suggestion').forEach(el => {
@@ -3615,10 +3713,10 @@ export class PantryApp {
         });
     }
 
-    _showToast(message, actionLabel = null, onAction = null) {
+    _showToast(message, actionLabel = null, onAction = null, type = '') {
         document.querySelectorAll('.pantry-toast').forEach(t => t.remove());
         const toast = document.createElement('div');
-        toast.className = 'pantry-toast';
+        toast.className = 'pantry-toast' + (type ? ` pantry-toast--${type}` : '');
         toast.innerHTML = `
             <span class="pantry-toast-msg">${this._esc(message)}</span>
             ${actionLabel ? `<button class="pantry-toast-action">${this._esc(actionLabel)}</button>` : ''}
@@ -3628,8 +3726,12 @@ export class PantryApp {
         const dismiss = () => { toast.classList.add('hiding'); setTimeout(() => toast.remove(), 300); };
         toast.querySelector('.pantry-toast-dismiss')?.addEventListener('click', dismiss);
         toast.querySelector('.pantry-toast-action')?.addEventListener('click', () => { onAction?.(); dismiss(); });
-        setTimeout(dismiss, 5000);
+        setTimeout(dismiss, type === 'ok' ? 6000 : 5000);
         requestAnimationFrame(() => toast.classList.add('show'));
+    }
+
+    _toast(message, type = '') {
+        this._showToast(message, null, null, type);
     }
 
     async _removeInventoryItem(id) {
@@ -3739,6 +3841,72 @@ export class PantryApp {
         const h = Math.floor(m / 60);
         if (h < 24)  return `${h}h ago`;
         return `${Math.floor(h / 24)}d ago`;
+    }
+
+    // ── CATALOG EXPORT / IMPORT ───────────────────────────────────────────────
+
+    async _exportCatalog() {
+        try {
+            const res = await fetch('/api/pantry/export');
+            if (!res.ok) throw new Error(`Server error ${res.status}`);
+            const blob = await res.blob();
+            const stamp = new Date().toISOString().slice(0, 10);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `pantry-catalog-${stamp}.json`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            this._toast('Catalog exported ✓', 'ok');
+        } catch (err) {
+            this._toast(`Export failed: ${err.message}`, 'err');
+        }
+    }
+
+    _importCatalog(body) {
+        const input = document.createElement('input');
+        input.type   = 'file';
+        input.accept = '.json,application/json';
+        input.addEventListener('change', async () => {
+            const file = input.files[0];
+            if (!file) return;
+            let payload;
+            try {
+                payload = JSON.parse(await file.text());
+            } catch {
+                this._toast('Could not read file — is it a valid JSON export?', 'err');
+                return;
+            }
+            if (payload?.version !== 1) {
+                this._toast('Unrecognised export format (expected version 1)', 'err');
+                return;
+            }
+            try {
+                const res = await fetch('/api/pantry/import', {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify(payload),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
+                const { imported: c } = data;
+                this._toast(
+                    `Import complete ✓ — ${c.products} products, ${c.categories} categories, ` +
+                    `${c.locations} locations, ${c.stores} stores, ${c.barcodes} barcodes`,
+                    'ok',
+                );
+                // Refresh catalog data
+                await this._store.fetchConfig();
+                await this._store.fetchProducts();
+                this._catalogProds = this._store.products;
+                this._renderCatalogTab(body);
+            } catch (err) {
+                this._toast(`Import failed: ${err.message}`, 'err');
+            }
+        });
+        input.click();
     }
 
     // ── MANAGE MODAL (Categories & Locations) ─────────────────────────────────

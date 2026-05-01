@@ -2075,6 +2075,159 @@ def _auto_shopping_sync(c: sqlite3.Connection, pid: str):
             c.execute('DELETE FROM shopping_list WHERE id=?', (existing['id'],))
 
 
+# ── Catalog Export / Import ───────────────────────────────────────────────────
+
+@bp.route('/export')
+def api_export():
+    """Dump catalog data (categories, locations, stores, products, barcodes)
+    as a portable JSON file.  Inventory, shopping list and history are excluded
+    — they are instance-specific.  The file can be imported on any install."""
+    c = _conn()
+    data = {
+        'version': 1,
+        'exported_at': _now(),
+        'categories': _rows(c.execute('SELECT * FROM categories ORDER BY sort_order')),
+        'locations':  _rows(c.execute('SELECT * FROM locations  ORDER BY sort_order')),
+        'stores':     _rows(c.execute('SELECT * FROM stores     ORDER BY sort_order')),
+        'products':   _rows(c.execute('SELECT * FROM products   ORDER BY name')),
+        'barcodes':   _rows(c.execute('SELECT * FROM barcode_catalog')),
+    }
+    from flask import Response
+    stamp = datetime.now().strftime('%Y-%m-%d')
+    resp = Response(
+        json.dumps(data, indent=2),
+        mimetype='application/json',
+    )
+    resp.headers['Content-Disposition'] = (
+        f'attachment; filename="pantry-catalog-{stamp}.json"'
+    )
+    return resp
+
+
+@bp.route('/import', methods=['POST'])
+def api_import():
+    """Upsert catalog data from a previously exported JSON file.
+
+    Existing records (matched by id) are updated in-place; new records are
+    inserted.  Dependency order is preserved: categories → locations → stores
+    → products → barcodes.  Returns a summary of row counts imported.
+    """
+    payload = request.get_json(force=True, silent=True)
+    if not payload or payload.get('version') != 1:
+        return jsonify({'error': 'Invalid or missing export file (expected version 1)'}), 400
+
+    c   = _conn()
+    now = _now()
+    counts: dict[str, int] = {}
+
+    # ── Categories ────────────────────────────────────────────────────────────
+    cats = payload.get('categories', [])
+    for row in cats:
+        c.execute(
+            '''INSERT INTO categories (id, name, icon, color, sort_order, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET
+                   name=excluded.name, icon=excluded.icon,
+                   color=excluded.color, sort_order=excluded.sort_order''',
+            (row['id'], row['name'],
+             row.get('icon', 'mdi:tag'), row.get('color', '#888888'),
+             row.get('sort_order', 0),  row.get('created_at', now)),
+        )
+    counts['categories'] = len(cats)
+
+    # ── Locations ─────────────────────────────────────────────────────────────
+    locs = payload.get('locations', [])
+    for row in locs:
+        c.execute(
+            '''INSERT INTO locations (id, name, icon, color, sort_order, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET
+                   name=excluded.name, icon=excluded.icon,
+                   color=excluded.color, sort_order=excluded.sort_order''',
+            (row['id'], row['name'],
+             row.get('icon', 'mdi:food-variant'), row.get('color', '#4a90e2'),
+             row.get('sort_order', 0), row.get('created_at', now)),
+        )
+    counts['locations'] = len(locs)
+
+    # ── Stores ────────────────────────────────────────────────────────────────
+    stores = payload.get('stores', [])
+    for row in stores:
+        c.execute(
+            '''INSERT INTO stores (id, name, icon, color, sort_order, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET
+                   name=excluded.name, icon=excluded.icon,
+                   color=excluded.color, sort_order=excluded.sort_order''',
+            (row['id'], row['name'],
+             row.get('icon', 'mdi:store'), row.get('color', '#555555'),
+             row.get('sort_order', 0), row.get('created_at', now)),
+        )
+    counts['stores'] = len(stores)
+
+    # ── Products ──────────────────────────────────────────────────────────────
+    products = payload.get('products', [])
+    for row in products:
+        c.execute(
+            '''INSERT INTO products (
+                   id, name, brand, category_id, image_url,
+                   default_location_id, default_store_id, default_unit,
+                   min_threshold, typical_shelf_life_days, tracks_percent,
+                   units_per_pack, count_unit, is_staple, notes,
+                   created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               ON CONFLICT(id) DO UPDATE SET
+                   name=excluded.name, brand=excluded.brand,
+                   category_id=excluded.category_id, image_url=excluded.image_url,
+                   default_location_id=excluded.default_location_id,
+                   default_store_id=excluded.default_store_id,
+                   default_unit=excluded.default_unit,
+                   min_threshold=excluded.min_threshold,
+                   typical_shelf_life_days=excluded.typical_shelf_life_days,
+                   tracks_percent=excluded.tracks_percent,
+                   units_per_pack=excluded.units_per_pack,
+                   count_unit=excluded.count_unit,
+                   is_staple=excluded.is_staple,
+                   notes=excluded.notes,
+                   updated_at=excluded.updated_at''',
+            (row['id'], row['name'], row.get('brand', ''),
+             row.get('category_id'), row.get('image_url', ''),
+             row.get('default_location_id'), row.get('default_store_id'),
+             row.get('default_unit', 'count'),
+             row.get('min_threshold', 1), row.get('typical_shelf_life_days'),
+             row.get('tracks_percent', 0), row.get('units_per_pack', 1),
+             row.get('count_unit', 'item'), row.get('is_staple', 0),
+             row.get('notes', ''),
+             row.get('created_at', now), row.get('updated_at', now)),
+        )
+    counts['products'] = len(products)
+
+    # ── Barcodes ──────────────────────────────────────────────────────────────
+    barcodes = payload.get('barcodes', [])
+    for row in barcodes:
+        # Skip barcodes whose product wasn't imported (dangling FK)
+        pid = row.get('product_id')
+        if pid and not c.execute(
+                'SELECT 1 FROM products WHERE id=?', (pid,)).fetchone():
+            continue
+        c.execute(
+            '''INSERT INTO barcode_catalog (barcode, product_id, source, raw_data, cached_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(barcode) DO UPDATE SET
+                   product_id=excluded.product_id,
+                   source=excluded.source,
+                   raw_data=excluded.raw_data,
+                   cached_at=excluded.cached_at''',
+            (row['barcode'], pid,
+             row.get('source', 'import'), row.get('raw_data'),
+             row.get('cached_at', now)),
+        )
+    counts['barcodes'] = len(barcodes)
+
+    _sse_push('inventory', {'type': 'import_done', 'counts': counts})
+    return jsonify({'ok': True, 'imported': counts})
+
+
 # ── Registration hook (called from server.py) ────────────────────────────────
 
 def init(app: Flask, sse_push: Callable[[str, dict], None]):

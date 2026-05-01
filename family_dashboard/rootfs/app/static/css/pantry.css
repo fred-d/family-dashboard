@@ -1784,9 +1784,13 @@ select.pantry-modal-input { cursor: pointer; }
         padding: 12px;
     }
 
-    .pantry-add-fab {
-        bottom: 16px;
+    /* Lift both FABs above the fixed mobile bottom nav */
+    .pantry-add-fab,
+    .pantry-list-fabs {
+        bottom: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0px) + 16px);
         right:  16px;
+    }
+    .pantry-add-fab {
         padding: 12px 18px;
         font-size: 14px;
     }
@@ -2077,37 +2081,252 @@ select.pantry-modal-input { cursor: pointer; }
 }
 .inv-card:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
 
-/* Audit row */
-.inv-card-audit {
-    border-radius: 0;
-    border-left:   0;
-    border-right:  0;
-    border-top:    0;
-    border-bottom: 1px solid var(--color-border);
+/* ── Uniform-height audit rows ─────────────────────────────────────────────
+   Each row is split into 4 fixed zones so all tracking types (status / count /
+   percent) render at the same height regardless of their control complexity.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+.inv-row {
+    display:       flex;
+    align-items:   center;
+    min-height:    72px;
     border-left:   4px solid var(--inv-accent, var(--color-border));
+    border-bottom: 1px solid var(--color-border);
     background:    var(--color-white);
+    transition:    background 0.1s;
 }
-.inv-card-audit .inv-card-inner {
+
+@media (hover: hover) {
+    .inv-row:hover { background: var(--color-surface); }
+}
+
+/* Zone 1 — Thumbnail */
+.inv-row-thumb {
+    width:           56px;
+    height:          56px;
+    flex-shrink:     0;
+    margin:          0 12px 0 12px;
+    border-radius:   10px;
+    overflow:        hidden;
+    background:      var(--color-surface);
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    position:        relative;
+    flex-shrink:     0;
+}
+.inv-row-thumb img { width: 100%; height: 100%; object-fit: contain; }
+.inv-row-emoji     { font-size: 26px; line-height: 1; }
+
+/* Amber staple dot (replaces the ⭐ text that disrupts layout) */
+.inv-staple-pip {
+    position:      absolute;
+    top:           4px;
+    right:         4px;
+    width:         8px;
+    height:        8px;
+    border-radius: 50%;
+    background:    #f59e0b;
+    border:        1.5px solid white;
+}
+
+/* Zone 2 — Identity (name + sub-line) */
+.inv-row-body {
+    flex:         1;
+    min-width:    0;
+    padding-right: 16px;
+}
+.inv-row-headline {
+    display:       flex;
+    align-items:   center;
+    gap:           6px;
+    flex-wrap:     wrap;
+    margin-bottom: 3px;
+}
+.inv-row-name {
+    font-size:   14px;
+    font-weight: 700;
+    color:       var(--color-text);
+    line-height: 1.2;
+}
+.inv-row-sub {
+    font-size:     11px;
+    color:         var(--color-muted);
+    white-space:   nowrap;
+    overflow:      hidden;
+    text-overflow: ellipsis;
+    line-height:   1.3;
+}
+
+/* Zone 3 — Tracking control (fixed width keeps all rows the same height) */
+.inv-row-ctrl {
+    width:        210px;
+    flex-shrink:  0;
+    padding-right: 8px;
+}
+
+/* Zone 4 — Action buttons */
+.inv-row-btns {
+    display:       flex;
+    align-items:   center;
+    gap:           6px;
+    padding-right: 14px;
+    flex-shrink:   0;
+}
+.inv-row-btn {
+    width:         30px;
+    height:        30px;
+    border:        1px solid var(--color-border);
+    border-radius: 7px;
+    background:    transparent;
+    color:         var(--color-muted);
+    font-size:     14px;
+    cursor:        pointer;
+    display:       flex;
+    align-items:   center;
+    justify-content: center;
+    transition:    all 0.12s;
+    -webkit-tap-highlight-color: transparent;
+}
+.inv-row-edit-btn:hover { background: var(--color-surface); color: var(--color-text); }
+.inv-row-add-btn {
+    border-color: var(--inv-accent, var(--theme-primary));
+    color:        var(--inv-accent, var(--theme-primary));
+    font-size:    16px;
+    font-weight:  700;
+}
+@media (hover: hover) {
+    .inv-row-add-btn:hover { background: var(--inv-accent, var(--theme-primary)); color: #fff; }
+}
+.inv-row-add-btn.on-list {
+    background:   var(--inv-accent-dim, #dcfce7);
+    border-color: var(--inv-accent);
+    color:        var(--inv-accent);
+    opacity:      0.75;
+    cursor:       default;
+}
+
+/* ── Audit compact controls ─────────────────────────────────────────────────
+   All three types (status / count / percent) fit in ≤ 2 visible rows so the
+   parent .inv-row never exceeds min-height: 72px.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+.inv-actl { display: flex; flex-direction: column; gap: 4px; }
+
+/* Shared stepper row inside audit ctrl */
+.inv-actl-row {
     display:     flex;
     align-items: center;
-    gap:         12px;
-    padding:     10px 14px;
+    gap:         7px;
 }
-.inv-card-audit .inv-card-media {
-    width:          56px;
-    height:         56px;
-    flex-shrink:    0;
-    border-radius:  10px;
-    overflow:       hidden;
-    background:     var(--color-surface);
-    display:        flex;
-    align-items:    center;
-    justify-content: center;
+
+/* Qty number */
+.inv-actl-qty {
+    font-size:   16px;
+    font-weight: 700;
+    color:       var(--color-text);
+    min-width:   22px;
+    text-align:  center;
 }
-.inv-card-audit .inv-card-media img  { width: 100%; height: 100%; object-fit: contain; }
-.inv-card-audit .inv-card-emoji      { font-size: 28px; }
-.inv-card-audit .inv-card-info       { flex: 1; min-width: 0; }
-.inv-card-audit .inv-card-actions    { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+
+/* Unit label after qty number */
+.inv-actl-unit {
+    font-size: 11px;
+    color:     var(--color-muted);
+}
+
+/* Threshold hint (reorder at N) */
+.inv-actl-hint {
+    font-size:   10px;
+    color:       var(--color-muted);
+    margin-left: auto;
+    white-space: nowrap;
+}
+.inv-actl-count .inv-actl-hint {
+    margin-left: 0;
+    padding-left: 2px;
+}
+
+/* Percent: compact fill bar above the stepper row */
+.inv-actl-pct { gap: 5px; }
+.inv-actl-bar-wrap {
+    position:      relative;
+    height:        6px;
+    background:    var(--color-border);
+    border-radius: 3px;
+    overflow:      visible;
+}
+.inv-actl-bar {
+    height:        100%;
+    background:    var(--inv-accent, var(--theme-primary));
+    border-radius: 3px;
+    transition:    width 0.25s ease;
+    min-width:     4px;
+}
+.inv-actl-bar-mark {
+    position:      absolute;
+    top:           -4px;
+    bottom:        -4px;
+    width:         2px;
+    background:    #f97316;
+    border-radius: 1px;
+    transform:     translateX(-50%);
+}
+
+/* Status toggle already fits in 1 row — no extra overrides needed */
+.inv-actl-status { padding: 2px 0; }
+
+/* ── Inventory list: 2-row grid on narrow screens ──────────────────────────
+   Row 1: [thumb] [name + badge]          [edit + add buttons (stacked)]
+   Row 2: [thumb] [tracking ctrl, full width]
+   This avoids the cramped 4-zone horizontal squeeze on phone widths.
+   ─────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+    .inv-row {
+        display: grid;
+        grid-template-columns: 60px 1fr auto;
+        grid-template-rows: auto auto;
+        grid-template-areas:
+            "thumb body btns"
+            "thumb ctrl ctrl";
+        min-height: auto;
+        padding: 6px 0;
+    }
+    .inv-row-thumb {
+        grid-area:    thumb;
+        width:        44px;
+        height:       44px;
+        margin:       8px 8px 0;
+        align-self:   flex-start;
+        border-radius: 8px;
+    }
+    .inv-row-body {
+        grid-area:     body;
+        padding-right: 4px;
+        padding-top:   6px;
+    }
+    .inv-row-ctrl {
+        grid-area: ctrl;
+        width:     auto;           /* override fixed desktop width */
+        padding:   4px 10px 10px 0;
+    }
+    .inv-row-btns {
+        grid-area:      btns;
+        flex-direction: column;    /* stack edit + add vertically */
+        gap:            4px;
+        padding-right:  10px;
+        align-self:     flex-start;
+        padding-top:    6px;
+    }
+
+    /* Status toggle: stretch across the full ctrl zone */
+    .inv-actl-status .inv-status-toggle { width: 100%; }
+    .inv-actl-status .inv-status-btn    { flex: 1; text-align: center; }
+
+    /* Percent: wrap hint to its own line so the bar isn't squeezed */
+    .inv-actl-pct .inv-actl-row  { flex-wrap: wrap; }
+    .inv-actl-pct .inv-actl-hint { margin-left: 0; flex-basis: 100%; }
+}
 
 /* Grid card */
 .inv-card-grid .inv-card-inner { display: flex; flex-direction: column; }
@@ -2557,6 +2776,8 @@ select.pantry-modal-input { cursor: pointer; }
 }
 .pantry-toast.show    { transform: translateX(-50%) translateY(0); opacity: 1; }
 .pantry-toast.hiding  { transform: translateX(-50%) translateY(80px); opacity: 0; }
+.pantry-toast--ok  { background: #15803d; }
+.pantry-toast--err { background: #b91c1c; }
 .pantry-toast-action  { background: var(--theme-primary); border: none; color: white; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .pantry-toast-dismiss { background: transparent; border: none; color: rgba(255,255,255,0.5); cursor: pointer; font-size: 16px; padding: 0 2px; }
 
