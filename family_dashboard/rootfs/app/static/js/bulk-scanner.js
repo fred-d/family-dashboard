@@ -39,10 +39,15 @@ export class BulkScanner {
     /** Open the bulk scanner. onClose(results) fires when the user taps Done. */
     async open(onClose) {
         if (this._overlay) return;
-        this._onClose = onClose;
-        this._results = [];
-        this._counts  = { added: 0, dup: 0, missed: 0 };
+        this._onClose     = onClose;
+        this._results     = [];
+        this._counts      = { added: 0, dup: 0, missed: 0 };
         this._lastBarcode = null;
+        // Reset transient flags — the previous session may have closed mid-scan
+        // (e.g. user hit Done while the not-found name prompt was open), which
+        // leaves _busy=true and bricks the next session's _handleScan loop.
+        this._busy        = false;
+        this._closing     = false;
         await this._loadLib();
         this._buildOverlay();
         await this._startCamera();
