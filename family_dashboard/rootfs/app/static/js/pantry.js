@@ -23,7 +23,7 @@
  */
 import { isoWeek, weekDates, formatWeekRange } from './utils.js';
 import { BarcodeScanner } from './scanner.js?v=5';
-import { BulkScanner }    from './bulk-scanner.js?v=1';
+import { BulkScanner }    from './bulk-scanner.js?v=2';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 

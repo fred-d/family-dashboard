@@ -462,8 +462,23 @@
     overflow:   hidden;
 }
 .bulk-camera-wrap.bulk-no-camera { flex-basis: 0%; min-height: 0; }
-#bulkScannerQr        { width: 100%; height: 100%; }
-#bulkScannerQr video  { width: 100%; height: 100%; object-fit: cover; }
+
+/* Force html5-qrcode video + its wrapper div to fill the camera-wrap fully.
+   The library applies inline styles, so !important is required. */
+#bulkScannerQr,
+#bulkScannerQr > div { width: 100% !important; height: 100% !important; }
+#bulkScannerQr video {
+    width:      100% !important;
+    height:     100% !important;
+    object-fit: cover !important;
+    display:    block;
+}
+
+/* Hide html5-qrcode's own qrbox decoration (shaded mask + plus crosshair).
+   We render our own brackets + scan line — keeping both is busy. */
+#bulkScannerQr [class*="shaded-region"],
+#bulkScannerQr div[id*="qr-shaded-region"],
+#bulkScannerQr div[style*="border-style"] { display: none !important; }
 
 .bulk-camera-wrap .scanner-corners,
 .bulk-camera-wrap .scanner-hint-text { pointer-events: none; }
@@ -553,11 +568,18 @@
     padding:  10px;
     border-radius: 12px;
 }
+/* The HTML <div hidden> attribute would be overridden by display:flex above
+   without this explicit rule — class specificity wins ties. */
+.bulk-manual-entry[hidden] { display: none !important; }
 .bulk-manual-entry .scanner-input { flex: 1; }
 .bulk-no-camera .bulk-manual-entry {
     position: static;
-    margin: 12px;
+    margin:   12px;
 }
+
+/* Same fix for the name-prompt overlay — display:flex on the parent
+   shouldn't beat the hidden attribute. */
+.bulk-name-prompt[hidden] { display: none !important; }
 
 /* Name-prompt — compact strip across bottom of camera so user can still
    see they're not in scanning mode. Camera is paused while open. */

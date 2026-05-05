@@ -49,10 +49,18 @@ export class BulkScanner {
     }
 
     close() {
-        this._stopCamera();
-        this._overlay?.remove();
-        this._overlay = null;
-        this._onClose?.(this._results, this._counts);
+        // Fire close exactly once even if called twice (e.g. user double-taps).
+        if (this._closing) return;
+        this._closing = true;
+        try { this._stopCamera(); } catch (_) { /* ignore */ }
+        if (this._overlay) {
+            try { this._overlay.remove(); } catch (_) { /* ignore */ }
+            this._overlay = null;
+        }
+        const onClose = this._onClose;
+        this._onClose = null;
+        try { onClose?.(this._results, this._counts); } catch (_) { /* ignore */ }
+        this._closing = false;
     }
 
     // ── Library loading (shared CDN with BarcodeScanner) ──────────────────────
@@ -149,7 +157,11 @@ export class BulkScanner {
         document.body.appendChild(el);
         this._overlay = el;
 
-        el.querySelector('#bulkScannerClose').addEventListener('click', () => this.close());
+        el.querySelector('#bulkScannerClose').addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.close();
+        });
 
         // Manual entry button + handler (in case camera is unavailable)
         const goManual = () => {
