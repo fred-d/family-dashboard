@@ -1619,8 +1619,9 @@ select.pantry-modal-input { cursor: pointer; }
     background:      var(--color-surface);
     border-bottom:   1px solid var(--color-border);
     flex-shrink:     0;
+    flex-wrap:       wrap;             /* allow wrap to multi-row on narrow widths */
 }
-.pantry-catalog-search-wrap { flex: 1; }
+.pantry-catalog-search-wrap { flex: 1; min-width: 200px; }
 .pantry-catalog-search {
     width:        100%;
     padding:      8px 12px;
@@ -1630,7 +1631,20 @@ select.pantry-modal-input { cursor: pointer; }
     background:   var(--color-bg);
     color:        var(--color-text);
 }
-.pantry-catalog-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.pantry-catalog-actions {
+    display:    flex;
+    gap:        8px;
+    flex-wrap:  wrap;                   /* buttons wrap onto a 2nd row below search */
+    flex-shrink: 0;
+}
+
+/* Mobile: search on its own full-width row, buttons wrap underneath */
+@media (max-width: 600px) {
+    .pantry-catalog-search-wrap { flex-basis: 100%; }
+    .pantry-catalog-actions     { width: 100%; }
+    .pantry-catalog-actions .pantry-action-btn { flex: 1 1 calc(50% - 4px); justify-content: center; }
+    .pantry-catalog-actions .pantry-action-btn.primary { flex-basis: 100%; }
+}
 
 /* Product grid */
 .pantry-catalog-grid {
@@ -2136,27 +2150,29 @@ select.pantry-modal-input { cursor: pointer; }
     min-width:    0;
     padding-right: 16px;
 }
-.inv-row-headline {
-    display:       flex;
-    align-items:   center;
-    gap:           6px;
-    flex-wrap:     wrap;
-    margin-bottom: 3px;
-}
 .inv-row-name {
-    font-size:   14px;
-    font-weight: 700;
+    font-size:     14px;
+    font-weight:   700;
+    margin-bottom: 2px;
     color:       var(--color-text);
     line-height: 1.2;
 }
-.inv-row-sub {
+/* Each meta line is single-line with ellipsis truncation. Order:
+   description → brand → location. Each is conditionally rendered. */
+.inv-row-line {
     font-size:     11px;
     color:         var(--color-muted);
+    line-height:   1.35;
     white-space:   nowrap;
     overflow:      hidden;
     text-overflow: ellipsis;
-    line-height:   1.3;
 }
+.inv-row-brand { font-weight: 600; color: var(--color-text); opacity: 0.8; }
+.inv-row-loc   { color: var(--color-muted); }
+
+/* Whole list row is a tap target → cursor + tap highlight cleanup */
+.inv-row { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.inv-row:active { background: var(--color-surface); }
 
 /* Zone 3 — Tracking control (fixed width keeps all rows the same height) */
 .inv-row-ctrl {
@@ -2247,8 +2263,14 @@ select.pantry-modal-input { cursor: pointer; }
     padding-left: 2px;
 }
 
-/* Percent: compact fill bar above the stepper row */
-.inv-actl-pct { gap: 5px; }
+/* Percent: bar inline next to the stepper, flex-filling remaining width */
+.inv-actl-pct { gap: 0; }
+.inv-actl-pct .inv-actl-bar-wrap {
+    flex:          1;
+    min-width:     50px;
+    max-width:     140px;
+    margin:        0 4px;
+}
 .inv-actl-bar-wrap {
     position:      relative;
     height:        6px;
@@ -2323,9 +2345,9 @@ select.pantry-modal-input { cursor: pointer; }
     .inv-actl-status .inv-status-toggle { width: 100%; }
     .inv-actl-status .inv-status-btn    { flex: 1; text-align: center; }
 
-    /* Percent: wrap hint to its own line so the bar isn't squeezed */
-    .inv-actl-pct .inv-actl-row  { flex-wrap: wrap; }
-    .inv-actl-pct .inv-actl-hint { margin-left: 0; flex-basis: 100%; }
+    /* Percent: bar shrinks first when row is tight */
+    .inv-actl-pct .inv-actl-bar-wrap { min-width: 36px; max-width: 110px; }
+    .inv-actl-pct .inv-actl-hint     { font-size: 10px; }
 }
 
 /* Grid card */
