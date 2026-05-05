@@ -209,11 +209,17 @@ export class BulkScanner {
     }
 
     _stopCamera() {
-        if (this._qr) {
-            this._qr.stop().catch(() => {});
-            this._qr.clear().catch(() => {});
-            this._qr = null;
-        }
+        // Detach the reference first so the call site treats us as stopped
+        // even if the actual teardown is still resolving in the background.
+        const qr = this._qr;
+        this._qr = null;
+        if (!qr) return;
+        // Html5Qrcode.clear() throws synchronously if called while a scan
+        // is still running — chain it AFTER stop() resolves, and catch
+        // both async rejections and the (rare) sync throw from clear().
+        qr.stop()
+            .then(() => { try { qr.clear(); } catch (_) { /* ignore */ } })
+            .catch(() => { /* already stopped or never started */ });
     }
 
     _showManualFallback() {
