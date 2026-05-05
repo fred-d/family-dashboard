@@ -1617,6 +1617,111 @@ def _preview_return(barcode: str, source: str, n: dict, tried: list, debug: bool
     return jsonify(body)
 
 
+@bp.route('/scan/quick-add', methods=['POST'])
+def api_scan_quick_add():
+    """
+    Bulk-scan endpoint for rapid catalog building.
+
+    Performs the same cascading UPC lookup as `/scan/<barcode>` but
+    AUTO-PERSISTS the result to the catalog. Returns:
+      - already_in_catalog → existing product (no write)
+      - added              → new product + barcode link created
+      - not_found          → no result from any tier (caller can re-POST
+                             with a `name` override to add manually)
+
+    Body: { "barcode": "012000030840", "name": "(optional override)" }
+    """
+    body = request.get_json() or {}
+    barcode = re.sub(r'\D', '', str(body.get('barcode', '')))
+    name_override = (body.get('name') or '').strip()
+
+    if not _valid_barcode(barcode):
+        return jsonify({'ok': False, 'reason': 'invalid_barcode'}), 400
+
+    c   = _conn()
+    now = _now()
+
+    # ── Already linked? ──────────────────────────────────────────────────────
+    hit = c.execute('''
+        SELECT p.* FROM barcode_catalog b
+        JOIN products p ON p.id = b.product_id
+        WHERE b.barcode = ?
+    ''', (barcode,)).fetchone()
+    if hit:
+        return jsonify({
+            'ok':      True,
+            'status':  'already_in_catalog',
+            'barcode': barcode,
+            'product': dict(hit),
+        })
+
+    # ── Cascade lookup (skipped if user provided a manual name) ──────────────
+    name        = name_override
+    brand       = ''
+    image       = ''
+    category_id = None
+    source      = 'manual' if name_override else None
+
+    if not name_override:
+        for short, host, _label in OFF_DBS:
+            normalized, _msg = _lookup_off_db(host, barcode)
+            if normalized and normalized.get('name'):
+                name        = normalized['name']
+                brand       = normalized.get('brand', '')
+                image       = _https(normalized.get('image', ''))
+                category_id = _guess_category(normalized.get('tags', []), name)
+                source      = short
+                break
+        if not name:
+            normalized, _msg = _lookup_upcitemdb(barcode)
+            if normalized and normalized.get('name'):
+                name        = normalized['name']
+                brand       = normalized.get('brand', '')
+                image       = _https(normalized.get('image', ''))
+                category_id = _guess_category([], name)
+                source      = 'upcitemdb'
+
+    if not name:
+        return jsonify({
+            'ok':      False,
+            'status':  'not_found',
+            'barcode': barcode,
+        })
+
+    # ── Persist new product + barcode link ───────────────────────────────────
+    pid = _uid()
+    c.execute('''
+        INSERT INTO products (
+            id, name, brand, category_id, image_url,
+            default_unit, min_threshold, tracks_percent,
+            units_per_pack, count_unit, is_staple,
+            created_at, updated_at)
+        VALUES (?,?,?,?,?, 'count', 1, 0, 1, 'item', 0, ?, ?)
+    ''', (pid, name, brand, category_id, image, now, now))
+
+    c.execute('''
+        INSERT OR REPLACE INTO barcode_catalog
+          (barcode, product_id, source, raw_data, cached_at)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (barcode, pid, source or 'scan', None, now))
+
+    _sse_push('inventory', {'type': 'catalog'})
+
+    return jsonify({
+        'ok':      True,
+        'status':  'added',
+        'source':  source,
+        'barcode': barcode,
+        'product': {
+            'id':          pid,
+            'name':        name,
+            'brand':       brand,
+            'category_id': category_id,
+            'image_url':   image,
+        },
+    })
+
+
 @bp.route('/upc-raw/<barcode>')
 def api_upc_raw(barcode):
     """

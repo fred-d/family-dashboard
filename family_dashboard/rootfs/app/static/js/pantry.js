@@ -23,6 +23,7 @@
  */
 import { isoWeek, weekDates, formatWeekRange } from './utils.js';
 import { BarcodeScanner } from './scanner.js?v=5';
+import { BulkScanner }    from './bulk-scanner.js?v=1';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -132,6 +133,7 @@ export class PantryApp {
 
         // Scanner
         this._scanner     = new BarcodeScanner();
+        this._bulkScanner = new BulkScanner();
         this._scannerOpen = false;
 
         // Sync
@@ -660,10 +662,10 @@ export class PantryApp {
         return 'count';
     }
 
-    /** Status badge HTML (GOOD / LOW / REORDER). */
+    /** Status badge HTML (FULL / LOW / OUT). */
     _invBadgeHTML(inv) {
         const s = inv.stockLevel || 'ok';
-        const map = { ok: ['inv-badge-good', 'GOOD'], low: ['inv-badge-low', 'LOW'], out: ['inv-badge-out', 'REORDER'] };
+        const map = { ok: ['inv-badge-good', 'FULL'], low: ['inv-badge-low', 'LOW'], out: ['inv-badge-out', 'OUT'] };
         const [cls, label] = map[s] || map.ok;
         return `<span class="inv-badge ${cls}">${label}</span>`;
     }
@@ -703,11 +705,11 @@ export class PantryApp {
                 <div class="inv-ctrl inv-ctrl-status" data-id="${inv.id}">
                     <div class="inv-status-toggle">
                         <button class="inv-status-btn inv-sb-out${s === 'out' ? ' active' : ''}"
-                                data-action="set-status" data-id="${inv.id}" data-qty="0">REORDER</button>
+                                data-action="set-status" data-id="${inv.id}" data-qty="0">Out</button>
                         <button class="inv-status-btn inv-sb-low${s === 'low' ? ' active' : ''}"
-                                data-action="set-status" data-id="${inv.id}" data-qty="1">LOW</button>
+                                data-action="set-status" data-id="${inv.id}" data-qty="1">Low</button>
                         <button class="inv-status-btn inv-sb-ok${s === 'ok' ? ' active' : ''}"
-                                data-action="set-status" data-id="${inv.id}" data-qty="2">GOOD</button>
+                                data-action="set-status" data-id="${inv.id}" data-qty="2">Full</button>
                     </div>
                 </div>`;
         }
@@ -767,11 +769,7 @@ export class PantryApp {
             ? (this.store.config?.locations || []).find(l => l.id === inv.locationId)
             : null;
 
-        const subParts = [];
         const desc = this._invDescription(inv);
-        if (desc)      subParts.push(this._esc(desc));
-        if (inv.brand) subParts.push(this._esc(inv.brand));
-        if (loc)       subParts.push(`📍 ${this._esc(loc.name)}`);
 
         return `
         <div class="inv-row inv-status-${s}" data-id="${inv.id}">
@@ -784,11 +782,10 @@ export class PantryApp {
             </div>
 
             <div class="inv-row-body">
-                <div class="inv-row-headline">
-                    <span class="inv-row-name">${this._esc(inv.name)}</span>
-                    ${this._invBadgeHTML(inv)}
-                </div>
-                ${subParts.length ? `<div class="inv-row-sub">${subParts.join(' · ')}</div>` : ''}
+                <div class="inv-row-name">${this._esc(inv.name)}</div>
+                ${desc      ? `<div class="inv-row-line inv-row-desc">${this._esc(desc)}</div>`        : ''}
+                ${inv.brand ? `<div class="inv-row-line inv-row-brand">${this._esc(inv.brand)}</div>` : ''}
+                ${loc       ? `<div class="inv-row-line inv-row-loc">📍 ${this._esc(loc.name)}</div>` : ''}
             </div>
 
             <div class="inv-row-ctrl">
@@ -796,7 +793,6 @@ export class PantryApp {
             </div>
 
             <div class="inv-row-btns">
-                <button class="inv-row-btn inv-row-edit-btn" data-id="${inv.id}" title="Edit">✏</button>
                 <button class="inv-row-btn inv-row-add-btn${onList ? ' on-list' : ''}"
                         data-id="${inv.id}" title="${onList ? 'Already on list' : 'Add to list'}">
                     ${onList ? '✓' : '+'}
@@ -823,11 +819,11 @@ export class PantryApp {
                 <div class="inv-actl inv-actl-status">
                     <div class="inv-status-toggle">
                         <button class="inv-status-btn inv-sb-out${s === 'out' ? ' active' : ''}"
-                                data-action="set-status" data-id="${inv.id}" data-qty="0">REORDER</button>
+                                data-action="set-status" data-id="${inv.id}" data-qty="0">Out</button>
                         <button class="inv-status-btn inv-sb-low${s === 'low' ? ' active' : ''}"
-                                data-action="set-status" data-id="${inv.id}" data-qty="1">LOW</button>
+                                data-action="set-status" data-id="${inv.id}" data-qty="1">Low</button>
                         <button class="inv-status-btn inv-sb-ok${s === 'ok' ? ' active' : ''}"
-                                data-action="set-status" data-id="${inv.id}" data-qty="2">GOOD</button>
+                                data-action="set-status" data-id="${inv.id}" data-qty="2">Full</button>
                     </div>
                 </div>`;
         }
@@ -837,15 +833,15 @@ export class PantryApp {
             const barW = Math.max(0, Math.min(100, pct));
             return `
                 <div class="inv-actl inv-actl-pct">
-                    <div class="inv-actl-bar-wrap">
-                        <div class="inv-actl-bar" style="width:${barW}%"></div>
-                        ${thresh ? `<div class="inv-actl-bar-mark" style="left:${inv.low}%"></div>` : ''}
-                    </div>
                     <div class="inv-actl-row">
                         <button class="inv-step-btn" data-action="dec-pct" data-id="${inv.id}" data-step="25">−</button>
                         <span class="inv-actl-qty">${pct}%</span>
                         <button class="inv-step-btn" data-action="inc-pct" data-id="${inv.id}" data-step="25">+</button>
-                        ${thresh ? `<span class="inv-actl-hint">↑${inv.low}% min</span>` : ''}
+                        <div class="inv-actl-bar-wrap">
+                            <div class="inv-actl-bar" style="width:${barW}%"></div>
+                            ${thresh ? `<div class="inv-actl-bar-mark" style="left:${inv.low}%"></div>` : ''}
+                        </div>
+                        ${thresh ? `<span class="inv-actl-hint">↑${inv.low}%</span>` : ''}
                     </div>
                 </div>`;
         }
@@ -945,11 +941,11 @@ export class PantryApp {
             return `
                 <div class="inv-gc-status-toggle">
                     <button class="inv-status-btn inv-sb-out${s === 'out' ? ' active' : ''}"
-                            data-action="set-status" data-id="${inv.id}" data-qty="0">REORDER</button>
+                            data-action="set-status" data-id="${inv.id}" data-qty="0">Out</button>
                     <button class="inv-status-btn inv-sb-low${s === 'low' ? ' active' : ''}"
-                            data-action="set-status" data-id="${inv.id}" data-qty="1">LOW</button>
+                            data-action="set-status" data-id="${inv.id}" data-qty="1">Low</button>
                     <button class="inv-status-btn inv-sb-ok${s === 'ok' ? ' active' : ''}"
-                            data-action="set-status" data-id="${inv.id}" data-qty="2">GOOD</button>
+                            data-action="set-status" data-id="${inv.id}" data-qty="2">Full</button>
                 </div>`;
         }
 
@@ -1037,16 +1033,26 @@ export class PantryApp {
             });
         });
 
-        // Edit + add-to-list buttons.
-        // Audit list: .inv-row-edit-btn / .inv-row-add-btn
-        // Grid cards: data-action attribute on .inv-gc-action-btn
-        container.querySelectorAll('.inv-row-edit-btn, .inv-gc-action-btn[data-action="edit"]').forEach(btn => {
+        // Edit (grid only) + add-to-list buttons.
+        // List view: whole row is tappable (handler below); no dedicated edit btn.
+        container.querySelectorAll('.inv-gc-action-btn[data-action="edit"]').forEach(btn => {
             const inv = this._inventory.find(i => i.id === btn.dataset.id);
             if (inv) btn.addEventListener('click', () => this._openInvModal(inv));
         });
         container.querySelectorAll('.inv-row-add-btn, .inv-gc-action-btn[data-action="list"]').forEach(btn => {
             const inv = this._inventory.find(i => i.id === btn.dataset.id);
             if (inv) btn.addEventListener('click', () => this._addFromInventory(inv));
+        });
+
+        // List view: tap anywhere on the row (except buttons / interactive
+        // controls) to open the editor. Replaces the per-row pencil button.
+        container.querySelectorAll('.inv-row').forEach(row => {
+            const inv = this._inventory.find(i => i.id === row.dataset.id);
+            if (!inv) return;
+            row.addEventListener('click', e => {
+                if (e.target.closest('button, a, input, select, [data-action]')) return;
+                this._openInvModal(inv);
+            });
         });
     }
 
@@ -1131,6 +1137,9 @@ export class PantryApp {
                     <button class="pantry-action-btn" id="pantryUpcLookupToggle" title="Temporary UPC analysis tool">
                         🔍 UPC Lookup
                     </button>
+                    <button class="pantry-action-btn" id="pantryBulkScanBtn" title="Rapid catalog building — scan many barcodes in a row">
+                        📦 Bulk Scan
+                    </button>
                     <button class="pantry-action-btn primary" id="pantryAddProduct">
                         + Add Product
                     </button>
@@ -1185,6 +1194,10 @@ export class PantryApp {
 
         body.querySelector('#pantryImportBtn')?.addEventListener('click', () => {
             this._importCatalog(body);
+        });
+
+        body.querySelector('#pantryBulkScanBtn')?.addEventListener('click', () => {
+            this._openBulkScan(body);
         });
 
         body.querySelector('#pantryUpcLookupToggle')?.addEventListener('click', () => {
@@ -3907,6 +3920,30 @@ export class PantryApp {
             }
         });
         input.click();
+    }
+
+    // ── BULK SCAN (rapid catalog building) ────────────────────────────────────
+
+    _openBulkScan(body) {
+        this._bulkScanner.open(async (results, counts) => {
+            // Refresh catalog from server so all newly-added products appear
+            try {
+                await this._store.fetchProducts();
+                this._catalogProds = this._store.products;
+                if (this._tab === 'catalog') this._renderCatalogTab(body);
+            } catch (err) {
+                console.warn('[BulkScan] Refresh failed:', err);
+            }
+            // Final summary toast
+            const total = counts.added + counts.dup + counts.missed;
+            if (total === 0) return;
+            const parts = [];
+            if (counts.added)  parts.push(`${counts.added} new`);
+            if (counts.dup)    parts.push(`${counts.dup} already in catalog`);
+            if (counts.missed) parts.push(`${counts.missed} unknown`);
+            this._toast(`Scan session: ${parts.join(' · ')}`,
+                        counts.added > 0 ? 'ok' : '');
+        });
     }
 
     // ── MANAGE MODAL (Categories & Locations) ─────────────────────────────────
