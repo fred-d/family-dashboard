@@ -625,12 +625,39 @@
     margin-top: 2px;
 }
 
-/* Mobile: tighter padding, smaller header text */
+/* Mobile: full-screen, honour iOS safe areas (status bar / Dynamic Island
+   at top, home indicator + Safari address bar at bottom). */
 @media (max-width: 600px) {
-    .bulk-scanner-modal     { height: 100dvh; max-height: 100dvh; border-radius: 0; }
-    .bulk-scanner-header    { padding: 10px 12px; gap: 8px; }
-    .bulk-scanner-title     { font-size: 13px; }
-    .bulk-scanner-stats     { gap: 10px; margin-left: 0; flex-basis: 100%; order: 3; justify-content: space-around; }
-    .bulk-stat-num          { font-size: 18px; }
-    .bulk-camera-wrap       { flex-basis: 32%; min-height: 180px; }
+    /* Drop the overlay padding so the modal can occupy the entire viewport */
+    .bulk-scanner-overlay {
+        padding:    0;
+        align-items: stretch;
+    }
+    .bulk-scanner-modal {
+        height:        100dvh;
+        max-height:    100dvh;
+        width:         100%;
+        max-width:     100%;
+        border-radius: 0;
+    }
+    .bulk-scanner-header {
+        /* Top inset clears the iOS status bar / Dynamic Island */
+        padding:     calc(10px + env(safe-area-inset-top, 0px)) 12px 10px;
+        gap:         8px;
+    }
+    .bulk-scanner-title { font-size: 13px; }
+    .bulk-scanner-stats {
+        gap:           10px;
+        margin-left:   0;
+        flex-basis:    100%;
+        order:         3;
+        justify-content: space-around;
+    }
+    .bulk-stat-num    { font-size: 18px; }
+    .bulk-camera-wrap { flex-basis: 32%; min-height: 180px; }
+
+    /* Bottom inset clears the home indicator and Safari URL bar */
+    .bulk-stack {
+        padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    }
 }
