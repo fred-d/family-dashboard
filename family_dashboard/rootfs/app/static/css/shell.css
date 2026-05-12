@@ -360,17 +360,18 @@ html, body {
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: flex-start;
+    /* Anchor content to the BOTTOM of the button so the icons + labels sit
+       right next to the home indicator (matches native iOS tab-bar pattern
+       — labels aren't floating up in empty space at the top of the nav). */
+    justify-content: flex-end;
     gap: 2px;
-    padding: 6px 12px 4px;
+    padding: 4px 12px 6px;
     border: none;
     background: transparent;
     cursor: pointer;
     color: #9ca3af;
     transition: color 0.2s, background 0.2s;
     flex: 1;
-    /* Fixed button height — active tint and indicator never overflow into
-       the PWA safe-area band that lives below this. */
     height: var(--mobile-nav-h);
     border-radius: 0;
     position: relative;
@@ -383,16 +384,17 @@ html, body {
     color: var(--theme-primary);
     background: var(--theme-hover);
   }
-  /* Indicator sits just above the home-indicator zone — pinned to the top
-     edge of the safe-area band so it's visible and not cut off by iOS. */
+  /* Indicator at the TOP of the active tab — matches the native iOS
+     tab-bar pattern. Below the indicator sit the icon + label, with iOS's
+     home-indicator pill rendered at the screen bottom (over the ::after). */
   .mobile-nav-btn.active::before {
     content: '';
     position: absolute;
-    bottom: var(--mobile-nav-safe);
+    top: 0;
     left: 0; right: 0;
     height: 4px;
     background: var(--theme-primary);
-    border-radius: 4px 4px 0 0;
+    border-radius: 0 0 4px 4px;
   }
 
   /* Any FABs / floating elements must clear the fixed nav + safe area */
