@@ -289,16 +289,13 @@ html, body {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  /* Base nav height (excluding any safe-area inset). */
+  /* Base nav height — same in both Chrome browser and iPhone PWA so the
+     nav looks identical in both contexts. iOS draws its home-indicator
+     pill on top of our nav at the very bottom; this is the standard
+     pattern for bottom-anchored nav bars (mirrors native iOS tab bars). */
   --mobile-nav-h: 54px;
-  /* iPhone PWA mode reports ~34px for env(safe-area-inset-bottom) which
-     reserves space for the home indicator. The full 34px feels excessive
-     for a small icon-bar nav — Apple's home indicator only needs ~12-16px
-     clearance to remain comfortably tappable. Cap our allowance at 18px. */
-  --mobile-nav-safe: min(env(safe-area-inset-bottom, 0px), 18px);
-  /* Total nav height including the capped safe area. Use everywhere that
-     content needs to clear the nav (page padding-bottom, FABs, toasts). */
-  --mobile-nav-total: calc(var(--mobile-nav-h) + var(--mobile-nav-safe));
+  --mobile-nav-safe: 0px;
+  --mobile-nav-total: var(--mobile-nav-h);
 }
 
 @media (max-width: 768px) {
