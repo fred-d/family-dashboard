@@ -324,8 +324,9 @@ html, body {
      handle the home-indicator clearance via their own bottom padding, so
      the active background tint paints the full nav height (no empty strip).
 
-     iOS PWA standalone mode leaves a gap below position:fixed bottom:0
-     because 100dvh on body/html doesn't include the home-indicator zone. */
+     Browser mode: stays at 54px at bottom: 0, no funny business.
+     PWA standalone mode: gets extended below the dvh viewport to reach
+     the actual screen edge — see the @media (display-mode) block below. */
   .mobile-nav {
     position: fixed;
     bottom: 0;
@@ -340,21 +341,30 @@ html, body {
     box-shadow: 0 -2px 12px rgba(0,0,0,0.08);
     padding: 0;
     z-index: 200;
-    /* Nav background extends below position:fixed bottom:0 to physically
-       cover the iOS PWA gap. The pseudo-element draws white below the nav
-       so even if `bottom: 0` doesn't reach the screen edge (which it
-       doesn't in iOS Chrome PWA), the visible background continues all
-       the way down. iOS draws the home-indicator pill on top of this. */
   }
-  .mobile-nav::after {
-    content: '';
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    height: 60px;             /* enough to cover any iOS safe-area gap */
-    background: var(--color-white);
+
+  /* DEBUG bottom border — temporarily red so we can verify the nav is
+     actually reaching the screen edge in iOS Chrome PWA. If you can SEE
+     a red line at the bottom of the screen, the nav is correctly anchored.
+     If you can't see it, the nav stops above the screen edge.
+     TODO: remove this once positioning is confirmed working. */
+  .mobile-nav { border-bottom: 4px solid #ff0040; }
+}
+
+/* iOS PWA standalone mode: viewport bottom may sit above the home-indicator
+   zone (env(safe-area-inset-bottom) sometimes returns 0 here despite the
+   actual safe area), leaving a gap below position:fixed bottom:0.
+   Push the nav physically down 40px and reclaim that space as inner
+   padding so the visible button area stays 54px. */
+@media (max-width: 768px) and (display-mode: standalone) {
+  .mobile-nav {
+    bottom: -40px;
+    height: calc(var(--mobile-nav-h) + 40px);
+    padding-bottom: 40px;
   }
+}
+
+@media (max-width: 768px) {
 
   .mobile-nav-btn {
     display: flex;
