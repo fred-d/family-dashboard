@@ -325,22 +325,14 @@ html, body {
      the active background tint paints the full nav height (no empty strip).
 
      iOS PWA standalone mode leaves a gap below position:fixed bottom:0
-     because 100dvh on body/html doesn't include the home-indicator zone.
-     We push the nav anchor below the dvh viewport with a negative bottom
-     equal to the safe-area inset, then absorb that same amount as inner
-     padding so the buttons stay above the home indicator. Result: nav
-     visually reaches the screen edge with no gap, buttons stay tappable. */
+     because 100dvh on body/html doesn't include the home-indicator zone. */
   .mobile-nav {
     position: fixed;
-    bottom: calc(0px - env(safe-area-inset-bottom, 0px));
+    bottom: 0;
     left:   0;
     right:  0;
-    height: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0px));
+    height: var(--mobile-nav-h);
     display: flex !important;
-    /* Buttons hug the top of the nav at their natural 54px height — the
-       extra safe-area band below them is just white nav background filling
-       the iOS PWA gap. This avoids stretching the active tint across the
-       entire 88px height which would look oversized. */
     align-items: flex-start;
     justify-content: space-around;
     background: var(--color-white);
@@ -348,6 +340,20 @@ html, body {
     box-shadow: 0 -2px 12px rgba(0,0,0,0.08);
     padding: 0;
     z-index: 200;
+    /* Nav background extends below position:fixed bottom:0 to physically
+       cover the iOS PWA gap. The pseudo-element draws white below the nav
+       so even if `bottom: 0` doesn't reach the screen edge (which it
+       doesn't in iOS Chrome PWA), the visible background continues all
+       the way down. iOS draws the home-indicator pill on top of this. */
+  }
+  .mobile-nav::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    height: 60px;             /* enough to cover any iOS safe-area gap */
+    background: var(--color-white);
   }
 
   .mobile-nav-btn {
