@@ -289,7 +289,11 @@ html, body {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  --mobile-nav-h: 64px;
+  /* Mobile bottom-nav height (excluding iOS home-indicator safe area).
+     54px keeps the 24px icon + 11px label tightly packed without wasted
+     vertical space — anything taller felt bulky on iPhone PWA mode where
+     the home indicator already adds ~34px below this. */
+  --mobile-nav-h: 54px;
 }
 
 @media (max-width: 768px) {
@@ -339,7 +343,7 @@ html, body {
     align-items: center;
     justify-content: flex-start; /* keep icon+label at top of the stretched button */
     gap: 3px;
-    padding: 8px 12px 6px;       /* extra top padding replaces old nav padding-top */
+    padding: 6px 12px 4px;       /* tighter on mobile — leaves just enough room for the indicator bar */
     border: none;
     background: transparent;
     cursor: pointer;
@@ -349,8 +353,9 @@ html, body {
     border-radius: 0;
     position: relative;
   }
-  .mobile-nav-btn svg  { width: 24px; height: 24px; stroke: currentColor; stroke-width: 1.5; fill: none; }
+  .mobile-nav-btn svg  { width: 22px; height: 22px; stroke: currentColor; stroke-width: 1.5; fill: none; }
   .mobile-nav-btn span { font-size: 10px; font-weight: 600; }
+  .mobile-nav-btn { gap: 2px; }
 
   /* Active state — mirrors sidebar: accent bar + subtle background tint */
   .mobile-nav-btn.active {
