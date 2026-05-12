@@ -1809,13 +1809,21 @@ select.pantry-modal-input { cursor: pointer; }
         font-size: 14px;
     }
 
-    .pantry-modal { max-height: 95vh; border-radius: 16px 16px 0 0; }
+    .pantry-modal {
+        /* Cap height so the modal header always sits below the iOS status
+           bar / Dynamic Island when running as a PWA. The overlay's
+           safe-area top padding reserves that space. */
+        max-height:    calc(95vh - env(safe-area-inset-top, 0px));
+        border-radius: 16px 16px 0 0;
+    }
     #pantryItemOverlay,
     #pantryInvOverlay,
     #pantryMealPlanOverlay,
     #pantryResolverOverlay {
         align-items: flex-end;
-        padding:     0;
+        /* Keep the modal below the status bar on iPhone PWA mode where the
+           viewport extends under the Dynamic Island. */
+        padding:     env(safe-area-inset-top, 0px) 0 0 0;
     }
 
 }
