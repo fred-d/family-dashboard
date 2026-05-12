@@ -289,11 +289,16 @@ html, body {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  /* Mobile bottom-nav height (excluding iOS home-indicator safe area).
-     54px keeps the 24px icon + 11px label tightly packed without wasted
-     vertical space — anything taller felt bulky on iPhone PWA mode where
-     the home indicator already adds ~34px below this. */
+  /* Base nav height (excluding any safe-area inset). */
   --mobile-nav-h: 54px;
+  /* iPhone PWA mode reports ~34px for env(safe-area-inset-bottom) which
+     reserves space for the home indicator. The full 34px feels excessive
+     for a small icon-bar nav — Apple's home indicator only needs ~12-16px
+     clearance to remain comfortably tappable. Cap our allowance at 18px. */
+  --mobile-nav-safe: min(env(safe-area-inset-bottom, 0px), 18px);
+  /* Total nav height including the capped safe area. Use everywhere that
+     content needs to clear the nav (page padding-bottom, FABs, toasts). */
+  --mobile-nav-total: calc(var(--mobile-nav-h) + var(--mobile-nav-safe));
 }
 
 @media (max-width: 768px) {
@@ -314,26 +319,26 @@ html, body {
   /* Reserve space at the bottom of content so nothing scrolls behind the nav */
   .content {
     padding: 4px;
-    padding-bottom: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0px));
+    padding-bottom: var(--mobile-nav-total);
   }
 
-  /* Mobile bottom nav — fixed so it's always anchored to the screen bottom
-     regardless of content height or scroll position. The extra height for the
-     iOS home-indicator safe area is absorbed into the nav's own padding so
-     the tap targets stay in the correct position. */
+  /* Mobile bottom nav — fixed at the screen bottom, height includes the
+     (capped) home-indicator safe area. Buttons stretch the full height and
+     handle the home-indicator clearance via their own bottom padding, so
+     the active background tint paints the full nav height (no empty strip). */
   .mobile-nav {
     position: fixed;
     bottom: 0;
     left:   0;
     right:  0;
-    height: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0px));
+    height: var(--mobile-nav-total);
     display: flex !important;
-    align-items: stretch;         /* buttons fill full nav height — no gap at top */
+    align-items: stretch;
     justify-content: space-around;
     background: var(--color-white);
     border-top: 2px solid var(--theme-sidebar-border);
     box-shadow: 0 -2px 12px rgba(0,0,0,0.08);
-    padding: 0 0 env(safe-area-inset-bottom, 0px);
+    padding: 0;
     z-index: 200;
   }
 
@@ -342,8 +347,10 @@ html, body {
     flex-direction: column;
     align-items: center;
     justify-content: flex-start; /* keep icon+label at top of the stretched button */
-    gap: 3px;
-    padding: 6px 12px 4px;       /* tighter on mobile — leaves just enough room for the indicator bar */
+    gap: 2px;
+    /* Bottom padding includes the capped safe-area so the indicator bar and
+       label clear the iOS home indicator gesture zone. */
+    padding: 6px 12px calc(4px + var(--mobile-nav-safe));
     border: none;
     background: transparent;
     cursor: pointer;
@@ -355,18 +362,20 @@ html, body {
   }
   .mobile-nav-btn svg  { width: 22px; height: 22px; stroke: currentColor; stroke-width: 1.5; fill: none; }
   .mobile-nav-btn span { font-size: 10px; font-weight: 600; }
-  .mobile-nav-btn { gap: 2px; }
 
   /* Active state — mirrors sidebar: accent bar + subtle background tint */
   .mobile-nav-btn.active {
     color: var(--theme-primary);
     background: var(--theme-hover);
   }
+  /* Indicator sits just above the home-indicator zone — pinned to the top
+     edge of the safe-area band so it's visible and not cut off by iOS. */
   .mobile-nav-btn.active::before {
     content: '';
     position: absolute;
-    bottom: 0; left: 0; right: 0;
-    height: 4px;                  /* match sidebar's 4px left bar */
+    bottom: var(--mobile-nav-safe);
+    left: 0; right: 0;
+    height: 4px;
     background: var(--theme-primary);
     border-radius: 4px 4px 0 0;
   }
@@ -374,7 +383,7 @@ html, body {
   /* Any FABs / floating elements must clear the fixed nav + safe area */
   .pantry-add-fab,
   .pantry-list-fabs {
-    bottom: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0px) + 16px);
+    bottom: calc(var(--mobile-nav-total) + 16px);
   }
 
   /* Settings modal full-screen on mobile */

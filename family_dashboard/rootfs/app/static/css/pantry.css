@@ -1801,7 +1801,7 @@ select.pantry-modal-input { cursor: pointer; }
     /* Lift both FABs above the fixed mobile bottom nav */
     .pantry-add-fab,
     .pantry-list-fabs {
-        bottom: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0px) + 16px);
+        bottom: calc(var(--mobile-nav-total) + 16px);
         right:  16px;
     }
     .pantry-add-fab {
@@ -2802,7 +2802,7 @@ select.pantry-modal-input { cursor: pointer; }
     max-width:     calc(100vw - 32px);
 }
 @media (max-width: 768px) {
-    .pantry-toast { bottom: calc(var(--mobile-nav-h) + 12px); }
+    .pantry-toast { bottom: calc(var(--mobile-nav-total) + 12px); }
 }
 .pantry-toast.show    { transform: translateX(-50%) translateY(0); opacity: 1; }
 .pantry-toast.hiding  { transform: translateX(-50%) translateY(80px); opacity: 0; }
