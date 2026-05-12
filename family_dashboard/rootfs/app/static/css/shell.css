@@ -319,14 +319,9 @@ html, body {
     padding-bottom: var(--mobile-nav-total);
   }
 
-  /* Mobile bottom nav — fixed at the screen bottom, height includes the
-     (capped) home-indicator safe area. Buttons stretch the full height and
-     handle the home-indicator clearance via their own bottom padding, so
-     the active background tint paints the full nav height (no empty strip).
-
-     Browser mode: stays at 54px at bottom: 0, no funny business.
-     PWA standalone mode: gets extended below the dvh viewport to reach
-     the actual screen edge — see the @media (display-mode) block below. */
+  /* Mobile bottom nav — browser mode: 54px at bottom: 0.
+     PWA standalone mode (further down): pushed physically below the dvh
+     viewport bottom to reach the actual screen edge. */
   .mobile-nav {
     position: fixed;
     bottom: 0;
@@ -343,6 +338,19 @@ html, body {
     z-index: 200;
   }
 
+}
+
+/* iOS PWA standalone — push the nav physically past the dvh viewport bottom
+   so it reaches the actual screen edge (closing the gap). 34px is the
+   standard iPhone home-indicator inset. The max() with env() keeps it
+   working on devices that report a larger inset; the 34px floor handles
+   iOS Chrome PWA where env() sometimes returns 0 despite the actual gap. */
+@media (max-width: 768px) and (display-mode: standalone) {
+  .mobile-nav {
+    bottom: calc(max(env(safe-area-inset-bottom, 0px), 34px) * -1);
+    height: calc(var(--mobile-nav-h) + max(env(safe-area-inset-bottom, 0px), 34px));
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 34px);
+  }
 }
 
 @media (max-width: 768px) {
