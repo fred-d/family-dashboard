@@ -322,15 +322,26 @@ html, body {
   /* Mobile bottom nav — fixed at the screen bottom, height includes the
      (capped) home-indicator safe area. Buttons stretch the full height and
      handle the home-indicator clearance via their own bottom padding, so
-     the active background tint paints the full nav height (no empty strip). */
+     the active background tint paints the full nav height (no empty strip).
+
+     iOS PWA standalone mode leaves a gap below position:fixed bottom:0
+     because 100dvh on body/html doesn't include the home-indicator zone.
+     We push the nav anchor below the dvh viewport with a negative bottom
+     equal to the safe-area inset, then absorb that same amount as inner
+     padding so the buttons stay above the home indicator. Result: nav
+     visually reaches the screen edge with no gap, buttons stay tappable. */
   .mobile-nav {
     position: fixed;
-    bottom: 0;
+    bottom: calc(0px - env(safe-area-inset-bottom, 0px));
     left:   0;
     right:  0;
-    height: var(--mobile-nav-total);
+    height: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0px));
     display: flex !important;
-    align-items: stretch;
+    /* Buttons hug the top of the nav at their natural 54px height — the
+       extra safe-area band below them is just white nav background filling
+       the iOS PWA gap. This avoids stretching the active tint across the
+       entire 88px height which would look oversized. */
+    align-items: flex-start;
     justify-content: space-around;
     background: var(--color-white);
     border-top: 2px solid var(--theme-sidebar-border);
@@ -343,17 +354,18 @@ html, body {
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: flex-start; /* keep icon+label at top of the stretched button */
+    justify-content: flex-start;
     gap: 2px;
-    /* Bottom padding includes the capped safe-area so the indicator bar and
-       label clear the iOS home indicator gesture zone. */
-    padding: 6px 12px calc(4px + var(--mobile-nav-safe));
+    padding: 6px 12px 4px;
     border: none;
     background: transparent;
     cursor: pointer;
     color: #9ca3af;
     transition: color 0.2s, background 0.2s;
     flex: 1;
+    /* Fixed button height — active tint and indicator never overflow into
+       the PWA safe-area band that lives below this. */
+    height: var(--mobile-nav-h);
     border-radius: 0;
     position: relative;
   }
