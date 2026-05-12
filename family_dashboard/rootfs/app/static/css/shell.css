@@ -343,25 +343,6 @@ html, body {
     z-index: 200;
   }
 
-  /* DEBUG bottom border — temporarily red so we can verify the nav is
-     actually reaching the screen edge in iOS Chrome PWA. If you can SEE
-     a red line at the bottom of the screen, the nav is correctly anchored.
-     If you can't see it, the nav stops above the screen edge.
-     TODO: remove this once positioning is confirmed working. */
-  .mobile-nav { border-bottom: 4px solid #ff0040; }
-}
-
-/* iOS PWA standalone mode: viewport bottom may sit above the home-indicator
-   zone (env(safe-area-inset-bottom) sometimes returns 0 here despite the
-   actual safe area), leaving a gap below position:fixed bottom:0.
-   Push the nav physically down 40px and reclaim that space as inner
-   padding so the visible button area stays 54px. */
-@media (max-width: 768px) and (display-mode: standalone) {
-  .mobile-nav {
-    bottom: -40px;
-    height: calc(var(--mobile-nav-h) + 40px);
-    padding-bottom: 40px;
-  }
 }
 
 @media (max-width: 768px) {
@@ -389,10 +370,13 @@ html, body {
   .mobile-nav-btn svg  { width: 22px; height: 22px; stroke: currentColor; stroke-width: 1.5; fill: none; }
   .mobile-nav-btn span { font-size: 10px; font-weight: 600; }
 
-  /* Active state — mirrors sidebar: accent bar + subtle background tint */
+  /* Active state — colored icon + label only, NO background tint.
+     The tint creates an artificial boundary at the button bottom that
+     reads as the nav "ending" before the screen edge in iOS PWA mode
+     (where the system paints white over the home-indicator zone). With
+     no tint, our white nav blends seamlessly with the iOS system area. */
   .mobile-nav-btn.active {
     color: var(--theme-primary);
-    background: var(--theme-hover);
   }
   /* Indicator at the TOP of the active tab — matches the native iOS
      tab-bar pattern. Below the indicator sit the icon + label, with iOS's
