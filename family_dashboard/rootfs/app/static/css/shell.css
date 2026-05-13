@@ -340,23 +340,35 @@ html, body {
 
 }
 
-/* iOS PWA standalone overrides:
-   1. Push the nav past the dvh viewport bottom so it reaches the screen edge.
-   2. Buttons stretch to the FULL nav height (not just the top 54px) so the
-      icons + labels can sit close to the screen bottom — directly above the
-      home-indicator pill — instead of floating in the upper portion of the
-      nav with empty white below.
-   3. Button padding-bottom = home-indicator inset + ~6px, keeping content
-      clear of the home-indicator pill while staying tight to the edge. */
+/* iOS PWA standalone overrides — applies on top of the @media (max-width: 768px)
+   block above. Two things to handle:
+
+   1. iOS PWA's dvh viewport bottom sits ~34px above the actual screen edge
+      (the home-indicator zone). With just bottom:0, the nav stops above
+      the screen edge and leaves a visible white gap below it.
+      → Pull the nav anchor below dvh by exactly the safe-area inset so
+        the physical bottom of the nav reaches the screen edge.
+
+   2. Buttons need to grow to match the new (taller) nav height so their
+      background tints + icon/label content can fill the whole nav — but
+      labels need to clear the home-indicator pill at the bottom.
+      → padding-bottom of 18px gives labels ~13px of clearance above the
+        pill (5px) — close to the edge without colliding with iOS UI.
+
+   max() with 34px floor handles iOS Chrome PWA where env() can return 0
+   despite the actual safe area existing (well-documented WebKit quirk).  */
 @media (max-width: 768px) and (display-mode: standalone) {
   .mobile-nav {
     bottom: calc(max(env(safe-area-inset-bottom, 0px), 34px) * -1);
     height: calc(var(--mobile-nav-h) + max(env(safe-area-inset-bottom, 0px), 34px));
-    padding: 0;            /* button handles bottom clearance */
+    padding: 0;
   }
   .mobile-nav-btn {
     height: calc(var(--mobile-nav-h) + max(env(safe-area-inset-bottom, 0px), 34px));
-    padding-bottom: calc(6px + max(env(safe-area-inset-bottom, 0px), 34px));
+    /* Labels sit 18px above the screen edge — clears the home-indicator
+       pill (which iOS draws at the very bottom ~5px) without leaving a
+       visible empty band like the previous 40px padding did. */
+    padding-bottom: 18px;
   }
 }
 
