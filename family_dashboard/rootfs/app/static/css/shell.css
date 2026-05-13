@@ -4,11 +4,13 @@
 
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 html, body {
-  /* Use dynamic viewport units so iOS Safari's collapsing URL bar / bottom
-     bar don't leave the app clipped or with a dead strip at the bottom.
-     `100%` falls back for older browsers. */
+  /* Use static viewport units — 100dvh was causing layout inconsistency
+     between PWA launches (sometimes including the home-indicator zone,
+     sometimes not). 100vh is the stable viewport height that matches
+     the full screen in standalone PWA mode. */
   height: 100%;
-  height: 100dvh;
+  height: 100vh;
+  min-height: 100vh;
   width: 100%;
   font-family: var(--font);
   /* Prevent overscroll bounce from revealing a blank background on iOS */
@@ -24,7 +26,7 @@ html, body {
     "header  header"
     "sidebar content";
   height: 100%;
-  height: 100dvh;
+  height: 100vh;
   width: 100%;
   /* Respect iOS notch / home-indicator safe areas */
   padding-top:    env(safe-area-inset-top);
@@ -340,34 +342,22 @@ html, body {
 
 }
 
-/* iOS PWA standalone overrides — applies on top of the @media (max-width: 768px)
-   block above. Two things to handle:
-
-   1. iOS PWA's dvh viewport bottom sits ~34px above the actual screen edge
-      (the home-indicator zone). With just bottom:0, the nav stops above
-      the screen edge and leaves a visible white gap below it.
-      → Pull the nav anchor below dvh by exactly the safe-area inset so
-        the physical bottom of the nav reaches the screen edge.
-
-   2. Buttons need to grow to match the new (taller) nav height so their
-      background tints + icon/label content can fill the whole nav — but
-      labels need to clear the home-indicator pill at the bottom.
-      → padding-bottom of 18px gives labels ~13px of clearance above the
-        pill (5px) — close to the edge without colliding with iOS UI.
-
-   max() with 34px floor handles iOS Chrome PWA where env() can return 0
-   despite the actual safe area existing (well-documented WebKit quirk).  */
+/* iOS PWA standalone overrides — uses --js-safe-bottom set by the script
+   in index.html which is recomputed on every pageshow / resize event.
+   This is more reliable than env() in iOS PWA where env() can return 0
+   on subsequent launches even when the actual safe area exists. */
 @media (max-width: 768px) and (display-mode: standalone) {
   .mobile-nav {
-    bottom: calc(max(env(safe-area-inset-bottom, 0px), 34px) * -1);
-    height: calc(var(--mobile-nav-h) + max(env(safe-area-inset-bottom, 0px), 34px));
+    /* Pull the nav physically past the dvh viewport bottom so it reaches
+       the actual screen edge in iOS PWA. */
+    bottom: calc(var(--js-safe-bottom, 34px) * -1);
+    height: calc(var(--mobile-nav-h) + var(--js-safe-bottom, 34px));
     padding: 0;
   }
   .mobile-nav-btn {
-    height: calc(var(--mobile-nav-h) + max(env(safe-area-inset-bottom, 0px), 34px));
-    /* Labels sit 18px above the screen edge — clears the home-indicator
-       pill (which iOS draws at the very bottom ~5px) without leaving a
-       visible empty band like the previous 40px padding did. */
+    height: calc(var(--mobile-nav-h) + var(--js-safe-bottom, 34px));
+    /* Labels sit 18px above the screen bottom — clears the home-indicator
+       pill (~5px tall) with comfortable breathing room. */
     padding-bottom: 18px;
   }
 }
