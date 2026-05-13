@@ -1002,7 +1002,10 @@
     display:         none;
     position:        fixed;
     inset:           0;
-    z-index:         150;
+    /* Above the mobile nav (z-index: 200) so modal footers don't get covered.
+       Same band as .settings-overlay / .event-modal-overlay (z-index: 10000)
+       so all foreground UI sits at a consistent layer above page chrome. */
+    z-index:         10000;
     background:      rgba(0,0,0,0.55);
     backdrop-filter: blur(4px);
     align-items:     center;
