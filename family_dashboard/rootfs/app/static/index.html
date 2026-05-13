@@ -19,7 +19,7 @@
     <!-- App styles (load order matters) -->
     <link rel="stylesheet" href="css/auth.css?v=3">
     <link rel="stylesheet" href="css/vars.css?v=13">
-    <link rel="stylesheet" href="css/shell.css?v=33">
+    <link rel="stylesheet" href="css/shell.css?v=34">
     <link rel="stylesheet" href="css/calendar.css?v=13">
     <link rel="stylesheet" href="css/meals.css?v=13">
     <link rel="stylesheet" href="css/recipes.css?v=13">
@@ -49,27 +49,37 @@
          * CSS can use as a reliable fallback for env().
          */
         (function () {
-            function applySafeArea() {
-                // Read what env() currently reports via a probe element.
-                // Some iOS versions only populate env() values after first paint.
+            function probeInset(side) {
+                // Measure env() by inserting a probe div sized to the inset.
+                // env() can be unavailable until first paint; we read it every
+                // time we run so we catch the post-restore-from-background state.
                 var probe = document.createElement('div');
-                probe.style.cssText = 'position:fixed;bottom:0;height:env(safe-area-inset-bottom);visibility:hidden;pointer-events:none;';
+                probe.style.cssText =
+                    'position:fixed;' + side + ':0;' +
+                    'height:env(safe-area-inset-' + side + ');' +
+                    'width:1px;visibility:hidden;pointer-events:none;';
                 document.body.appendChild(probe);
-                var envBottom = probe.offsetHeight;
+                var v = probe.offsetHeight;
                 document.body.removeChild(probe);
+                return v;
+            }
+            function applySafeArea() {
+                var envTop    = probeInset('top');
+                var envBottom = probeInset('bottom');
 
-                // Modern iPhones with home indicator: 34. iPad / older devices: 0.
-                // If env() reports a sensible value, use it. Otherwise fall back
-                // to 34 only if window.innerHeight is short enough to suggest
-                // a phone in PWA standalone (rough heuristic).
-                var safe = envBottom;
-                if (safe < 1) {
-                    // env() failed to report — guess from device dimensions
-                    var aspect = window.innerWidth / window.innerHeight;
-                    var likelyPhone = window.innerWidth <= 480 && aspect < 0.6;
-                    safe = likelyPhone ? 34 : 0;
-                }
-                document.documentElement.style.setProperty('--js-safe-bottom', safe + 'px');
+                // Detect a phone-like portrait viewport in standalone PWA mode.
+                // Used as a fallback when env() returns 0 despite the actual
+                // safe areas existing (known iOS Chrome PWA quirk).
+                var aspect = window.innerWidth / window.innerHeight;
+                var likelyPhone = window.innerWidth <= 480 && aspect < 0.6;
+                var topFallback    = likelyPhone ? 50 : 0;  // status bar / Dynamic Island
+                var bottomFallback = likelyPhone ? 34 : 0;  // home indicator
+
+                var safeTop    = envTop    > 0 ? envTop    : topFallback;
+                var safeBottom = envBottom > 0 ? envBottom : bottomFallback;
+
+                document.documentElement.style.setProperty('--js-safe-top',    safeTop    + 'px');
+                document.documentElement.style.setProperty('--js-safe-bottom', safeBottom + 'px');
             }
             // Fire on initial paint AND on every restoration from background
             // (which is when iOS PWA layout most often goes stale).
