@@ -309,18 +309,27 @@ html, body {
    The nav is a normal in-flow flex child. .app is exactly the viewport
    height and the nav is its last child, so the nav's bottom edge IS the
    screen's bottom edge — no positioning, so a gap below it is
-   structurally impossible. The iOS home-indicator inset is handled by
-   the nav's own padding-bottom: env(safe-area-inset-bottom), which lifts
-   the icons/labels clear while the white background still reaches the
-   physical edge. No position:fixed, no offset math, no JS viewport probe.
+   structurally impossible. The home-indicator clearance is a FIXED
+   padding-bottom on the nav (--mobile-nav-pad), deliberately not env() —
+   see the note on that variable below. No position:fixed, no offset
+   math, no JS viewport probe.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
   --mobile-nav-h: 54px;
-  /* Total vertical space the bottom nav occupies, including the
-     home-indicator inset it pads itself with — FABs / toasts that float
-     above the nav anchor off this. */
-  --mobile-nav-total: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0px));
+  /* Fixed home-indicator clearance — deliberately NOT
+     env(safe-area-inset-bottom). On iOS standalone PWAs env() is
+     unreliable: it reports stale/zero values on cold start AND it
+     recomputes on viewport changes (pinch-zoom), which made the whole
+     nav visibly jump. The home indicator is a consistent ~34px inset on
+     every modern iPhone, and tab content is meant to sit within it (this
+     is what native iOS tab bars do), so a fixed value clears the pill
+     with native-looking spacing and never moves. One number, tweak to
+     taste. */
+  --mobile-nav-pad: 18px;
+  /* Total vertical space the bottom nav occupies — FABs / toasts that
+     float above the nav anchor off this. */
+  --mobile-nav-total: calc(var(--mobile-nav-h) + var(--mobile-nav-pad));
 }
 
 @media (max-width: 768px) {
@@ -370,8 +379,9 @@ html, body {
   }
 
   /* Bottom nav — last flex child, so it lands on the screen edge with no
-     positioning. padding-bottom keeps the buttons above the iOS home
-     indicator while the white background still fills to the edge. */
+     positioning. The fixed padding-bottom lifts the buttons above the
+     home indicator; the white background still fills to the physical
+     edge. Fixed, not env() — see the --mobile-nav-pad note above. */
   .mobile-nav {
     flex-shrink: 0;
     display: flex !important;
@@ -379,7 +389,7 @@ html, body {
     background: var(--color-white);
     border-top: 2px solid var(--theme-sidebar-border);
     box-shadow: 0 -2px 12px rgba(0,0,0,0.08);
-    padding-bottom: env(safe-area-inset-bottom);
+    padding-bottom: var(--mobile-nav-pad);
   }
 
   .mobile-nav-btn {
