@@ -1814,9 +1814,9 @@ select.pantry-modal-input { cursor: pointer; }
 
     .pantry-modal {
         /* Cap height so the modal header always sits below the iOS status
-           bar / Dynamic Island in PWA mode. Uses --js-safe-top which has
-           a hardcoded floor for iPhone PWA where env() returns 0. */
-        max-height:    calc(95vh - var(--js-safe-top, 0px));
+           bar / Dynamic Island when running as a PWA. The overlay's
+           safe-area top padding reserves that space. */
+        max-height:    calc(95vh - env(safe-area-inset-top, 0px));
         border-radius: 16px 16px 0 0;
     }
     #pantryItemOverlay,
@@ -1824,8 +1824,9 @@ select.pantry-modal-input { cursor: pointer; }
     #pantryMealPlanOverlay,
     #pantryResolverOverlay {
         align-items: flex-end;
-        /* Keep the modal below the status bar on iPhone PWA mode. */
-        padding:     var(--js-safe-top, 0px) 0 0 0;
+        /* Keep the modal below the status bar on iPhone PWA mode where the
+           viewport extends under the Dynamic Island. */
+        padding:     env(safe-area-inset-top, 0px) 0 0 0;
     }
 
 }

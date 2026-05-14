@@ -295,28 +295,13 @@ html, body {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  /* Base nav height. */
+  /* Base nav height — same in both Chrome browser and iPhone PWA so the
+     nav looks identical in both contexts. iOS draws its home-indicator
+     pill on top of our nav at the very bottom; this is the standard
+     pattern for bottom-anchored nav bars (mirrors native iOS tab bars). */
   --mobile-nav-h: 54px;
   --mobile-nav-safe: 0px;
   --mobile-nav-total: var(--mobile-nav-h);
-
-  /* Safe-area defaults: try env() first, fall back to 0. The JS shim in
-     index.html may override these with measured values, but the PWA
-     standalone media query below also overrides with hardcoded iPhone
-     values since env() is unreliable in iOS Chrome PWA. */
-  --js-safe-top:    env(safe-area-inset-top,    0px);
-  --js-safe-bottom: env(safe-area-inset-bottom, 0px);
-}
-
-/* iOS PWA standalone mode: env() can return 0 despite the actual safe
-   area existing (WebKit quirk). Set hardcoded floors so the layout works
-   even when env() lies. max() with env() means devices that DO report
-   correct values get the real (possibly larger) inset. */
-@media (max-width: 768px) and (display-mode: standalone) {
-  :root {
-    --js-safe-top:    max(env(safe-area-inset-top,    0px), 50px);
-    --js-safe-bottom: max(env(safe-area-inset-bottom, 0px), 34px);
-  }
 }
 
 @media (max-width: 768px) {
