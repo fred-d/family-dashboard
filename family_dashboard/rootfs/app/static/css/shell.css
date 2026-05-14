@@ -337,8 +337,29 @@ html, body {
     height: var(--header-h);
     border-radius: 0;
     padding: 0 var(--sp-4);
+    gap: var(--sp-3);
   }
-  .header-title { font-size: 18px; }
+  .header-title {
+    font-size: 18px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Calendar view: the title keeps its size and the filter pills become
+     a horizontal-scroll strip rather than wrapping/clipping inside the
+     fixed-height header. (#calendarFilters is hidden on other views, so
+     .header-right is simply empty there.) */
+  .header-left  { flex: 0 0 auto; min-width: 0; }
+  .header-right { flex: 1 1 0;    min-width: 0; }
+  .calendar-filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .calendar-filters::-webkit-scrollbar { display: none; }
+  .filter-pill { flex-shrink: 0; }
 
   /* The single scroll region. min-height: 0 lets it shrink within the
      flex column instead of growing and shoving the nav off-screen. */
