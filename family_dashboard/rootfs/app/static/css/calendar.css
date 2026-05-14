@@ -60,6 +60,27 @@
 .fc-button-group .fc-button-active { background: var(--theme-primary) !important; color: white !important; }
 .fc-button-group .fc-button-active:hover { background: var(--theme-secondary) !important; }
 
+/* ── Mobile: fit the toolbar on a phone ──
+   FullCalendar's toolbar isn't responsive. The desktop layout pins the
+   nav chunk and the view-switcher chunk at min-width:180px each — 360px
+   before the title gets any room — so on a ~385px phone content box the
+   title is squished until it wraps and the row overflows / clips. Drop
+   the min-widths and tighten paddings + fonts so the row fits. */
+@media (max-width: 768px) {
+  .fc-toolbar { padding: 0 6px 8px 6px !important; min-height: 48px !important; }
+  .fc-toolbar-title {
+    font-size: 17px !important;
+    line-height: 1.15 !important;
+    white-space: nowrap !important;
+  }
+  .fc-customNav-button         { min-width: 0 !important; }
+  .fc-toolbar-chunk:last-child { min-width: 0 !important; }
+  .custom-nav-toolbar          { gap: 4px; }
+  .custom-nav-btn.arrow        { width: 32px; height: 32px; }
+  .custom-nav-btn.today        { padding: 6px 10px; height: 32px; }
+  .fc-button-group .fc-button  { padding: 5px 9px !important; font-size: 12px !important; }
+}
+
 /* ── Day grid: today ── */
 .fc-event-title, .fc-event-time { font-weight: normal !important; }
 .fc-day-today { background-color: transparent !important; }
