@@ -1829,6 +1829,12 @@ select.pantry-modal-input { cursor: pointer; }
         padding:     env(safe-area-inset-top, 0px) 0 0 0;
     }
 
+    /* Bottom-sheet modal sits flush to the screen edge — pad the action
+       row so Save / Cancel clear the iOS home indicator. */
+    .pantry-modal-footer {
+        padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    }
+
 }
 
 @media (max-width: 400px) {
