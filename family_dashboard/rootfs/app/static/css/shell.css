@@ -3,21 +3,27 @@
    ─────────────────────────────────────────────────────────────────────────── */
 
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
 html, body {
-  /* Use static viewport units — 100dvh was causing layout inconsistency
-     between PWA launches (sometimes including the home-indicator zone,
-     sometimes not). 100vh is the stable viewport height that matches
-     the full screen in standalone PWA mode. */
+  /* The plain 100% chain (html → body → .app) is the most stable height
+     in an iOS standalone PWA — it inherits the viewport directly with no
+     vh/dvh resolution to drift between launches. */
   height: 100%;
-  height: 100vh;
-  min-height: 100vh;
   width: 100%;
   font-family: var(--font);
-  /* Prevent overscroll bounce from revealing a blank background on iOS */
+  /* Lock the document: .content is the only scroll container, like a
+     native app shell. Also stops iOS rubber-banding from revealing a
+     blank strip behind the fixed header / bottom nav. */
+  overflow: hidden;
   overscroll-behavior-y: none;
 }
 
-/* ── App grid ── */
+/* ── App shell ──
+   Desktop: a 2×2 grid — sidebar + header / content.
+   Mobile (≤768px, see the responsive section): collapses to a vertical
+   flex column header → content → bottom-nav. The nav is a normal in-flow
+   flex child, so it structurally cannot detach from the screen edge —
+   no position:fixed, no offset math, no JS measuring the viewport. */
 .app {
   display: grid;
   grid-template-columns: var(--sidebar-w) 1fr;
@@ -26,18 +32,15 @@ html, body {
     "header  header"
     "sidebar content";
   height: 100%;
-  height: 100vh;
   width: 100%;
-  /* Respect iOS notch / Dynamic Island / home-indicator safe areas.
-     Uses --js-safe-{top,bottom} set by the safe-area shim in index.html
-     because iOS Chrome PWA can return 0 for env() despite the actual
-     safe area existing (especially on subsequent launches). The env()
-     value is the fallback for the brief window before JS runs. */
-  padding-top:    var(--js-safe-top,    env(safe-area-inset-top,    0px));
-  padding-left:   env(safe-area-inset-left);
-  padding-right:  env(safe-area-inset-right);
-  padding-bottom: var(--js-safe-bottom, env(safe-area-inset-bottom, 0px));
-  transition: all var(--t-slow);
+  /* Notch / Dynamic Island / rounded-corner insets. The BOTTOM inset is
+     deliberately not handled here: on mobile the bottom nav pads itself
+     (so its background still reaches the screen edge); on desktop there
+     is no bottom inset. env() resolving from 0 → real value applies
+     instantly — there is no transition on .app to animate the shift. */
+  padding-top:   env(safe-area-inset-top);
+  padding-left:  env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 /* ── Sidebar ── */
@@ -292,127 +295,106 @@ html, body {
 
 /* ═══════════════════════════════════════════════════════════════════════════
    MOBILE RESPONSIVE (≤ 768px)
+   ───────────────────────────────────────────────────────────────────────────
+   The shell collapses from the desktop grid to a vertical flex column:
+
+       ┌─────────────────┐
+       │     header      │  flex-shrink: 0  — fixed, never scrolls
+       ├─────────────────┤
+       │     content     │  flex: 1         — the ONLY scroll container
+       ├─────────────────┤
+       │   bottom nav    │  flex-shrink: 0  — sits on the screen edge
+       └─────────────────┘
+
+   The nav is a normal in-flow flex child. .app is exactly the viewport
+   height and the nav is its last child, so the nav's bottom edge IS the
+   screen's bottom edge — no positioning, so a gap below it is
+   structurally impossible. The iOS home-indicator inset is handled by
+   the nav's own padding-bottom: env(safe-area-inset-bottom), which lifts
+   the icons/labels clear while the white background still reaches the
+   physical edge. No position:fixed, no offset math, no JS viewport probe.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  /* Base nav height — same in both Chrome browser and iPhone PWA so the
-     nav looks identical in both contexts. iOS draws its home-indicator
-     pill on top of our nav at the very bottom; this is the standard
-     pattern for bottom-anchored nav bars (mirrors native iOS tab bars). */
   --mobile-nav-h: 54px;
-  --mobile-nav-safe: 0px;
-  --mobile-nav-total: var(--mobile-nav-h);
+  /* Total vertical space the bottom nav occupies, including the
+     home-indicator inset it pads itself with — FABs / toasts that float
+     above the nav anchor off this. */
+  --mobile-nav-total: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0px));
 }
 
 @media (max-width: 768px) {
-  /* Full-column layout — two rows only (header + content).
-     The nav is outside .app so it can't be a grid child; it's fixed instead. */
+  /* Grid → vertical flex column: header → content → nav. */
   .app {
-    grid-template-columns: 1fr;
-    grid-template-rows: var(--header-h) 1fr;
-    grid-template-areas:
-      "header"
-      "content";
+    display: flex;
+    flex-direction: column;
   }
 
-  .sidebar    { display: none !important; }
-  .header     { border-radius: 0; padding: 0 var(--sp-4); }
+  .sidebar { display: none !important; }
+
+  .header {
+    flex-shrink: 0;
+    height: var(--header-h);
+    border-radius: 0;
+    padding: 0 var(--sp-4);
+  }
   .header-title { font-size: 18px; }
 
-  /* Reserve space at the bottom of content so nothing scrolls behind the nav */
+  /* The single scroll region. min-height: 0 lets it shrink within the
+     flex column instead of growing and shoving the nav off-screen. */
   .content {
+    flex: 1;
+    min-height: 0;
     padding: 4px;
-    padding-bottom: var(--mobile-nav-total);
   }
 
-  /* Mobile bottom nav — browser mode: 54px at bottom: 0.
-     PWA standalone mode (further down): pushed physically below the dvh
-     viewport bottom to reach the actual screen edge. */
+  /* Bottom nav — last flex child, so it lands on the screen edge with no
+     positioning. padding-bottom keeps the buttons above the iOS home
+     indicator while the white background still fills to the edge. */
   .mobile-nav {
-    position: fixed;
-    bottom: 0;
-    left:   0;
-    right:  0;
-    height: var(--mobile-nav-h);
+    flex-shrink: 0;
     display: flex !important;
-    align-items: flex-start;
     justify-content: space-around;
     background: var(--color-white);
     border-top: 2px solid var(--theme-sidebar-border);
     box-shadow: 0 -2px 12px rgba(0,0,0,0.08);
-    padding: 0;
-    z-index: 200;
+    padding-bottom: env(safe-area-inset-bottom);
   }
-
-}
-
-/* iOS PWA standalone overrides — uses --js-safe-bottom set by the script
-   in index.html which is recomputed on every pageshow / resize event.
-   This is more reliable than env() in iOS PWA where env() can return 0
-   on subsequent launches even when the actual safe area exists. */
-@media (max-width: 768px) and (display-mode: standalone) {
-  .mobile-nav {
-    /* Pull the nav physically past the dvh viewport bottom so it reaches
-       the actual screen edge in iOS PWA. */
-    bottom: calc(var(--js-safe-bottom, 34px) * -1);
-    height: calc(var(--mobile-nav-h) + var(--js-safe-bottom, 34px));
-    padding: 0;
-  }
-  .mobile-nav-btn {
-    height: calc(var(--mobile-nav-h) + var(--js-safe-bottom, 34px));
-    /* Labels sit 18px above the screen bottom — clears the home-indicator
-       pill (~5px tall) with comfortable breathing room. */
-    padding-bottom: 18px;
-  }
-}
-
-@media (max-width: 768px) {
 
   .mobile-nav-btn {
+    flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
-    /* Anchor content to the BOTTOM of the button so the icons + labels sit
-       right next to the home indicator (matches native iOS tab-bar pattern
-       — labels aren't floating up in empty space at the top of the nav). */
-    justify-content: flex-end;
-    gap: 2px;
-    padding: 4px 12px 6px;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    color: #9ca3af;
-    transition: color 0.2s, background 0.2s;
-    flex: 1;
+    justify-content: center;
+    gap: 3px;
     height: var(--mobile-nav-h);
+    padding: 0;
+    border: none;
     border-radius: 0;
+    background: transparent;
+    color: #9ca3af;
+    cursor: pointer;
+    transition: color var(--t-base);
     position: relative;
   }
   .mobile-nav-btn svg  { width: 22px; height: 22px; stroke: currentColor; stroke-width: 1.5; fill: none; }
   .mobile-nav-btn span { font-size: 10px; font-weight: 600; }
 
-  /* Active state — colored icon + label only, NO background tint.
-     The tint creates an artificial boundary at the button bottom that
-     reads as the nav "ending" before the screen edge in iOS PWA mode
-     (where the system paints white over the home-indicator zone). With
-     no tint, our white nav blends seamlessly with the iOS system area. */
-  .mobile-nav-btn.active {
-    color: var(--theme-primary);
-  }
-  /* Indicator at the TOP of the active tab — matches the native iOS
-     tab-bar pattern. Below the indicator sit the icon + label, with iOS's
-     home-indicator pill rendered at the screen bottom (over the ::after). */
+  /* Active tab — coloured icon/label plus a slim indicator on the top
+     edge (native iOS tab-bar pattern). No background tint: a tint reads
+     as the nav "ending" before the screen edge. */
+  .mobile-nav-btn.active { color: var(--theme-primary); }
   .mobile-nav-btn.active::before {
     content: '';
     position: absolute;
-    top: 0;
-    left: 0; right: 0;
-    height: 4px;
+    top: 0; left: 0; right: 0;
+    height: 3px;
     background: var(--theme-primary);
-    border-radius: 0 0 4px 4px;
+    border-radius: 0 0 3px 3px;
   }
 
-  /* Any FABs / floating elements must clear the fixed nav + safe area */
+  /* FABs / floating elements clear the nav + its safe-area padding. */
   .pantry-add-fab,
   .pantry-list-fabs {
     bottom: calc(var(--mobile-nav-total) + 16px);
@@ -430,7 +412,6 @@ html, body {
   .pantry-item-check  { width: 32px; height: 32px; }
   .pantry-store-item  { min-height: 64px; }
   .pantry-store-check { width: 44px; height: 44px; min-width: 44px; }
-
 }
 
 /* Desktop: hide mobile nav */
