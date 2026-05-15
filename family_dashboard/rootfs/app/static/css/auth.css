@@ -9,7 +9,16 @@
 /* ── Overlay backdrop ── */
 #authOverlay {
     position:        fixed;
-    inset:           0;
+    top:             0;
+    left:            0;
+    right:           0;
+    /* Explicit 100dvh (with 100% fallback) instead of inset:0. On iOS
+       standalone PWA, position:fixed inset:0 is bounded by the layout
+       viewport, which can fall short of the actual screen bottom — the
+       overlay shows a body-default strip below it. 100dvh + viewport-fit
+       =cover hits the real screen edge. Matches the shell height chain. */
+    height:          100%;
+    height:          100dvh;
     z-index:         9999;
     align-items:     center;
     justify-content: center;
