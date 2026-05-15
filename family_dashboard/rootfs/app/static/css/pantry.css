@@ -1813,10 +1813,11 @@ select.pantry-modal-input { cursor: pointer; }
     }
 
     .pantry-modal {
-        /* Cap height so the modal header always sits below the iOS status
-           bar / Dynamic Island when running as a PWA. The overlay's
-           safe-area top padding reserves that space. */
-        max-height:    calc(95vh - env(safe-area-inset-top, 0px));
+        /* Cap height so the modal header sits below the iOS status bar /
+           Dynamic Island. The overlay's safe-area top padding (below)
+           reserves that space — the same max() floor is mirrored here so
+           the cap matches the actual reserved space. */
+        max-height:    calc(95vh - max(env(safe-area-inset-top, 0px), 60px));
         border-radius: 16px 16px 0 0;
     }
     #pantryItemOverlay,
@@ -1824,9 +1825,12 @@ select.pantry-modal-input { cursor: pointer; }
     #pantryMealPlanOverlay,
     #pantryResolverOverlay {
         align-items: flex-end;
-        /* Keep the modal below the status bar on iPhone PWA mode where the
-           viewport extends under the Dynamic Island. */
-        padding:     env(safe-area-inset-top, 0px) 0 0 0;
+        /* Keep the modal below the Dynamic Island on iPhone PWA. The
+           max(env, 60px) floor handles the iOS quirk where env() can
+           report 0 / a stale value on cold start — without the floor the
+           modal floated up under the Island. Dynamic Island is ~59px,
+           notch ~47px; 60px covers both with a hair of margin. */
+        padding:     max(env(safe-area-inset-top, 0px), 60px) 0 0 0;
     }
 
     /* Bottom-sheet modal sits flush to the screen edge — pad the action

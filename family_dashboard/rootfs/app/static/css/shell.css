@@ -5,10 +5,17 @@
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
 html, body {
-  /* The plain 100% chain (html → body → .app) is the most stable height
-     in an iOS standalone PWA — it inherits the viewport directly with no
-     vh/dvh resolution to drift between launches. */
+  /* 100dvh with 100% as fallback. We previously used 100% alone, thinking
+     pure inheritance was most stable — empirically wrong: on iOS standalone
+     PWA, 100% resolves to the SAFE viewport (above the home indicator),
+     not the full screen, so .app's bottom edge sat ~34px above the actual
+     screen and the nav rode up with it (and the auth overlay had a strip
+     of the body default showing below it). 100dvh combined with
+     viewport-fit=cover gives the actual full screen including safe-area
+     zones; the viewport-nudge script in <head> re-asserts the viewport
+     meta on pageshow to keep dvh stable on cold starts / bfcache restores. */
   height: 100%;
+  height: 100dvh;
   width: 100%;
   font-family: var(--font);
   /* Lock the document: .content is the only scroll container, like a
@@ -32,6 +39,8 @@ html, body {
     "header  header"
     "sidebar content";
   height: 100%;
+  height: 100dvh;     /* see the html/body note — 100% resolves to the
+                         safe viewport on iOS PWA, dvh hits the real edge */
   width: 100%;
   /* Notch / Dynamic Island / rounded-corner insets. The BOTTOM inset is
      deliberately not handled here: on mobile the bottom nav pads itself
